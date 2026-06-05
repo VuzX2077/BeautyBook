@@ -1,12 +1,10 @@
 using System;
 using System.Security.Claims;
 using System.Threading.Tasks;
+using BeautyBookBackend.DTOs;
+using BeautyBookBackend.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using BeautyBookBackend.Data;
-using BeautyBookBackend.DTOs;
-using BeautyBookBackend.Models.Enums;
 
 namespace BeautyBookBackend.Controllers
 {
@@ -15,11 +13,11 @@ namespace BeautyBookBackend.Controllers
     [Route("api/[controller]")]
     public class UserController : ControllerBase
     {
-        private readonly ApplicationDbContext _context;
+        private readonly IUserService _userService;
 
-        public UserController(ApplicationDbContext context)
+        public UserController(IUserService userService)
         {
-            _context = context;
+            _userService = userService;
         }
 
         private Guid CurrentUserId => Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString());
@@ -27,41 +25,25 @@ namespace BeautyBookBackend.Controllers
         [HttpGet("profile")]
         public async Task<IActionResult> GetProfile()
         {
-            var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == CurrentUserId);
+            var user = await _userService.GetProfileAsync(CurrentUserId);
             if (user == null)
             {
-                return NotFound(new { Message = "Không tìm thấy thông tin người dùng." });
+                return NotFound(new { Message = "Khong tim thay thong tin nguoi dung." });
             }
 
-            return Ok(new UserDto
-            {
-                UserId = user.UserId,
-                FullName = user.FullName,
-                Email = user.Email,
-                AvatarUrl = user.AvatarUrl,
-                PhoneNumber = user.PhoneNumber,
-                Role = user.Role,
-                CreatedAt = user.CreatedAt,
-                IsActive = user.IsActive
-            });
+            return Ok(user);
         }
 
         [HttpPut("profile")]
         public async Task<IActionResult> UpdateProfile([FromBody] UserUpdateDto updateDto)
         {
-            var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == CurrentUserId);
+            var user = await _userService.UpdateProfileAsync(CurrentUserId, updateDto);
             if (user == null)
             {
-                return NotFound(new { Message = "Không tìm thấy người dùng." });
+                return NotFound(new { Message = "Khong tim thay nguoi dung." });
             }
 
-            if (!string.IsNullOrEmpty(updateDto.FullName)) user.FullName = updateDto.FullName;
-            if (!string.IsNullOrEmpty(updateDto.AvatarUrl)) user.AvatarUrl = updateDto.AvatarUrl;
-            if (!string.IsNullOrEmpty(updateDto.PhoneNumber)) user.PhoneNumber = updateDto.PhoneNumber;
-
-            await _context.SaveChangesAsync();
-
-            return Ok(new { Message = "Cập nhật thông tin thành công!", User = user });
+            return Ok(new { Message = "Cap nhat thong tin thanh cong!", User = user });
         }
     }
 }

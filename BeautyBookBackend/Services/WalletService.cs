@@ -1,43 +1,30 @@
 using System;
 using System.Linq;
 using System.Threading.Tasks;
-using Microsoft.EntityFrameworkCore;
-using BeautyBookBackend.Data;
 using BeautyBookBackend.DTOs;
 using BeautyBookBackend.Models;
 using BeautyBookBackend.Models.Enums;
+using BeautyBookBackend.Repositories;
 
 namespace BeautyBookBackend.Services
 {
     public class WalletService : IWalletService
     {
-        private readonly ApplicationDbContext _context;
+        private readonly IWalletRepository _walletRepository;
+        private readonly IUnitOfWork _unitOfWork;
 
-        public WalletService(ApplicationDbContext context)
+        public WalletService(IWalletRepository walletRepository, IUnitOfWork unitOfWork)
         {
-            _context = context;
+            _walletRepository = walletRepository;
+            _unitOfWork = unitOfWork;
         }
 
         public async Task<WalletDto?> GetWalletAsync(Guid userId)
         {
-            var wallet = await _context.Wallets
-                .FirstOrDefaultAsync(w => w.UserId == userId);
-
+            var wallet = await _walletRepository.GetByUserIdAsync(userId);
             if (wallet == null) return null;
 
-            var transactions = await _context.WalletTransactions
-                .Where(t => t.WalletId == wallet.WalletId)
-                .OrderByDescending(t => t.CreatedAt)
-                .Select(t => new TransactionDto
-                {
-                    TransactionId = t.TransactionId,
-                    WalletId = t.WalletId,
-                    Amount = t.Amount,
-                    TransactionType = t.TransactionType,
-                    Description = t.Description,
-                    CreatedAt = t.CreatedAt
-                })
-                .ToListAsync();
+            var transactions = await _walletRepository.GetTransactionsAsync(wallet.WalletId);
 
             return new WalletDto
             {
@@ -45,56 +32,61 @@ namespace BeautyBookBackend.Services
                 UserId = wallet.UserId,
                 Balance = wallet.Balance,
                 UpdatedAt = wallet.UpdatedAt,
-                Transactions = transactions
+                Transactions = transactions.Select(t => new TransactionDto
+                {
+                    TransactionId = t.TransactionId,
+                    WalletId = t.WalletId,
+                    Amount = t.Amount,
+                    TransactionType = t.TransactionType,
+                    Description = t.Description,
+                    CreatedAt = t.CreatedAt
+                }).ToList()
             };
         }
 
         public async Task<bool> DepositAsync(Guid userId, decimal amount, string? description)
         {
-            var wallet = await _context.Wallets.FirstOrDefaultAsync(w => w.UserId == userId);
+            var wallet = await _walletRepository.GetByUserIdAsync(userId);
             if (wallet == null) return false;
 
             wallet.Balance += amount;
             wallet.UpdatedAt = DateTime.UtcNow;
 
-            var transaction = new WalletTransaction
+            await _walletRepository.AddTransactionAsync(new WalletTransaction
             {
                 TransactionId = Guid.NewGuid(),
                 WalletId = wallet.WalletId,
                 Amount = amount,
                 TransactionType = TransactionType.Deposit,
-                Description = string.IsNullOrEmpty(description) ? "Nạp tiền vào ví hệ thống" : description,
+                Description = string.IsNullOrEmpty(description) ? "Nap tien vao vi he thong" : description,
                 CreatedAt = DateTime.UtcNow
-            };
+            });
 
-            await _context.WalletTransactions.AddAsync(transaction);
-            return await _context.SaveChangesAsync() > 0;
+            return await _unitOfWork.SaveChangesAsync() > 0;
         }
 
         public async Task<bool> WithdrawAsync(Guid userId, decimal amount)
         {
-            var wallet = await _context.Wallets.FirstOrDefaultAsync(w => w.UserId == userId);
+            var wallet = await _walletRepository.GetByUserIdAsync(userId);
             if (wallet == null || wallet.Balance < amount)
             {
-                // Ví không tồn tại hoặc không đủ số dư để rút
                 return false;
             }
 
             wallet.Balance -= amount;
             wallet.UpdatedAt = DateTime.UtcNow;
 
-            var transaction = new WalletTransaction
+            await _walletRepository.AddTransactionAsync(new WalletTransaction
             {
                 TransactionId = Guid.NewGuid(),
                 WalletId = wallet.WalletId,
                 Amount = -amount,
                 TransactionType = TransactionType.Withdraw,
-                Description = $"Rút tiền về tài khoản ngân hàng liên kết",
+                Description = "Rut tien ve tai khoan ngan hang lien ket",
                 CreatedAt = DateTime.UtcNow
-            };
+            });
 
-            await _context.WalletTransactions.AddAsync(transaction);
-            return await _context.SaveChangesAsync() > 0;
+            return await _unitOfWork.SaveChangesAsync() > 0;
         }
     }
 }

@@ -21,7 +21,14 @@ namespace BeautyBookBackend.Controllers
         }
 
         private Guid CurrentUserId => Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString());
-        private UserRole CurrentUserRole => (UserRole)byte.Parse(User.FindFirst(ClaimTypes.Role)?.Value ?? "1");
+        private UserRole CurrentUserRole
+        {
+            get
+            {
+                var roleClaim = User.FindFirst(ClaimTypes.Role)?.Value;
+                return Enum.TryParse<UserRole>(roleClaim, true, out var role) ? role : UserRole.Customer;
+            }
+        }
 
         [HttpGet("mua/{muaId}")]
         public async Task<IActionResult> GetReviewsByMua(Guid muaId)

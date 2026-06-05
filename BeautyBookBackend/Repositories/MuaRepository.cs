@@ -1,0 +1,166 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using BeautyBookBackend.Data;
+using BeautyBookBackend.DTOs;
+using BeautyBookBackend.Models;
+using Microsoft.EntityFrameworkCore;
+using MakeupService = BeautyBookBackend.Models.Service;
+
+namespace BeautyBookBackend.Repositories
+{
+    public class MuaRepository : IMuaRepository
+    {
+        private readonly ApplicationDbContext _context;
+
+        public MuaRepository(ApplicationDbContext context)
+        {
+            _context = context;
+        }
+
+        public Task AddProfileAsync(MakeupArtistProfile profile)
+        {
+            return _context.MakeupArtistProfiles.AddAsync(profile).AsTask();
+        }
+
+        public Task<bool> ProfileExistsAsync(Guid muaId)
+        {
+            return _context.MakeupArtistProfiles.AnyAsync(m => m.MUAId == muaId);
+        }
+
+        public async Task<List<MakeupArtistProfile>> GetProfilesAsync(MuaFilterDto filter)
+        {
+            var query = _context.MakeupArtistProfiles
+                .Include(m => m.User)
+                .AsQueryable();
+
+            if (filter.StyleId.HasValue)
+            {
+                var muaIdsWithStyle = await _context.MUAStyles
+                    .Where(ms => ms.StyleId == filter.StyleId.Value)
+                    .Select(ms => ms.MUAId)
+                    .ToListAsync();
+                query = query.Where(m => muaIdsWithStyle.Contains(m.MUAId));
+            }
+
+            if (filter.PriceMin.HasValue)
+            {
+                query = query.Where(m => _context.Services.Any(s => s.MUAId == m.MUAId && s.Price >= filter.PriceMin.Value));
+            }
+
+            if (filter.PriceMax.HasValue)
+            {
+                query = query.Where(m => _context.Services.Any(s => s.MUAId == m.MUAId && s.Price <= filter.PriceMax.Value));
+            }
+
+            if (!string.IsNullOrEmpty(filter.SearchKeyword))
+            {
+                var keyword = filter.SearchKeyword.ToLower();
+                query = query.Where(m => (m.User != null && m.User.FullName != null && m.User.FullName.ToLower().Contains(keyword)) ||
+                                         (m.Bio != null && m.Bio.ToLower().Contains(keyword)));
+            }
+
+            if (!string.IsNullOrEmpty(filter.SortBy))
+            {
+                query = filter.SortBy.ToLower() switch
+                {
+                    "rating" => query.OrderByDescending(m => m.RatingAverage),
+                    "bookings" => query.OrderByDescending(m => m.TotalBookings),
+                    "price_asc" => query.OrderBy(m => _context.Services.Where(s => s.MUAId == m.MUAId).Min(s => (decimal?)s.Price) ?? 0),
+                    "price_desc" => query.OrderByDescending(m => _context.Services.Where(s => s.MUAId == m.MUAId).Max(s => (decimal?)s.Price) ?? 0),
+                    _ => query
+                };
+            }
+
+            return await query.ToListAsync();
+        }
+
+        public Task<MakeupArtistProfile?> GetProfileByIdAsync(Guid muaId)
+        {
+            return _context.MakeupArtistProfiles.FirstOrDefaultAsync(m => m.MUAId == muaId);
+        }
+
+        public Task<MakeupArtistProfile?> GetProfileWithUserByIdAsync(Guid muaId)
+        {
+            return _context.MakeupArtistProfiles
+                .Include(m => m.User)
+                .FirstOrDefaultAsync(m => m.MUAId == muaId);
+        }
+
+        public Task<List<string>> GetStyleNamesByMuaIdAsync(Guid muaId)
+        {
+            return _context.MUAStyles
+                .Where(ms => ms.MUAId == muaId)
+                .Include(ms => ms.MakeupStyle)
+                .Select(ms => ms.MakeupStyle != null ? ms.MakeupStyle.Name : "")
+                .Where(name => !string.IsNullOrEmpty(name))
+                .ToListAsync()!;
+        }
+
+        public Task<List<MakeupService>> GetServicesByMuaIdAsync(Guid muaId)
+        {
+            return _context.Services.Where(s => s.MUAId == muaId).ToListAsync();
+        }
+
+        public Task<MakeupService?> GetServiceByIdForMuaAsync(Guid serviceId, Guid muaId)
+        {
+            return _context.Services.FirstOrDefaultAsync(s => s.ServiceId == serviceId && s.MUAId == muaId);
+        }
+
+        public Task AddServiceAsync(MakeupService service)
+        {
+            return _context.Services.AddAsync(service).AsTask();
+        }
+
+        public void RemoveService(MakeupService service)
+        {
+            _context.Services.Remove(service);
+        }
+
+        public Task<List<Portfolio>> GetPortfolioByMuaIdAsync(Guid muaId)
+        {
+            return _context.Portfolios.Where(p => p.MUAId == muaId).ToListAsync();
+        }
+
+        public Task<Portfolio?> GetPortfolioByIdForMuaAsync(Guid portfolioId, Guid muaId)
+        {
+            return _context.Portfolios.FirstOrDefaultAsync(p => p.PortfolioId == portfolioId && p.MUAId == muaId);
+        }
+
+        public Task AddPortfolioAsync(Portfolio portfolio)
+        {
+            return _context.Portfolios.AddAsync(portfolio).AsTask();
+        }
+
+        public void RemovePortfolio(Portfolio portfolio)
+        {
+            _context.Portfolios.Remove(portfolio);
+        }
+
+        public Task<List<MUAStyle>> GetStyleLinksByMuaIdAsync(Guid muaId)
+        {
+            return _context.MUAStyles.Where(ms => ms.MUAId == muaId).ToListAsync();
+        }
+
+        public void RemoveStyleLinks(IEnumerable<MUAStyle> styleLinks)
+        {
+            _context.MUAStyles.RemoveRange(styleLinks);
+        }
+
+        public Task<bool> StyleExistsAsync(int styleId)
+        {
+            return _context.MakeupStyles.AnyAsync(s => s.StyleId == styleId);
+        }
+
+        public Task AddMuaStyleAsync(MUAStyle style)
+        {
+            return _context.MUAStyles.AddAsync(style).AsTask();
+        }
+
+        public Task<List<MakeupStyle>> GetAllStylesAsync()
+        {
+            return _context.MakeupStyles.ToListAsync();
+        }
+    }
+}

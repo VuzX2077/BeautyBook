@@ -4,31 +4,40 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
-using Microsoft.IdentityModel.Tokens;
-using BeautyBookBackend.Data;
 using BeautyBookBackend.DTOs;
 using BeautyBookBackend.Models;
 using BeautyBookBackend.Models.Enums;
+using BeautyBookBackend.Repositories;
+using Microsoft.Extensions.Configuration;
+using Microsoft.IdentityModel.Tokens;
 
 namespace BeautyBookBackend.Services
 {
     public class AuthService : IAuthService
     {
-        private readonly ApplicationDbContext _context;
+        private readonly IUserRepository _userRepository;
+        private readonly IWalletRepository _walletRepository;
+        private readonly IMuaRepository _muaRepository;
+        private readonly IUnitOfWork _unitOfWork;
         private readonly IConfiguration _configuration;
 
-        public AuthService(ApplicationDbContext context, IConfiguration configuration)
+        public AuthService(
+            IUserRepository userRepository,
+            IWalletRepository walletRepository,
+            IMuaRepository muaRepository,
+            IUnitOfWork unitOfWork,
+            IConfiguration configuration)
         {
-            _context = context;
+            _userRepository = userRepository;
+            _walletRepository = walletRepository;
+            _muaRepository = muaRepository;
+            _unitOfWork = unitOfWork;
             _configuration = configuration;
         }
 
         public async Task<UserDto?> RegisterAsync(RegisterDto registerDto)
         {
-            // Kiểm tra email trùng
-            if (await _context.Users.AnyAsync(u => u.Email == registerDto.Email))
+            if (await _userRepository.EmailExistsAsync(registerDto.Email))
             {
                 return null;
             }
@@ -45,35 +54,47 @@ namespace BeautyBookBackend.Services
                 IsActive = true
             };
 
-            await _context.Users.AddAsync(user);
+            await _userRepository.AddAsync(user);
 
-            // Tự động tạo ví ảo cho người dùng mới
-            var wallet = new Wallet
+            await _walletRepository.AddAsync(new Wallet
             {
                 WalletId = Guid.NewGuid(),
                 UserId = user.UserId,
                 Balance = 0,
                 UpdatedAt = DateTime.UtcNow
-            };
-            await _context.Wallets.AddAsync(wallet);
+            });
 
-            // Nếu đăng ký làm MUA, tự động tạo hồ sơ Makeup Artist trống
             if (registerDto.Role == UserRole.MUA)
             {
-                var muaProfile = new MakeupArtistProfile
+                await _muaRepository.AddProfileAsync(new MakeupArtistProfile
                 {
                     MUAId = user.UserId,
-                    Bio = "Hãy viết vài dòng giới thiệu bản thân...",
+                    Bio = "Hay viet vai dong gioi thieu ban than...",
                     ExperienceYears = 0,
-                    RatingAverage = 5.0m, // Mặc định 5 sao cho người mới
+                    RatingAverage = 5.0m,
                     TotalBookings = 0,
                     PortfolioCoverUrl = null
-                };
-                await _context.MakeupArtistProfiles.AddAsync(muaProfile);
+                });
             }
 
-            await _context.SaveChangesAsync();
+            await _unitOfWork.SaveChangesAsync();
 
+            return ToUserDto(user);
+        }
+
+        public async Task<TokenDto?> LoginAsync(LoginDto loginDto)
+        {
+            var user = await _userRepository.GetByEmailAsync(loginDto.Email);
+            if (user == null || user.PasswordHash != HashPassword(loginDto.Password))
+            {
+                return null;
+            }
+
+            return GenerateJwtToken(user);
+        }
+
+        private static UserDto ToUserDto(User user)
+        {
             return new UserDto
             {
                 UserId = user.UserId,
@@ -85,17 +106,6 @@ namespace BeautyBookBackend.Services
                 CreatedAt = user.CreatedAt,
                 IsActive = user.IsActive
             };
-        }
-
-        public async Task<TokenDto?> LoginAsync(LoginDto loginDto)
-        {
-            var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == loginDto.Email);
-            if (user == null || user.PasswordHash != HashPassword(loginDto.Password))
-            {
-                return null;
-            }
-
-            return GenerateJwtToken(user);
         }
 
         private string HashPassword(string password)

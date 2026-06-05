@@ -6,11 +6,13 @@ using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using Microsoft.OpenApi.Models;
 using BeautyBookBackend.Services;
+using BeautyBookBackend.Repositories;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Build connection string from configuration and environment variables
-var baseConn = builder.Configuration.GetConnectionString("DefaultConnection");
+var baseConn = builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? throw new InvalidOperationException("DefaultConnection is not configured.");
 var sqlUser = Environment.GetEnvironmentVariable("DB_USER");
 var sqlPassword = Environment.GetEnvironmentVariable("DB_PASSWORD");
 
@@ -104,9 +106,18 @@ builder.Services.AddAuthentication(options =>
 
 // Register Application Services (Dependency Injection)
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IMuaService, MuaService>();
 builder.Services.AddScoped<IBookingService, BookingService>();
 builder.Services.AddScoped<IWalletService, WalletService>();
+
+// Register Data Access Layer (Repositories + Unit of Work)
+builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
+builder.Services.AddScoped<IUserRepository, UserRepository>();
+builder.Services.AddScoped<IMuaRepository, MuaRepository>();
+builder.Services.AddScoped<IBookingRepository, BookingRepository>();
+builder.Services.AddScoped<IWalletRepository, WalletRepository>();
+builder.Services.AddScoped<IReviewRepository, ReviewRepository>();
 
 var app = builder.Build();
 

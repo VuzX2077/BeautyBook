@@ -36,6 +36,12 @@ namespace BeautyBookBackend.DTOs
         public string Password { get; set; } = null!;
     }
 
+    public class GoogleLoginDto
+    {
+        [Required]
+        public string IdToken { get; set; } = null!;
+    }
+
     public class TokenDto
     {
         public string Token { get; set; } = null!;

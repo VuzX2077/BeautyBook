@@ -49,5 +49,22 @@ namespace BeautyBookBackend.Controllers
 
             return Ok(token);
         }
+
+        [HttpPost("google")]
+        public async Task<IActionResult> GoogleLogin([FromBody] GoogleLoginDto googleLoginDto)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            var token = await _authService.GoogleLoginAsync(googleLoginDto);
+            if (token == null)
+            {
+                return Unauthorized(new { Message = "Google token khong hop le hoac Google OAuth chua duoc cau hinh." });
+            }
+
+            return Ok(token);
+        }
     }
 }

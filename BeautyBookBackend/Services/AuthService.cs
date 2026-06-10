@@ -8,6 +8,7 @@ using BeautyBookBackend.DTOs;
 using BeautyBookBackend.Models;
 using BeautyBookBackend.Models.Enums;
 using BeautyBookBackend.Repositories;
+using Google.Apis.Auth;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
 
@@ -93,6 +94,86 @@ namespace BeautyBookBackend.Services
             return GenerateJwtToken(user);
         }
 
+        public async Task<TokenDto?> GoogleLoginAsync(GoogleLoginDto googleLoginDto)
+        {
+            var clientIds = GetGoogleClientIds();
+            if (clientIds.Count == 0)
+            {
+                return null;
+            }
+
+            GoogleJsonWebSignature.Payload payload;
+            try
+            {
+                payload = await GoogleJsonWebSignature.ValidateAsync(
+                    googleLoginDto.IdToken,
+                    new GoogleJsonWebSignature.ValidationSettings
+                    {
+                        Audience = clientIds
+                    });
+            }
+            catch (InvalidJwtException)
+            {
+                return null;
+            }
+
+            if (string.IsNullOrWhiteSpace(payload.Email) || payload.EmailVerified != true)
+            {
+                return null;
+            }
+
+            var user = await _userRepository.GetByEmailAsync(payload.Email);
+            if (user == null)
+            {
+                user = new User
+                {
+                    UserId = Guid.NewGuid(),
+                    FullName = payload.Name ?? payload.Email,
+                    Email = payload.Email,
+                    PasswordHash = string.Empty,
+                    AvatarUrl = payload.Picture,
+                    PhoneNumber = null,
+                    Role = UserRole.Customer,
+                    CreatedAt = DateTime.UtcNow,
+                    IsActive = true
+                };
+
+                await _userRepository.AddAsync(user);
+                await _walletRepository.AddAsync(new Wallet
+                {
+                    WalletId = Guid.NewGuid(),
+                    UserId = user.UserId,
+                    Balance = 0,
+                    UpdatedAt = DateTime.UtcNow
+                });
+
+                await _unitOfWork.SaveChangesAsync();
+            }
+            else
+            {
+                var changed = false;
+
+                if (string.IsNullOrWhiteSpace(user.FullName) && !string.IsNullOrWhiteSpace(payload.Name))
+                {
+                    user.FullName = payload.Name;
+                    changed = true;
+                }
+
+                if (string.IsNullOrWhiteSpace(user.AvatarUrl) && !string.IsNullOrWhiteSpace(payload.Picture))
+                {
+                    user.AvatarUrl = payload.Picture;
+                    changed = true;
+                }
+
+                if (changed)
+                {
+                    await _unitOfWork.SaveChangesAsync();
+                }
+            }
+
+            return GenerateJwtToken(user);
+        }
+
         private static UserDto ToUserDto(User user)
         {
             return new UserDto
@@ -113,6 +194,24 @@ namespace BeautyBookBackend.Services
             using var sha256 = SHA256.Create();
             var hashedBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(password));
             return Convert.ToBase64String(hashedBytes);
+        }
+
+        private List<string> GetGoogleClientIds()
+        {
+            var clientIds = _configuration
+                .GetSection("GoogleAuth:ClientIds")
+                .Get<List<string>>() ?? new List<string>();
+
+            var singleClientId = _configuration["GoogleAuth:ClientId"];
+            if (!string.IsNullOrWhiteSpace(singleClientId))
+            {
+                clientIds.Add(singleClientId);
+            }
+
+            return clientIds
+                .Where(clientId => !string.IsNullOrWhiteSpace(clientId))
+                .Distinct()
+                .ToList();
         }
 
         private TokenDto GenerateJwtToken(User user)

@@ -1,0 +1,8 @@
+**/bin/
+**/obj/
+.git/
+.github/
+.vs/
+.codex-remote-attachments/
+Dockerfile
+README.md

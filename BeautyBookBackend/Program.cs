@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using BeautyBookBackend.Data;
-using Microsoft.Data.SqlClient;
+using Npgsql;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
@@ -10,32 +10,42 @@ using BeautyBookBackend.Repositories;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Build connection string from configuration and environment variables
-var baseConn = builder.Configuration.GetConnectionString("DefaultConnection")
-    ?? throw new InvalidOperationException("DefaultConnection is not configured.");
-var sqlUser = Environment.GetEnvironmentVariable("DB_USER");
-var sqlPassword = Environment.GetEnvironmentVariable("DB_PASSWORD");
+// Build PostgreSQL connection string from configuration and optional environment variables.
+var baseConn = builder.Configuration.GetConnectionString("DefaultConnection");
+var dbHost = Environment.GetEnvironmentVariable("DB_HOST");
+var dbPort = Environment.GetEnvironmentVariable("DB_PORT");
+var dbName = Environment.GetEnvironmentVariable("DB_NAME");
+var dbUser = Environment.GetEnvironmentVariable("DB_USER");
+var dbPassword = Environment.GetEnvironmentVariable("DB_PASSWORD");
 
 string connectionString;
-if (!string.IsNullOrEmpty(sqlUser) && !string.IsNullOrEmpty(sqlPassword))
+if (!string.IsNullOrEmpty(dbHost)
+    || !string.IsNullOrEmpty(dbPort)
+    || !string.IsNullOrEmpty(dbName)
+    || !string.IsNullOrEmpty(dbUser)
+    || !string.IsNullOrEmpty(dbPassword))
 {
-    // Use SQL Authentication if credentials provided via environment variables
-    // Remove any existing User Id/Password from base and build new string
-    var builderConn = new SqlConnectionStringBuilder(baseConn);
-    builderConn.IntegratedSecurity = false;
-    builderConn.UserID = sqlUser;
-    builderConn.Password = sqlPassword;
+    var builderConn = string.IsNullOrWhiteSpace(baseConn)
+        ? new NpgsqlConnectionStringBuilder()
+        : new NpgsqlConnectionStringBuilder(baseConn);
+
+    if (!string.IsNullOrEmpty(dbHost)) builderConn.Host = dbHost;
+    if (!string.IsNullOrEmpty(dbPort) && int.TryParse(dbPort, out var parsedPort)) builderConn.Port = parsedPort;
+    if (!string.IsNullOrEmpty(dbName)) builderConn.Database = dbName;
+    if (!string.IsNullOrEmpty(dbUser)) builderConn.Username = dbUser;
+    if (!string.IsNullOrEmpty(dbPassword)) builderConn.Password = dbPassword;
+
     connectionString = builderConn.ToString();
 }
 else
 {
-    // Use default (Trusted Connection)
-    connectionString = baseConn;
+    connectionString = baseConn
+        ?? throw new InvalidOperationException("DefaultConnection is not configured. Set ConnectionStrings:DefaultConnection or DB_* environment variables.");
 }
 
-// Configure DbContext with SQL Server
+// Configure DbContext with PostgreSQL
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseSqlServer(connectionString));
+    options.UseNpgsql(connectionString));
 
 // Add services to the container.
 builder.Services.AddControllers();
@@ -81,9 +91,12 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 // Configure JWT Authentication
-var jwtKey = builder.Configuration["Jwt:Key"] ?? "SuperSecretKeyForBeautyBookProject2026!KeepItSecret";
-var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "BeautyBookBackend";
-var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "BeautyBookClients";
+var jwtKey = builder.Configuration["Jwt:Key"]
+    ?? throw new InvalidOperationException("Jwt:Key is not configured.");
+var jwtIssuer = builder.Configuration["Jwt:Issuer"]
+    ?? throw new InvalidOperationException("Jwt:Issuer is not configured.");
+var jwtAudience = builder.Configuration["Jwt:Audience"]
+    ?? throw new InvalidOperationException("Jwt:Audience is not configured.");
 
 builder.Services.AddAuthentication(options =>
 {
@@ -121,6 +134,13 @@ builder.Services.AddScoped<IReviewRepository, ReviewRepository>();
 
 var app = builder.Build();
 
+if (builder.Configuration.GetValue<bool>("ApplyMigrations"))
+{
+    using var scope = app.Services.CreateScope();
+    var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    dbContext.Database.Migrate();
+}
+
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
@@ -135,6 +155,13 @@ app.UseCors("AllowAll"); // Enable CORS policy
 app.UseAuthentication(); // Must be called before UseAuthorization
 app.UseAuthorization();
 
+app.MapGet("/health", () => Results.Ok(new { Status = "Healthy" }));
 app.MapControllers();
+
+var port = Environment.GetEnvironmentVariable("PORT");
+if (!string.IsNullOrWhiteSpace(port))
+{
+    app.Urls.Add($"http://0.0.0.0:{port}");
+}
 
 app.Run();

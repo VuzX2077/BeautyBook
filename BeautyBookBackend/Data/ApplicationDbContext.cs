@@ -35,7 +35,6 @@ namespace BeautyBookBackend.Data
                 b.Property(u => u.FullName).HasMaxLength(100);
                 b.Property(u => u.Email).HasMaxLength(255);
                 b.Property(u => u.PhoneNumber).HasMaxLength(20);
-                b.Property(u => u.Role).HasColumnType("tinyint");
                 b.Property(u => u.IsActive).HasDefaultValue(true);
             });
 
@@ -83,7 +82,6 @@ namespace BeautyBookBackend.Data
                 b.Property(x => x.Address).HasMaxLength(255);
                 b.Property(x => x.Note).HasMaxLength(500);
                 b.Property(x => x.TotalPrice).HasPrecision(18, 2);
-                b.Property(x => x.Status).HasColumnType("tinyint");
 
                 // Explicitly configure foreign keys and disable cascading deletes that could cause multiple cascade paths
                 b.HasOne(x => x.Customer)
@@ -129,7 +127,6 @@ namespace BeautyBookBackend.Data
             {
                 b.HasKey(t => t.TransactionId);
                 b.Property(t => t.Amount).HasPrecision(18, 2);
-                b.Property(t => t.TransactionType).HasColumnType("tinyint");
             });
 
             modelBuilder.Entity<Product>(b =>

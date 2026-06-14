@@ -3,8 +3,8 @@ using System;
 using BeautyBookBackend.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
 
@@ -18,54 +18,51 @@ namespace BeautyBookBackend.Migrations
 #pragma warning disable 612, 618
             modelBuilder
                 .HasAnnotation("ProductVersion", "8.0.0")
-                .HasAnnotation("Relational:MaxIdentifierLength", 128);
+                .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
-            SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
+            NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
             modelBuilder.Entity("BeautyBookBackend.Models.Booking", b =>
                 {
                     b.Property<Guid>("BookingId")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<string>("Address")
                         .HasMaxLength(255)
-                        .HasColumnType("nvarchar(255)");
+                        .HasColumnType("character varying(255)");
 
                     b.Property<DateTime>("BookingDate")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid>("CustomerId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<Guid>("MUAId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid?>("MakeupArtistProfileMUAId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<string>("Note")
                         .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
+                        .HasColumnType("character varying(500)");
 
                     b.Property<Guid>("ServiceId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<byte>("Status")
-                        .HasColumnType("tinyint");
+                        .HasColumnType("smallint");
 
                     b.Property<decimal>("TotalPrice")
                         .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
+                        .HasColumnType("numeric(18,2)");
 
                     b.HasKey("BookingId");
 
                     b.HasIndex("CustomerId");
 
-                    b.HasIndex("MakeupArtistProfileMUAId");
+                    b.HasIndex("MUAId");
 
                     b.HasIndex("ServiceId");
 
@@ -76,19 +73,19 @@ namespace BeautyBookBackend.Migrations
                 {
                     b.Property<Guid>("ChatRoomId")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid>("CustomerId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<Guid>("MUAId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<Guid?>("MakeupArtistProfileMUAId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.HasKey("ChatRoomId");
 
@@ -102,16 +99,16 @@ namespace BeautyBookBackend.Migrations
             modelBuilder.Entity("BeautyBookBackend.Models.MUAStyle", b =>
                 {
                     b.Property<Guid>("MUAId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<int>("StyleId")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<Guid?>("MakeupArtistProfileMUAId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<int?>("MakeupStyleStyleId")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.HasKey("MUAId", "StyleId");
 
@@ -125,23 +122,23 @@ namespace BeautyBookBackend.Migrations
             modelBuilder.Entity("BeautyBookBackend.Models.MakeupArtistProfile", b =>
                 {
                     b.Property<Guid>("MUAId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<string>("Bio")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("text");
 
                     b.Property<int>("ExperienceYears")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<string>("PortfolioCoverUrl")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("text");
 
                     b.Property<decimal>("RatingAverage")
                         .HasPrecision(3, 2)
-                        .HasColumnType("decimal(3,2)");
+                        .HasColumnType("numeric(3,2)");
 
                     b.Property<int>("TotalBookings")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.HasKey("MUAId");
 
@@ -152,17 +149,17 @@ namespace BeautyBookBackend.Migrations
                 {
                     b.Property<int>("StyleId")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("StyleId"));
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("StyleId"));
 
                     b.Property<string>("Description")
                         .HasMaxLength(255)
-                        .HasColumnType("nvarchar(255)");
+                        .HasColumnType("character varying(255)");
 
                     b.Property<string>("Name")
                         .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasColumnType("character varying(100)");
 
                     b.HasKey("StyleId");
 
@@ -173,22 +170,22 @@ namespace BeautyBookBackend.Migrations
                 {
                     b.Property<Guid>("MessageId")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<Guid>("ChatRoomId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<string>("Content")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("text");
 
                     b.Property<bool>("IsRead")
-                        .HasColumnType("bit");
+                        .HasColumnType("boolean");
 
                     b.Property<Guid>("SenderId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<DateTime>("SentAt")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("timestamp with time zone");
 
                     b.HasKey("MessageId");
 
@@ -203,23 +200,23 @@ namespace BeautyBookBackend.Migrations
                 {
                     b.Property<Guid>("PortfolioId")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Description")
                         .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
+                        .HasColumnType("character varying(500)");
 
                     b.Property<string>("ImageUrl")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("text");
 
                     b.Property<Guid>("MUAId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<Guid?>("MakeupArtistProfileMUAId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.HasKey("PortfolioId");
 
@@ -232,21 +229,21 @@ namespace BeautyBookBackend.Migrations
                 {
                     b.Property<Guid>("ProductId")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<string>("Brand")
                         .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasColumnType("character varying(100)");
 
                     b.Property<string>("Description")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("text");
 
                     b.Property<string>("ImageUrl")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("text");
 
                     b.Property<string>("Name")
                         .HasMaxLength(255)
-                        .HasColumnType("nvarchar(255)");
+                        .HasColumnType("character varying(255)");
 
                     b.HasKey("ProductId");
 
@@ -257,23 +254,23 @@ namespace BeautyBookBackend.Migrations
                 {
                     b.Property<Guid>("ReviewId")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<string>("Comment")
                         .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)");
+                        .HasColumnType("character varying(1000)");
 
                     b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid>("ProductId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<int>("Rating")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<Guid>("UserId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.HasKey("ReviewId");
 
@@ -288,29 +285,29 @@ namespace BeautyBookBackend.Migrations
                 {
                     b.Property<Guid>("ReviewId")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<Guid>("BookingId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<string>("Comment")
                         .HasMaxLength(1000)
-                        .HasColumnType("nvarchar(1000)");
+                        .HasColumnType("character varying(1000)");
 
                     b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid>("CustomerId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<Guid>("MUAId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<Guid?>("MakeupArtistProfileMUAId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<int>("Rating")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.HasKey("ReviewId");
 
@@ -327,28 +324,28 @@ namespace BeautyBookBackend.Migrations
                 {
                     b.Property<Guid>("ServiceId")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<string>("Description")
                         .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
+                        .HasColumnType("character varying(500)");
 
                     b.Property<int>("DurationMinutes")
-                        .HasColumnType("int");
+                        .HasColumnType("integer");
 
                     b.Property<Guid>("MUAId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<Guid?>("MakeupArtistProfileMUAId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<decimal>("Price")
                         .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
+                        .HasColumnType("numeric(18,2)");
 
                     b.Property<string>("ServiceName")
                         .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasColumnType("character varying(100)");
 
                     b.HasKey("ServiceId");
 
@@ -361,43 +358,38 @@ namespace BeautyBookBackend.Migrations
                 {
                     b.Property<Guid>("UserId")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<string>("AvatarUrl")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("text");
 
                     b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Email")
                         .HasMaxLength(255)
-                        .HasColumnType("nvarchar(255)");
+                        .HasColumnType("character varying(255)");
 
                     b.Property<string>("FullName")
                         .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
+                        .HasColumnType("character varying(100)");
 
                     b.Property<bool>("IsActive")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("bit")
+                        .HasColumnType("boolean")
                         .HasDefaultValue(true);
 
-                    b.Property<Guid?>("MakeupArtistProfileMUAId")
-                        .HasColumnType("uniqueidentifier");
-
                     b.Property<string>("PasswordHash")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("text");
 
                     b.Property<string>("PhoneNumber")
                         .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
+                        .HasColumnType("character varying(20)");
 
                     b.Property<byte>("Role")
-                        .HasColumnType("tinyint");
+                        .HasColumnType("smallint");
 
                     b.HasKey("UserId");
-
-                    b.HasIndex("MakeupArtistProfileMUAId");
 
                     b.ToTable("Users");
                 });
@@ -406,17 +398,17 @@ namespace BeautyBookBackend.Migrations
                 {
                     b.Property<Guid>("WalletId")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<decimal>("Balance")
                         .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
+                        .HasColumnType("numeric(18,2)");
 
                     b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid>("UserId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.HasKey("WalletId");
 
@@ -429,23 +421,23 @@ namespace BeautyBookBackend.Migrations
                 {
                     b.Property<Guid>("TransactionId")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.Property<decimal>("Amount")
                         .HasPrecision(18, 2)
-                        .HasColumnType("decimal(18,2)");
+                        .HasColumnType("numeric(18,2)");
 
                     b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime2");
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Description")
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("text");
 
                     b.Property<byte>("TransactionType")
-                        .HasColumnType("tinyint");
+                        .HasColumnType("smallint");
 
                     b.Property<Guid>("WalletId")
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("uuid");
 
                     b.HasKey("TransactionId");
 
@@ -459,12 +451,14 @@ namespace BeautyBookBackend.Migrations
                     b.HasOne("BeautyBookBackend.Models.User", "Customer")
                         .WithMany()
                         .HasForeignKey("CustomerId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.HasOne("BeautyBookBackend.Models.MakeupArtistProfile", "MakeupArtistProfile")
                         .WithMany()
-                        .HasForeignKey("MakeupArtistProfileMUAId");
+                        .HasForeignKey("MUAId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
 
                     b.HasOne("BeautyBookBackend.Models.Service", "Service")
                         .WithMany()
@@ -514,9 +508,9 @@ namespace BeautyBookBackend.Migrations
             modelBuilder.Entity("BeautyBookBackend.Models.MakeupArtistProfile", b =>
                 {
                     b.HasOne("BeautyBookBackend.Models.User", "User")
-                        .WithOne()
+                        .WithOne("MakeupArtistProfile")
                         .HasForeignKey("BeautyBookBackend.Models.MakeupArtistProfile", "MUAId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("User");
@@ -603,15 +597,6 @@ namespace BeautyBookBackend.Migrations
                     b.Navigation("MakeupArtistProfile");
                 });
 
-            modelBuilder.Entity("BeautyBookBackend.Models.User", b =>
-                {
-                    b.HasOne("BeautyBookBackend.Models.MakeupArtistProfile", "MakeupArtistProfile")
-                        .WithMany()
-                        .HasForeignKey("MakeupArtistProfileMUAId");
-
-                    b.Navigation("MakeupArtistProfile");
-                });
-
             modelBuilder.Entity("BeautyBookBackend.Models.Wallet", b =>
                 {
                     b.HasOne("BeautyBookBackend.Models.User", "User")
@@ -632,6 +617,11 @@ namespace BeautyBookBackend.Migrations
                         .IsRequired();
 
                     b.Navigation("Wallet");
+                });
+
+            modelBuilder.Entity("BeautyBookBackend.Models.User", b =>
+                {
+                    b.Navigation("MakeupArtistProfile");
                 });
 #pragma warning restore 612, 618
         }

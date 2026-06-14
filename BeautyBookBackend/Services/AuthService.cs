@@ -216,9 +216,12 @@ namespace BeautyBookBackend.Services
 
         private TokenDto GenerateJwtToken(User user)
         {
-            var jwtKey = _configuration["Jwt:Key"] ?? "SuperSecretKeyForBeautyBookProject2026!KeepItSecret";
-            var jwtIssuer = _configuration["Jwt:Issuer"] ?? "BeautyBookBackend";
-            var jwtAudience = _configuration["Jwt:Audience"] ?? "BeautyBookClients";
+            var jwtKey = _configuration["Jwt:Key"]
+                ?? throw new InvalidOperationException("Jwt:Key is not configured.");
+            var jwtIssuer = _configuration["Jwt:Issuer"]
+                ?? throw new InvalidOperationException("Jwt:Issuer is not configured.");
+            var jwtAudience = _configuration["Jwt:Audience"]
+                ?? throw new InvalidOperationException("Jwt:Audience is not configured.");
             var jwtDuration = double.Parse(_configuration["Jwt:DurationInMinutes"] ?? "1440");
 
             var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));

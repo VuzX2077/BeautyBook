@@ -1,4 +1,7 @@
 using System.Threading.Tasks;
+using System;
+using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using BeautyBookBackend.DTOs;
 using BeautyBookBackend.Services;
@@ -62,6 +65,25 @@ namespace BeautyBookBackend.Controllers
             if (token == null)
             {
                 return Unauthorized(new { Message = "Google token khong hop le hoac Google OAuth chua duoc cau hinh." });
+            }
+
+            return Ok(token);
+        }
+
+        [Authorize]
+        [HttpPost("become-mua")]
+        public async Task<IActionResult> BecomeMua()
+        {
+            var userIdValue = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(userIdValue, out var userId))
+            {
+                return Unauthorized(new { Message = "Token khong hop le." });
+            }
+
+            var token = await _authService.BecomeMuaAsync(userId);
+            if (token == null)
+            {
+                return NotFound(new { Message = "Khong tim thay nguoi dung." });
             }
 
             return Ok(token);

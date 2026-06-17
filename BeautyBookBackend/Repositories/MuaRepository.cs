@@ -46,12 +46,18 @@ namespace BeautyBookBackend.Repositories
 
             if (filter.PriceMin.HasValue)
             {
-                query = query.Where(m => _context.Services.Any(s => s.MUAId == m.MUAId && s.Price >= filter.PriceMin.Value));
+                query = query.Where(m => _context.Services.Any(s =>
+                    s.MUAId == m.MUAId
+                    && s.Price >= filter.PriceMin.Value
+                    && (!filter.PriceMax.HasValue || s.Price <= filter.PriceMax.Value)));
             }
 
             if (filter.PriceMax.HasValue)
             {
-                query = query.Where(m => _context.Services.Any(s => s.MUAId == m.MUAId && s.Price <= filter.PriceMax.Value));
+                query = query.Where(m => _context.Services.Any(s =>
+                    s.MUAId == m.MUAId
+                    && s.Price <= filter.PriceMax.Value
+                    && (!filter.PriceMin.HasValue || s.Price >= filter.PriceMin.Value)));
             }
 
             if (!string.IsNullOrEmpty(filter.SearchKeyword))
@@ -69,8 +75,12 @@ namespace BeautyBookBackend.Repositories
                     "bookings" => query.OrderByDescending(m => m.TotalBookings),
                     "price_asc" => query.OrderBy(m => _context.Services.Where(s => s.MUAId == m.MUAId).Min(s => (decimal?)s.Price) ?? 0),
                     "price_desc" => query.OrderByDescending(m => _context.Services.Where(s => s.MUAId == m.MUAId).Max(s => (decimal?)s.Price) ?? 0),
-                    _ => query
+                    _ => query.OrderByDescending(m => m.RatingAverage).ThenBy(m => m.User!.FullName)
                 };
+            }
+            else
+            {
+                query = query.OrderByDescending(m => m.RatingAverage).ThenBy(m => m.User!.FullName);
             }
 
             return await query.ToListAsync();
@@ -100,7 +110,19 @@ namespace BeautyBookBackend.Repositories
 
         public Task<List<MakeupService>> GetServicesByMuaIdAsync(Guid muaId)
         {
-            return _context.Services.Where(s => s.MUAId == muaId).ToListAsync();
+            return _context.Services
+                .Where(s => s.MUAId == muaId)
+                .OrderBy(s => s.Price)
+                .ThenBy(s => s.ServiceName)
+                .ToListAsync();
+        }
+
+        public Task<decimal?> GetMinPriceByMuaIdAsync(Guid muaId)
+        {
+            return _context.Services
+                .Where(s => s.MUAId == muaId)
+                .Select(s => (decimal?)s.Price)
+                .MinAsync();
         }
 
         public Task<MakeupService?> GetServiceByIdForMuaAsync(Guid serviceId, Guid muaId)
@@ -120,7 +142,10 @@ namespace BeautyBookBackend.Repositories
 
         public Task<List<Portfolio>> GetPortfolioByMuaIdAsync(Guid muaId)
         {
-            return _context.Portfolios.Where(p => p.MUAId == muaId).ToListAsync();
+            return _context.Portfolios
+                .Where(p => p.MUAId == muaId)
+                .OrderByDescending(p => p.CreatedAt)
+                .ToListAsync();
         }
 
         public Task<Portfolio?> GetPortfolioByIdForMuaAsync(Guid portfolioId, Guid muaId)

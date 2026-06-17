@@ -28,19 +28,21 @@ namespace BeautyBookBackend.Services
             foreach (var profile in profiles)
             {
                 var styles = await _muaRepository.GetStyleNamesByMuaIdAsync(profile.MUAId);
-                result.Add(ToMuaProfileDto(profile, styles));
+                result.Add(await ToMuaProfileDtoWithPriceAsync(profile, styles));
             }
 
             return result;
         }
 
-        public async Task<MuaProfileDto?> GetMuaByIdAsync(Guid muaId)
+        public async Task<MuaDetailDto?> GetMuaByIdAsync(Guid muaId)
         {
             var profile = await _muaRepository.GetProfileWithUserByIdAsync(muaId);
             if (profile == null) return null;
 
             var styles = await _muaRepository.GetStyleNamesByMuaIdAsync(muaId);
-            return ToMuaProfileDto(profile, styles);
+            var services = await _muaRepository.GetServicesByMuaIdAsync(muaId);
+            var portfolio = await _muaRepository.GetPortfolioByMuaIdAsync(muaId);
+            return ToMuaDetailDto(profile, styles, services, portfolio);
         }
 
         public async Task<bool> UpdateMuaProfileAsync(Guid muaId, MuaUpdateDto updateDto)
@@ -103,9 +105,10 @@ namespace BeautyBookBackend.Services
             return await _unitOfWork.SaveChangesAsync() > 0;
         }
 
-        public Task<List<Portfolio>> GetMuaPortfolioAsync(Guid muaId)
+        public async Task<List<PortfolioDto>> GetMuaPortfolioAsync(Guid muaId)
         {
-            return _muaRepository.GetPortfolioByMuaIdAsync(muaId);
+            var portfolio = await _muaRepository.GetPortfolioByMuaIdAsync(muaId);
+            return portfolio.Select(ToPortfolioDto).ToList();
         }
 
         public async Task<bool> AddPortfolioImageAsync(Guid muaId, string imageUrl, string description)
@@ -155,9 +158,10 @@ namespace BeautyBookBackend.Services
             return await _unitOfWork.SaveChangesAsync() > 0;
         }
 
-        public Task<List<MakeupStyle>> GetAllStylesAsync()
+        public async Task<List<MakeupStyleDto>> GetAllStylesAsync()
         {
-            return _muaRepository.GetAllStylesAsync();
+            var styles = await _muaRepository.GetAllStylesAsync();
+            return styles.Select(ToMakeupStyleDto).ToList();
         }
 
         private static MuaProfileDto ToMuaProfileDto(MakeupArtistProfile profile, List<string> styles)
@@ -178,6 +182,40 @@ namespace BeautyBookBackend.Services
             };
         }
 
+        private async Task<MuaProfileDto> ToMuaProfileDtoWithPriceAsync(MakeupArtistProfile profile, List<string> styles)
+        {
+            var dto = ToMuaProfileDto(profile, styles);
+            dto.MinPrice = await _muaRepository.GetMinPriceByMuaIdAsync(profile.MUAId);
+            return dto;
+        }
+
+        private static MuaDetailDto ToMuaDetailDto(
+            MakeupArtistProfile profile,
+            List<string> styles,
+            List<MakeupService> services,
+            List<Portfolio> portfolio)
+        {
+            var dto = new MuaDetailDto
+            {
+                MUAId = profile.MUAId,
+                Bio = profile.Bio,
+                ExperienceYears = profile.ExperienceYears,
+                RatingAverage = profile.RatingAverage,
+                TotalBookings = profile.TotalBookings,
+                PortfolioCoverUrl = profile.PortfolioCoverUrl,
+                FullName = profile.User?.FullName,
+                Email = profile.User?.Email,
+                AvatarUrl = profile.User?.AvatarUrl,
+                PhoneNumber = profile.User?.PhoneNumber,
+                Styles = styles,
+                Services = services.Select(ToServiceDto).ToList(),
+                Portfolio = portfolio.Select(ToPortfolioDto).ToList()
+            };
+
+            dto.MinPrice = dto.Services.Count == 0 ? null : dto.Services.Min(s => s.Price);
+            return dto;
+        }
+
         private static ServiceDto ToServiceDto(MakeupService service)
         {
             return new ServiceDto
@@ -188,6 +226,28 @@ namespace BeautyBookBackend.Services
                 Description = service.Description,
                 Price = service.Price,
                 DurationMinutes = service.DurationMinutes
+            };
+        }
+
+        private static PortfolioDto ToPortfolioDto(Portfolio portfolio)
+        {
+            return new PortfolioDto
+            {
+                PortfolioId = portfolio.PortfolioId,
+                MUAId = portfolio.MUAId,
+                ImageUrl = portfolio.ImageUrl,
+                Description = portfolio.Description,
+                CreatedAt = portfolio.CreatedAt
+            };
+        }
+
+        private static MakeupStyleDto ToMakeupStyleDto(MakeupStyle style)
+        {
+            return new MakeupStyleDto
+            {
+                StyleId = style.StyleId,
+                Name = style.Name,
+                Description = style.Description
             };
         }
     }

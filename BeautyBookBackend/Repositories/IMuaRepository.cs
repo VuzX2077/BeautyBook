@@ -17,6 +17,7 @@ namespace BeautyBookBackend.Repositories
         Task<MakeupArtistProfile?> GetProfileWithUserByIdAsync(Guid muaId);
         Task<List<string>> GetStyleNamesByMuaIdAsync(Guid muaId);
         Task<List<MakeupService>> GetServicesByMuaIdAsync(Guid muaId);
+        Task<decimal?> GetMinPriceByMuaIdAsync(Guid muaId);
         Task<MakeupService?> GetServiceByIdForMuaAsync(Guid serviceId, Guid muaId);
         Task AddServiceAsync(MakeupService service);
         void RemoveService(MakeupService service);

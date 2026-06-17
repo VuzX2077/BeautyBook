@@ -19,6 +19,29 @@ namespace BeautyBookBackend.DTOs
 
         // Danh sách các styles thế mạnh
         public List<string> Styles { get; set; } = new();
+        public decimal? MinPrice { get; set; }
+    }
+
+    public class MuaDetailDto : MuaProfileDto
+    {
+        public List<ServiceDto> Services { get; set; } = new();
+        public List<PortfolioDto> Portfolio { get; set; } = new();
+    }
+
+    public class PortfolioDto
+    {
+        public Guid PortfolioId { get; set; }
+        public Guid MUAId { get; set; }
+        public string? ImageUrl { get; set; }
+        public string? Description { get; set; }
+        public DateTime CreatedAt { get; set; }
+    }
+
+    public class MakeupStyleDto
+    {
+        public int StyleId { get; set; }
+        public string? Name { get; set; }
+        public string? Description { get; set; }
     }
 
     public class MuaUpdateDto

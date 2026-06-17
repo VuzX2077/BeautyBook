@@ -94,6 +94,34 @@ namespace BeautyBookBackend.Services
             return GenerateJwtToken(user);
         }
 
+        public async Task<TokenDto?> BecomeMuaAsync(Guid userId)
+        {
+            var user = await _userRepository.GetByIdAsync(userId);
+            if (user == null || !user.IsActive)
+            {
+                return null;
+            }
+
+            user.Role = UserRole.MUA;
+
+            if (!await _muaRepository.ProfileExistsAsync(user.UserId))
+            {
+                await _muaRepository.AddProfileAsync(new MakeupArtistProfile
+                {
+                    MUAId = user.UserId,
+                    Bio = "Hay viet vai dong gioi thieu ban than...",
+                    ExperienceYears = 0,
+                    RatingAverage = 5.0m,
+                    TotalBookings = 0,
+                    PortfolioCoverUrl = null
+                });
+            }
+
+            await _unitOfWork.SaveChangesAsync();
+
+            return GenerateJwtToken(user);
+        }
+
         public async Task<TokenDto?> GoogleLoginAsync(GoogleLoginDto googleLoginDto)
         {
             var clientIds = GetGoogleClientIds();

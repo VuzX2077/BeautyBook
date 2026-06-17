@@ -2,14 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using BeautyBookBackend.DTOs;
-using BeautyBookBackend.Models;
 
 namespace BeautyBookBackend.Services
 {
     public interface IMuaService
     {
         Task<List<MuaProfileDto>> GetMuasAsync(MuaFilterDto filter);
-        Task<MuaProfileDto?> GetMuaByIdAsync(Guid muaId);
+        Task<MuaDetailDto?> GetMuaByIdAsync(Guid muaId);
         Task<bool> UpdateMuaProfileAsync(Guid muaId, MuaUpdateDto updateDto);
         
         // Services
@@ -19,12 +18,12 @@ namespace BeautyBookBackend.Services
         Task<bool> DeleteMuaServiceAsync(Guid muaId, Guid serviceId);
 
         // Portfolio
-        Task<List<Portfolio>> GetMuaPortfolioAsync(Guid muaId);
+        Task<List<PortfolioDto>> GetMuaPortfolioAsync(Guid muaId);
         Task<bool> AddPortfolioImageAsync(Guid muaId, string imageUrl, string description);
         Task<bool> DeletePortfolioImageAsync(Guid muaId, Guid portfolioId);
 
         // Styles
         Task<bool> UpdateStylesAsync(Guid muaId, List<int> styleIds);
-        Task<List<MakeupStyle>> GetAllStylesAsync();
+        Task<List<MakeupStyleDto>> GetAllStylesAsync();
     }
 }

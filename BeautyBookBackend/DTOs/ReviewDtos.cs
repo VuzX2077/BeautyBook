@@ -24,4 +24,10 @@ namespace BeautyBookBackend.DTOs
         [MaxLength(1000)]
         public string? Comment { get; set; }
     }
+
+    public class ReviewCreateWithBookingDto : ReviewCreateDto
+    {
+        [Required]
+        public Guid BookingId { get; set; }
+    }
 }

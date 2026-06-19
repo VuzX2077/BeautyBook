@@ -42,7 +42,7 @@ namespace BeautyBookBackend.Controllers
             var service = await _muaService.AddMuaServiceAsync(CurrentUserId, serviceDto);
             if (service == null)
             {
-                return BadRequest(new { Message = "Thêm dịch vụ thất bại. Đảm bảo hồ sơ MUA của bạn đã được thiết lập." });
+                return BadRequest(new { Message = "Thêm dịch vụ thất bại. Đảm bảo hồ sơ Makeup Artist của bạn đã được thiết lập." });
             }
 
             return Ok(new { Message = "Đã thêm gói dịch vụ trang điểm mới thành công!", Service = service });

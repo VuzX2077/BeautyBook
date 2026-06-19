@@ -18,6 +18,7 @@ namespace BeautyBookBackend.DTOs
         public string? Note { get; set; }
         public decimal TotalPrice { get; set; }
         public BookingStatus Status { get; set; }
+        public bool HasReview { get; set; }
         public DateTime CreatedAt { get; set; }
     }
 

@@ -9,6 +9,7 @@ namespace BeautyBookBackend.Repositories
     {
         Task<Wallet?> GetByUserIdAsync(Guid userId);
         Task<List<WalletTransaction>> GetTransactionsAsync(Guid walletId);
+        Task<bool> HasBookingPaymentAsync(Guid bookingId);
         Task AddAsync(Wallet wallet);
         Task AddTransactionAsync(WalletTransaction transaction);
     }

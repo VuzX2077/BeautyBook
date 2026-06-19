@@ -38,11 +38,25 @@ namespace BeautyBookBackend.Controllers
         }
 
         [Authorize]
+        [HttpPost]
+        public async Task<IActionResult> AddReview([FromBody] ReviewCreateWithBookingDto reviewDto)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+
+            return await AddReviewForBooking(reviewDto.BookingId, reviewDto);
+        }
+
+        [Authorize]
         [HttpPost("booking/{bookingId}")]
         public async Task<IActionResult> AddReview(Guid bookingId, [FromBody] ReviewCreateDto reviewDto)
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);
 
+            return await AddReviewForBooking(bookingId, reviewDto);
+        }
+
+        private async Task<IActionResult> AddReviewForBooking(Guid bookingId, ReviewCreateDto reviewDto)
+        {
             if (CurrentUserRole != UserRole.Customer)
             {
                 return BadRequest(new { Message = "Chỉ tài khoản khách hàng mới có thể gửi đánh giá dịch vụ." });

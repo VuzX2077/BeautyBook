@@ -37,10 +37,6 @@ namespace BeautyBookBackend.Services
             if (service == null) return null;
 
             var customerWallet = await _walletRepository.GetByUserIdAsync(customerId);
-            if (customerWallet == null || customerWallet.Balance < service.Price)
-            {
-                return null;
-            }
 
             var booking = new Booking
             {
@@ -58,18 +54,21 @@ namespace BeautyBookBackend.Services
 
             await _bookingRepository.AddAsync(booking);
 
-            customerWallet.Balance -= service.Price;
-            customerWallet.UpdatedAt = DateTime.UtcNow;
-
-            await _walletRepository.AddTransactionAsync(new WalletTransaction
+            if (customerWallet != null && customerWallet.Balance >= service.Price)
             {
-                TransactionId = Guid.NewGuid(),
-                WalletId = customerWallet.WalletId,
-                Amount = -service.Price,
-                TransactionType = TransactionType.BookingPayment,
-                Description = $"Thanh toan coc lich dat #{booking.BookingId.ToString().Substring(0, 8)} cho goi dich vu {service.ServiceName}",
-                CreatedAt = DateTime.UtcNow
-            });
+                customerWallet.Balance -= service.Price;
+                customerWallet.UpdatedAt = DateTime.UtcNow;
+
+                await _walletRepository.AddTransactionAsync(new WalletTransaction
+                {
+                    TransactionId = Guid.NewGuid(),
+                    WalletId = customerWallet.WalletId,
+                    Amount = -service.Price,
+                    TransactionType = TransactionType.BookingPayment,
+                    Description = $"Thanh toan coc lich dat #{booking.BookingId.ToString().Substring(0, 8)} cho goi dich vu {service.ServiceName}",
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
 
             await _unitOfWork.SaveChangesAsync();
 
@@ -79,21 +78,38 @@ namespace BeautyBookBackend.Services
         public async Task<List<BookingDto>> GetBookingsAsync(Guid userId, UserRole role)
         {
             var bookings = await _bookingRepository.GetByUserAsync(userId, role);
-            return bookings.Select(ToBookingDto).ToList();
+            var result = new List<BookingDto>();
+
+            foreach (var booking in bookings)
+            {
+                result.Add(await ToBookingDtoAsync(booking));
+            }
+
+            return result;
         }
 
         public async Task<BookingDto?> GetBookingByIdAsync(Guid bookingId, Guid userId)
         {
             var booking = await _bookingRepository.GetByIdWithDetailsForUserAsync(bookingId, userId);
-            return booking == null ? null : ToBookingDto(booking);
+            return booking == null ? null : await ToBookingDtoAsync(booking);
         }
 
-        public async Task<bool> UpdateBookingStatusAsync(Guid bookingId, Guid userId, BookingStatus newStatus)
+        public async Task<bool> UpdateBookingStatusAsync(Guid bookingId, Guid userId, UserRole role, BookingStatus newStatus)
         {
             var booking = await _bookingRepository.GetByIdForParticipantAsync(bookingId, userId);
             if (booking == null) return false;
 
+            if (role != UserRole.MUA || booking.MUAId != userId)
+            {
+                return false;
+            }
+
             if (booking.Status == newStatus) return true;
+
+            if (!IsValidMuaStatusTransition(booking.Status, newStatus))
+            {
+                return false;
+            }
 
             booking.Status = newStatus;
 
@@ -167,6 +183,17 @@ namespace BeautyBookBackend.Services
 
         private async Task CompleteBookingAsync(Booking booking)
         {
+            if (!await _walletRepository.HasBookingPaymentAsync(booking.BookingId))
+            {
+                var unpaidMuaProfile = await _muaRepository.GetProfileByIdAsync(booking.MUAId);
+                if (unpaidMuaProfile != null)
+                {
+                    unpaidMuaProfile.TotalBookings += 1;
+                }
+
+                return;
+            }
+
             const decimal commissionFee = 10000m;
             var artistEarnings = booking.TotalPrice - commissionFee;
             if (artistEarnings < 0) artistEarnings = 0;
@@ -197,6 +224,11 @@ namespace BeautyBookBackend.Services
 
         private async Task RefundBookingAsync(Booking booking)
         {
+            if (!await _walletRepository.HasBookingPaymentAsync(booking.BookingId))
+            {
+                return;
+            }
+
             var customerWallet = await _walletRepository.GetByUserIdAsync(booking.CustomerId);
             if (customerWallet == null) return;
 
@@ -214,7 +246,7 @@ namespace BeautyBookBackend.Services
             });
         }
 
-        private static BookingDto ToBookingDto(Booking booking)
+        private async Task<BookingDto> ToBookingDtoAsync(Booking booking)
         {
             return new BookingDto
             {
@@ -230,7 +262,19 @@ namespace BeautyBookBackend.Services
                 Note = booking.Note,
                 TotalPrice = booking.TotalPrice,
                 Status = booking.Status,
+                HasReview = await _reviewRepository.ExistsForBookingAsync(booking.BookingId),
                 CreatedAt = booking.CreatedAt
+            };
+        }
+
+        private static bool IsValidMuaStatusTransition(BookingStatus currentStatus, BookingStatus newStatus)
+        {
+            return (currentStatus, newStatus) switch
+            {
+                (BookingStatus.Pending, BookingStatus.Approved) => true,
+                (BookingStatus.Pending, BookingStatus.Cancelled) => true,
+                (BookingStatus.Approved, BookingStatus.Completed) => true,
+                _ => false
             };
         }
     }

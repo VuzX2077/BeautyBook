@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using BeautyBookBackend.Data;
 using BeautyBookBackend.Models;
+using BeautyBookBackend.Models.Enums;
 using Microsoft.EntityFrameworkCore;
 
 namespace BeautyBookBackend.Repositories
@@ -28,6 +29,17 @@ namespace BeautyBookBackend.Repositories
                 .Where(t => t.WalletId == walletId)
                 .OrderByDescending(t => t.CreatedAt)
                 .ToListAsync();
+        }
+
+        public Task<bool> HasBookingPaymentAsync(Guid bookingId)
+        {
+            var bookingCode = bookingId.ToString().Substring(0, 8);
+
+            return _context.WalletTransactions.AnyAsync(t =>
+                t.TransactionType == TransactionType.BookingPayment
+                && t.Amount < 0
+                && t.Description != null
+                && t.Description.Contains(bookingCode));
         }
 
         public Task AddAsync(Wallet wallet)

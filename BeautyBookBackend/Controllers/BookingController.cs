@@ -45,12 +45,11 @@ namespace BeautyBookBackend.Controllers
             var booking = await _bookingService.CreateBookingAsync(CurrentUserId, createDto);
             if (booking == null)
             {
-                return BadRequest(new { Message = "Đặt lịch thất bại. Gói dịch vụ không tồn tại hoặc số dư ví ảo của bạn không đủ để đặt cọc." });
+                return BadRequest(new { Message = "Đặt lịch thất bại. Gói dịch vụ không tồn tại hoặc không thuộc Makeup Artist đã chọn." });
             }
 
-            return Ok(new { Message = "Đặt lịch hẹn thành công! Số tiền tương ứng đã được tạm giữ an toàn trong hệ thống.", Booking = booking });
+            return Ok(new { Message = "Đặt lịch hẹn thành công! Booking đang ở trạng thái Pending.", Booking = booking });
         }
-
         [HttpGet]
         public async Task<IActionResult> GetBookings()
         {
@@ -72,6 +71,11 @@ namespace BeautyBookBackend.Controllers
         [HttpPut("{id}/status")]
         public async Task<IActionResult> UpdateBookingStatus(Guid id, [FromBody] BookingStatusUpdateDto updateDto)
         {
+            if (CurrentUserRole != UserRole.MUA)
+            {
+                return Forbid();
+            }
+
             // Kiểm tra tính hợp lệ của trạng thái đổi
             var booking = await _bookingService.GetBookingByIdAsync(id, CurrentUserId);
             if (booking == null)
@@ -79,26 +83,16 @@ namespace BeautyBookBackend.Controllers
                 return NotFound(new { Message = "Không tìm thấy đơn đặt lịch." });
             }
 
-            // Quy định đổi trạng thái:
-            // 1. MUA được duyệt (Approved) hoặc từ chối (Cancelled)
-            // 2. Khách hàng/MUA được hoàn thành (Completed) khi xong việc
-            // 3. Khách hàng được tự hủy (Cancelled) đơn Pending
-
-            if (updateDto.Status == BookingStatus.Approved && CurrentUserRole != UserRole.MUA)
-            {
-                return BadRequest(new { Message = "Chỉ Makeup Artist mới có quyền duyệt đơn đặt lịch này." });
-            }
-
-            var success = await _bookingService.UpdateBookingStatusAsync(id, CurrentUserId, updateDto.Status);
+            var success = await _bookingService.UpdateBookingStatusAsync(id, CurrentUserId, CurrentUserRole, updateDto.Status);
             if (!success)
             {
-                return BadRequest(new { Message = "Cập nhật trạng thái lịch hẹn thất bại." });
+                return BadRequest(new { Message = "Cập nhật trạng thái lịch hẹn thất bại. Makeup Artist chỉ có thể duyệt/từ chối lịch Pending hoặc hoàn thành lịch Approved của mình." });
             }
 
             string statusMsg = updateDto.Status switch
             {
                 BookingStatus.Approved => "đã duyệt lịch hẹn và cam kết thực hiện",
-                BookingStatus.Completed => "đã hoàn thành. Tiền cọc (trừ phí dịch vụ) đã giải ngân sang ví MUA",
+                BookingStatus.Completed => "đã hoàn thành. Tiền cọc (trừ phí dịch vụ) đã giải ngân sang ví Makeup Artist",
                 BookingStatus.Cancelled => "đã bị hủy bỏ. Tiền cọc đã tự động hoàn trả đầy đủ vào ví khách hàng",
                 _ => "đã được cập nhật"
             };

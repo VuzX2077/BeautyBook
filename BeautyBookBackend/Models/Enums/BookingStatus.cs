@@ -5,6 +5,7 @@ namespace BeautyBookBackend.Models.Enums
         Pending = 0,
         Approved = 1,
         Completed = 2,
-        Cancelled = 3
+        Cancelled = 3,
+        WaitingCustomer = 4
     }
 }

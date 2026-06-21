@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace BeautyBookBackend.Models
 {
@@ -10,6 +11,8 @@ namespace BeautyBookBackend.Models
         public string? Description { get; set; }
         public decimal Price { get; set; }
         public int DurationMinutes { get; set; }
+        public string? ImageUrl { get; set; }
+        public List<string> Tags { get; set; } = new();
 
         public MakeupArtistProfile? MakeupArtistProfile { get; set; }
     }

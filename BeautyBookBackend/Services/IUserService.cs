@@ -7,6 +7,7 @@ namespace BeautyBookBackend.Services
     public interface IUserService
     {
         Task<UserDto?> GetProfileAsync(Guid userId);
+        Task<UserProfileDto?> GetFullUserProfileAsync(Guid userId);
         Task<UserDto?> UpdateProfileAsync(Guid userId, UserUpdateDto updateDto);
     }
 }

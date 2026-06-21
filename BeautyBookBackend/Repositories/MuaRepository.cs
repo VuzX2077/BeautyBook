@@ -29,61 +29,15 @@ namespace BeautyBookBackend.Repositories
             return _context.MakeupArtistProfiles.AnyAsync(m => m.MUAId == muaId);
         }
 
-        public async Task<List<MakeupArtistProfile>> GetProfilesAsync(MuaFilterDto filter)
+        public async Task<List<MakeupArtistProfile>> GetProfilesAsync(int page, int pageSize)
         {
-            var query = _context.MakeupArtistProfiles
+            return await _context.MakeupArtistProfiles
                 .Include(m => m.User)
-                .AsQueryable();
-
-            if (filter.StyleId.HasValue)
-            {
-                var muaIdsWithStyle = await _context.MUAStyles
-                    .Where(ms => ms.StyleId == filter.StyleId.Value)
-                    .Select(ms => ms.MUAId)
-                    .ToListAsync();
-                query = query.Where(m => muaIdsWithStyle.Contains(m.MUAId));
-            }
-
-            if (filter.PriceMin.HasValue)
-            {
-                query = query.Where(m => _context.Services.Any(s =>
-                    s.MUAId == m.MUAId
-                    && s.Price >= filter.PriceMin.Value
-                    && (!filter.PriceMax.HasValue || s.Price <= filter.PriceMax.Value)));
-            }
-
-            if (filter.PriceMax.HasValue)
-            {
-                query = query.Where(m => _context.Services.Any(s =>
-                    s.MUAId == m.MUAId
-                    && s.Price <= filter.PriceMax.Value
-                    && (!filter.PriceMin.HasValue || s.Price >= filter.PriceMin.Value)));
-            }
-
-            if (!string.IsNullOrEmpty(filter.SearchKeyword))
-            {
-                var keyword = filter.SearchKeyword.ToLower();
-                query = query.Where(m => (m.User != null && m.User.FullName != null && m.User.FullName.ToLower().Contains(keyword)) ||
-                                         (m.Bio != null && m.Bio.ToLower().Contains(keyword)));
-            }
-
-            if (!string.IsNullOrEmpty(filter.SortBy))
-            {
-                query = filter.SortBy.ToLower() switch
-                {
-                    "rating" => query.OrderByDescending(m => m.RatingAverage),
-                    "bookings" => query.OrderByDescending(m => m.TotalBookings),
-                    "price_asc" => query.OrderBy(m => _context.Services.Where(s => s.MUAId == m.MUAId).Min(s => (decimal?)s.Price) ?? 0),
-                    "price_desc" => query.OrderByDescending(m => _context.Services.Where(s => s.MUAId == m.MUAId).Max(s => (decimal?)s.Price) ?? 0),
-                    _ => query.OrderByDescending(m => m.RatingAverage).ThenBy(m => m.User!.FullName)
-                };
-            }
-            else
-            {
-                query = query.OrderByDescending(m => m.RatingAverage).ThenBy(m => m.User!.FullName);
-            }
-
-            return await query.ToListAsync();
+                .Where(m => m.Status == Models.Enums.MuaStatus.Listed)
+                .OrderByDescending(m => m.RankScore)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
         }
 
         public Task<MakeupArtistProfile?> GetProfileByIdAsync(Guid muaId)
@@ -91,10 +45,12 @@ namespace BeautyBookBackend.Repositories
             return _context.MakeupArtistProfiles.FirstOrDefaultAsync(m => m.MUAId == muaId);
         }
 
-        public Task<MakeupArtistProfile?> GetProfileWithUserByIdAsync(Guid muaId)
+        public Task<MakeupArtistProfile?> GetProfileWithFullDetailsAsync(Guid muaId)
         {
             return _context.MakeupArtistProfiles
                 .Include(m => m.User)
+                .Include(m => m.Services)
+                .Include(m => m.Portfolios)
                 .FirstOrDefaultAsync(m => m.MUAId == muaId);
         }
 

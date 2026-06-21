@@ -15,18 +15,30 @@ namespace BeautyBookBackend.Controllers
     public class MuaController : ControllerBase
     {
         private readonly IMuaService _muaService;
+        private readonly IBookingService _bookingService;
 
-        public MuaController(IMuaService muaService)
+        public MuaController(IMuaService muaService, IBookingService bookingService)
         {
             _muaService = muaService;
+            _bookingService = bookingService;
         }
 
         private Guid CurrentUserId => Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString());
 
-        [HttpGet]
-        public async Task<IActionResult> GetMuas([FromQuery] MuaFilterDto filter)
+        [HttpGet("{id}/availability")]
+        public async Task<IActionResult> GetAvailability(Guid id, [FromQuery] DateTime date, [FromQuery] int duration)
         {
-            var muas = await _muaService.GetMuasAsync(filter);
+            if (date == default) date = DateTime.UtcNow.Date;
+            if (duration <= 0) duration = 60; // Default 1 hour if not specified
+
+            var slots = await _bookingService.GetAvailableSlotsAsync(id, date, duration);
+            return Ok(slots);
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> GetMuas([FromQuery] int page = 1)
+        {
+            var muas = await _muaService.GetMuasAsync(page);
             return Ok(muas);
         }
 
@@ -45,9 +57,8 @@ namespace BeautyBookBackend.Controllers
         [HttpPut("profile")]
         public async Task<IActionResult> UpdateProfile([FromBody] MuaUpdateDto updateDto)
         {
-            // Đảm bảo người dùng có vai trò là MUA
-            var roleClaim = User.FindFirst(ClaimTypes.Role)?.Value;
-            if (roleClaim != UserRole.MUA.ToString())
+            // Đảm bảo người dùng có profile MUA
+            if (!await _muaService.HasMuaProfileAsync(CurrentUserId))
             {
                 return Forbid();
             }
@@ -76,7 +87,7 @@ namespace BeautyBookBackend.Controllers
             var roleClaim = User.FindFirst(ClaimTypes.Role)?.Value;
             if (roleClaim != UserRole.MUA.ToString()) return Forbid();
 
-            var success = await _muaService.AddPortfolioImageAsync(CurrentUserId, request.ImageUrl, request.Description ?? "");
+            var success = await _muaService.AddPortfolioImageAsync(CurrentUserId, request);
             if (!success) return BadRequest(new { Message = "Không thể thêm ảnh vào Portfolio." });
 
             return Ok(new { Message = "Đã thêm tác phẩm vào bộ sưu tập Portfolio thành công!" });
@@ -89,7 +100,7 @@ namespace BeautyBookBackend.Controllers
             var roleClaim = User.FindFirst(ClaimTypes.Role)?.Value;
             if (roleClaim != UserRole.MUA.ToString()) return Forbid();
 
-            var success = await _muaService.DeletePortfolioImageAsync(CurrentUserId, portfolioId);
+            var success = await _muaService.DeletePortfolioAsync(CurrentUserId, portfolioId);
             if (!success) return BadRequest(new { Message = "Không thể xóa tác phẩm này." });
 
             return Ok(new { Message = "Đã xóa ảnh tác phẩm khỏi Portfolio." });
@@ -115,11 +126,5 @@ namespace BeautyBookBackend.Controllers
 
             return Ok(new { Message = "Cập nhật danh sách phong cách thế mạnh thành công!" });
         }
-    }
-
-    public class PortfolioCreateRequest
-    {
-        public string ImageUrl { get; set; } = null!;
-        public string? Description { get; set; }
     }
 }

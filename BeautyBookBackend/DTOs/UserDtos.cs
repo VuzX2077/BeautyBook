@@ -12,6 +12,7 @@ namespace BeautyBookBackend.DTOs
         public UserRole Role { get; set; }
         public DateTime CreatedAt { get; set; }
         public bool IsActive { get; set; }
+        public bool HasMuaProfile { get; set; }
     }
 
     public class UserUpdateDto
@@ -19,5 +20,10 @@ namespace BeautyBookBackend.DTOs
         public string? FullName { get; set; }
         public string? AvatarUrl { get; set; }
         public string? PhoneNumber { get; set; }
+    }
+
+    public class UserProfileDto : UserDto
+    {
+        public MuaDetailDto? MuaProfile { get; set; }
     }
 }

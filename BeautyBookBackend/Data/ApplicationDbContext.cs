@@ -17,6 +17,7 @@ namespace BeautyBookBackend.Data
         public DbSet<Portfolio> Portfolios { get; set; } = null!;
         public DbSet<Service> Services { get; set; } = null!;
         public DbSet<Booking> Bookings { get; set; } = null!;
+        public DbSet<BookingService> BookingServices { get; set; } = null!;
         public DbSet<Review> Reviews { get; set; } = null!;
         public DbSet<ChatRoom> ChatRooms { get; set; } = null!;
         public DbSet<Message> Messages { get; set; } = null!;
@@ -24,6 +25,9 @@ namespace BeautyBookBackend.Data
         public DbSet<WalletTransaction> WalletTransactions { get; set; } = null!;
         public DbSet<Product> Products { get; set; } = null!;
         public DbSet<ProductReview> ProductReviews { get; set; } = null!;
+        public DbSet<PortfolioLike> PortfolioLikes { get; set; } = null!;
+        public DbSet<PortfolioSave> PortfolioSaves { get; set; } = null!;
+        public DbSet<PortfolioComment> PortfolioComments { get; set; } = null!;
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -47,7 +51,10 @@ namespace BeautyBookBackend.Data
                     .HasForeignKey<MakeupArtistProfile>(m => m.MUAId)
                     .OnDelete(DeleteBehavior.Restrict);
 
-                b.Property(m => m.RatingAverage).HasPrecision(3, 2);
+                b.Property(m => m.AverageRating).HasPrecision(3, 2);
+                b.Property(m => m.City).HasMaxLength(100);
+                b.Property(m => m.Specialization).HasMaxLength(255);
+                b.Property(m => m.SocialLinks).HasMaxLength(1000);
             });
 
             modelBuilder.Entity<MakeupStyle>(b =>
@@ -66,6 +73,38 @@ namespace BeautyBookBackend.Data
             {
                 b.HasKey(p => p.PortfolioId);
                 b.Property(p => p.Description).HasMaxLength(500);
+                b.HasOne(p => p.MakeupArtistProfile)
+                 .WithMany(m => m.Portfolios)
+                 .HasForeignKey(p => p.MUAId)
+                 .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<PortfolioLike>(b =>
+            {
+                b.HasKey(l => l.Id);
+                b.HasOne(l => l.Portfolio)
+                 .WithMany(p => p.Likes)
+                 .HasForeignKey(l => l.PortfolioId)
+                 .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<PortfolioSave>(b =>
+            {
+                b.HasKey(s => s.Id);
+                b.HasOne(s => s.Portfolio)
+                 .WithMany(p => p.Saves)
+                 .HasForeignKey(s => s.PortfolioId)
+                 .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<PortfolioComment>(b =>
+            {
+                b.HasKey(c => c.Id);
+                b.Property(c => c.Content).IsRequired().HasMaxLength(1000);
+                b.HasOne(c => c.Portfolio)
+                 .WithMany(p => p.Comments)
+                 .HasForeignKey(c => c.PortfolioId)
+                 .OnDelete(DeleteBehavior.Cascade);
             });
 
             modelBuilder.Entity<Service>(b =>
@@ -79,9 +118,6 @@ namespace BeautyBookBackend.Data
             modelBuilder.Entity<Booking>(b =>
             {
                 b.HasKey(x => x.BookingId);
-                b.Property(x => x.Address).HasMaxLength(255);
-                b.Property(x => x.Note).HasMaxLength(500);
-                b.Property(x => x.TotalPrice).HasPrecision(18, 2);
 
                 // Explicitly configure foreign keys and disable cascading deletes that could cause multiple cascade paths
                 b.HasOne(x => x.Customer)
@@ -93,11 +129,25 @@ namespace BeautyBookBackend.Data
                     .WithMany()
                     .HasForeignKey(x => x.MUAId)
                     .OnDelete(DeleteBehavior.Restrict);
+                    
+                b.Property(x => x.TotalAmount).HasPrecision(18, 2);
+            });
+
+            modelBuilder.Entity<BookingService>(b =>
+            {
+                b.HasKey(x => x.Id);
+
+                b.HasOne(x => x.Booking)
+                    .WithMany(b => b.BookingServices)
+                    .HasForeignKey(x => x.BookingId)
+                    .OnDelete(DeleteBehavior.Cascade);
 
                 b.HasOne(x => x.Service)
                     .WithMany()
                     .HasForeignKey(x => x.ServiceId)
-                    .OnDelete(DeleteBehavior.Cascade);
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                b.Property(x => x.PriceSnapshot).HasPrecision(18, 2);
             });
 
             modelBuilder.Entity<Review>(b =>

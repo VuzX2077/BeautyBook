@@ -50,5 +50,6 @@ namespace BeautyBookBackend.DTOs
         public string FullName { get; set; } = null!;
         public string Email { get; set; } = null!;
         public UserRole Role { get; set; }
+        public bool HasMuaProfile { get; set; }
     }
 }

@@ -21,13 +21,15 @@ namespace BeautyBookBackend.Migrations
                 name: "Tags",
                 table: "Services",
                 type: "text[]",
-                nullable: false);
+                nullable: false,
+                defaultValue: new List<string>());
 
             migrationBuilder.AddColumn<List<string>>(
                 name: "Tags",
                 table: "Portfolios",
                 type: "text[]",
-                nullable: false);
+                nullable: false,
+                defaultValue: new List<string>());
 
             migrationBuilder.AddColumn<string>(
                 name: "Title",

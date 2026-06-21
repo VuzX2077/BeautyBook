@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using BeautyBookBackend.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace BeautyBookBackend.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260620112329_AddPortfolioInteractions")]
+    partial class AddPortfolioInteractions
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -29,39 +32,26 @@ namespace BeautyBookBackend.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<string>("Address")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("BookingDate")
-                        .HasColumnType("timestamp with time zone");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid>("CustomerId")
                         .HasColumnType("uuid");
 
-                    b.Property<TimeSpan>("EndTime")
-                        .HasColumnType("interval");
+                    b.Property<DateTime>("EndTime")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid>("MUAId")
                         .HasColumnType("uuid");
 
-                    b.Property<string>("Notes")
-                        .HasColumnType("text");
+                    b.Property<Guid>("ServiceId")
+                        .HasColumnType("uuid");
 
-                    b.Property<TimeSpan>("StartTime")
-                        .HasColumnType("interval");
+                    b.Property<DateTime>("StartTime")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<byte>("Status")
                         .HasColumnType("smallint");
-
-                    b.Property<decimal>("TotalAmount")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<int>("TotalDurationMinutes")
-                        .HasColumnType("integer");
 
                     b.HasKey("BookingId");
 
@@ -69,42 +59,9 @@ namespace BeautyBookBackend.Migrations
 
                     b.HasIndex("MUAId");
 
-                    b.ToTable("Bookings");
-                });
-
-            modelBuilder.Entity("BeautyBookBackend.Models.BookingService", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("BookingId")
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("DurationMinutesSnapshot")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("ParticipantsCount")
-                        .HasColumnType("integer");
-
-                    b.Property<decimal>("PriceSnapshot")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)");
-
-                    b.Property<Guid>("ServiceId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("ServiceName")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("BookingId");
-
                     b.HasIndex("ServiceId");
 
-                    b.ToTable("BookingServices");
+                    b.ToTable("Bookings");
                 });
 
             modelBuilder.Entity("BeautyBookBackend.Models.ChatRoom", b =>
@@ -184,9 +141,6 @@ namespace BeautyBookBackend.Migrations
 
                     b.Property<string>("PortfolioCoverUrl")
                         .HasColumnType("text");
-
-                    b.Property<int>("ProfileQualityScore")
-                        .HasColumnType("integer");
 
                     b.Property<int>("RankScore")
                         .HasColumnType("integer");
@@ -274,17 +228,13 @@ namespace BeautyBookBackend.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
 
-                    b.Property<List<string>>("ImageUrls")
-                        .IsRequired()
-                        .HasColumnType("text[]");
-
-                    b.Property<bool>("IsHidden")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IsPinned")
-                        .HasColumnType("boolean");
+                    b.Property<string>("ImageUrl")
+                        .HasColumnType("text");
 
                     b.Property<Guid>("MUAId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("MakeupArtistProfileMUAId")
                         .HasColumnType("uuid");
 
                     b.Property<List<string>>("Tags")
@@ -296,7 +246,7 @@ namespace BeautyBookBackend.Migrations
 
                     b.HasKey("PortfolioId");
 
-                    b.HasIndex("MUAId");
+                    b.HasIndex("MakeupArtistProfileMUAId");
 
                     b.ToTable("Portfolios");
                 });
@@ -617,26 +567,15 @@ namespace BeautyBookBackend.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.Navigation("Customer");
-
-                    b.Navigation("MakeupArtistProfile");
-                });
-
-            modelBuilder.Entity("BeautyBookBackend.Models.BookingService", b =>
-                {
-                    b.HasOne("BeautyBookBackend.Models.Booking", "Booking")
-                        .WithMany("BookingServices")
-                        .HasForeignKey("BookingId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
                     b.HasOne("BeautyBookBackend.Models.Service", "Service")
                         .WithMany()
                         .HasForeignKey("ServiceId")
-                        .OnDelete(DeleteBehavior.Restrict)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.Navigation("Booking");
+                    b.Navigation("Customer");
+
+                    b.Navigation("MakeupArtistProfile");
 
                     b.Navigation("Service");
                 });
@@ -707,9 +646,7 @@ namespace BeautyBookBackend.Migrations
                 {
                     b.HasOne("BeautyBookBackend.Models.MakeupArtistProfile", "MakeupArtistProfile")
                         .WithMany("Portfolios")
-                        .HasForeignKey("MUAId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .HasForeignKey("MakeupArtistProfileMUAId");
 
                     b.Navigation("MakeupArtistProfile");
                 });
@@ -820,11 +757,6 @@ namespace BeautyBookBackend.Migrations
                         .IsRequired();
 
                     b.Navigation("Wallet");
-                });
-
-            modelBuilder.Entity("BeautyBookBackend.Models.Booking", b =>
-                {
-                    b.Navigation("BookingServices");
                 });
 
             modelBuilder.Entity("BeautyBookBackend.Models.MakeupArtistProfile", b =>

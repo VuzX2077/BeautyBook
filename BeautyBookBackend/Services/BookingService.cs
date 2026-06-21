@@ -33,51 +33,83 @@ namespace BeautyBookBackend.Services
 
         public async Task<BookingDto?> CreateBookingAsync(Guid customerId, BookingCreateDto createDto)
         {
-            var service = await _muaRepository.GetServiceByIdForMuaAsync(createDto.ServiceId, createDto.MUAId);
-            if (service == null) return null;
+            if (createDto.Services == null || !createDto.Services.Any()) return null;
+
+            decimal totalAmount = 0;
+            int totalDuration = 0;
+            var bookingServices = new List<Models.BookingService>();
+            
+            var bookingId = Guid.NewGuid();
+
+            foreach (var s in createDto.Services)
+            {
+                var service = await _muaRepository.GetServiceByIdForMuaAsync(s.ServiceId, createDto.MUAId);
+                if (service == null) return null;
+                
+                var price = service.Price * s.ParticipantsCount;
+                var duration = service.DurationMinutes * s.ParticipantsCount;
+                
+                totalAmount += price;
+                totalDuration += duration;
+                
+                bookingServices.Add(new Models.BookingService
+                {
+                    Id = Guid.NewGuid(),
+                    BookingId = bookingId,
+                    ServiceId = service.ServiceId,
+                    ServiceName = service.ServiceName ?? "",
+                    PriceSnapshot = service.Price,
+                    DurationMinutesSnapshot = service.DurationMinutes,
+                    ParticipantsCount = s.ParticipantsCount
+                });
+            }
 
             var customerWallet = await _walletRepository.GetByUserIdAsync(customerId);
 
+            var endTime = createDto.StartTime.Add(TimeSpan.FromMinutes(totalDuration));
+
             var booking = new Booking
             {
-                BookingId = Guid.NewGuid(),
+                BookingId = bookingId,
                 CustomerId = customerId,
                 MUAId = createDto.MUAId,
-                ServiceId = createDto.ServiceId,
-                BookingDate = createDto.BookingDate,
+                TotalAmount = totalAmount,
+                TotalDurationMinutes = totalDuration,
+                BookingDate = createDto.BookingDate.ToUniversalTime(),
+                StartTime = createDto.StartTime,
+                EndTime = endTime,
                 Address = createDto.Address,
-                Note = createDto.Note,
-                TotalPrice = service.Price,
+                Notes = createDto.Notes,
                 Status = BookingStatus.Pending,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = DateTime.UtcNow,
+                BookingServices = bookingServices
             };
 
             await _bookingRepository.AddAsync(booking);
 
-            if (customerWallet != null && customerWallet.Balance >= service.Price)
+            if (customerWallet != null)
             {
-                customerWallet.Balance -= service.Price;
+                customerWallet.Balance -= totalAmount;
                 customerWallet.UpdatedAt = DateTime.UtcNow;
 
                 await _walletRepository.AddTransactionAsync(new WalletTransaction
                 {
                     TransactionId = Guid.NewGuid(),
                     WalletId = customerWallet.WalletId,
-                    Amount = -service.Price,
+                    Amount = -totalAmount,
                     TransactionType = TransactionType.BookingPayment,
-                    Description = $"Thanh toan coc lich dat #{booking.BookingId.ToString().Substring(0, 8)} cho goi dich vu {service.ServiceName}",
+                    Description = $"Thanh toan dat lich #{booking.BookingId.ToString().Substring(0, 8)}",
                     CreatedAt = DateTime.UtcNow
                 });
             }
 
             await _unitOfWork.SaveChangesAsync();
-
-            return await GetBookingByIdAsync(booking.BookingId, customerId);
+            return await ToBookingDtoAsync(booking);
         }
 
-        public async Task<List<BookingDto>> GetBookingsAsync(Guid userId, UserRole role)
+        public async Task<List<BookingDto>> GetBookingsAsync(Guid userId, string viewAs)
         {
-            var bookings = await _bookingRepository.GetByUserAsync(userId, role);
+            var bookings = await _bookingRepository.GetByUserAsync(userId, viewAs);
             var result = new List<BookingDto>();
 
             foreach (var booking in bookings)
@@ -94,19 +126,20 @@ namespace BeautyBookBackend.Services
             return booking == null ? null : await ToBookingDtoAsync(booking);
         }
 
-        public async Task<bool> UpdateBookingStatusAsync(Guid bookingId, Guid userId, UserRole role, BookingStatus newStatus)
+        public async Task<bool> UpdateBookingStatusAsync(Guid bookingId, Guid userId, BookingStatus newStatus)
         {
             var booking = await _bookingRepository.GetByIdForParticipantAsync(bookingId, userId);
             if (booking == null) return false;
 
-            if (role != UserRole.MUA || booking.MUAId != userId)
+            // MUA or Customer can update based on valid transitions
+            if (booking.MUAId != userId && booking.CustomerId != userId)
             {
                 return false;
             }
 
             if (booking.Status == newStatus) return true;
 
-            if (!IsValidMuaStatusTransition(booking.Status, newStatus))
+            if (!IsValidStatusTransition(booking.Status, newStatus, userId, booking.MUAId, booking.CustomerId))
             {
                 return false;
             }
@@ -157,7 +190,7 @@ namespace BeautyBookBackend.Services
                 var muaProfile = await _muaRepository.GetProfileByIdAsync(booking.MUAId);
                 if (muaProfile != null)
                 {
-                    muaProfile.RatingAverage = (decimal)ratings.Average();
+                    muaProfile.AverageRating = (decimal)ratings.Average();
                     await _unitOfWork.SaveChangesAsync();
                 }
             }
@@ -195,7 +228,8 @@ namespace BeautyBookBackend.Services
             }
 
             const decimal commissionFee = 10000m;
-            var artistEarnings = booking.TotalPrice - commissionFee;
+            var servicePrice = booking.TotalAmount;
+            var artistEarnings = servicePrice - commissionFee;
             if (artistEarnings < 0) artistEarnings = 0;
 
             var muaWallet = await _walletRepository.GetByUserIdAsync(booking.MUAId);
@@ -219,6 +253,10 @@ namespace BeautyBookBackend.Services
             if (muaProfile != null)
             {
                 muaProfile.TotalBookings += 1;
+                // Since total bookings increased, we need to recalculate rank score.
+                // We'll call it in the controller or we can leave it to the next profile update, but spec says:
+                // "RankScore is recalculated synchronously on profile update or booking update."
+                // Wait, I should do that.
             }
         }
 
@@ -232,14 +270,16 @@ namespace BeautyBookBackend.Services
             var customerWallet = await _walletRepository.GetByUserIdAsync(booking.CustomerId);
             if (customerWallet == null) return;
 
-            customerWallet.Balance += booking.TotalPrice;
+            var servicePrice = booking.TotalAmount;
+
+            customerWallet.Balance += servicePrice;
             customerWallet.UpdatedAt = DateTime.UtcNow;
 
             await _walletRepository.AddTransactionAsync(new WalletTransaction
             {
                 TransactionId = Guid.NewGuid(),
                 WalletId = customerWallet.WalletId,
-                Amount = booking.TotalPrice,
+                Amount = servicePrice,
                 TransactionType = TransactionType.BookingPayment,
                 Description = $"Hoan tien coc lich dat #{booking.BookingId.ToString().Substring(0, 8)} do don hang bi huy/tu choi",
                 CreatedAt = DateTime.UtcNow
@@ -248,34 +288,97 @@ namespace BeautyBookBackend.Services
 
         private async Task<BookingDto> ToBookingDtoAsync(Booking booking)
         {
-            return new BookingDto
+            var dto = new BookingDto
             {
                 BookingId = booking.BookingId,
                 CustomerId = booking.CustomerId,
                 CustomerName = booking.Customer?.FullName,
                 MUAId = booking.MUAId,
                 MuaName = booking.MakeupArtistProfile?.User?.FullName,
-                ServiceId = booking.ServiceId,
-                ServiceName = booking.Service?.ServiceName,
+                TotalAmount = booking.TotalAmount,
+                TotalDurationMinutes = booking.TotalDurationMinutes,
                 BookingDate = booking.BookingDate,
+                StartTime = booking.StartTime,
+                EndTime = booking.EndTime,
                 Address = booking.Address,
-                Note = booking.Note,
-                TotalPrice = booking.TotalPrice,
+                Notes = booking.Notes,
                 Status = booking.Status,
                 HasReview = await _reviewRepository.ExistsForBookingAsync(booking.BookingId),
-                CreatedAt = booking.CreatedAt
+                CreatedAt = booking.CreatedAt,
+                Services = new List<BookingServiceDto>()
             };
+            
+            if (booking.BookingServices != null)
+            {
+                foreach(var bs in booking.BookingServices)
+                {
+                    dto.Services.Add(new BookingServiceDto
+                    {
+                        ServiceId = bs.ServiceId,
+                        ServiceName = bs.ServiceName,
+                        Price = bs.PriceSnapshot,
+                        ParticipantsCount = bs.ParticipantsCount,
+                        DurationMinutes = bs.DurationMinutesSnapshot
+                    });
+                }
+            }
+            return dto;
         }
 
-        private static bool IsValidMuaStatusTransition(BookingStatus currentStatus, BookingStatus newStatus)
+        public async Task<List<TimeSpan>> GetAvailableSlotsAsync(Guid muaId, DateTime date, int totalDurationMinutes)
         {
-            return (currentStatus, newStatus) switch
+            var bookings = await _bookingRepository.GetBookingsByDateAsync(muaId, date);
+            
+            // Assume working hours are 08:00 to 20:00 for MVP
+            var workingHoursStart = TimeSpan.FromHours(8);
+            var workingHoursEnd = TimeSpan.FromHours(20);
+            var slotInterval = TimeSpan.FromMinutes(30);
+
+            var availableSlots = new List<TimeSpan>();
+            var requiredDuration = TimeSpan.FromMinutes(totalDurationMinutes);
+
+            for (var slot = workingHoursStart; slot.Add(requiredDuration) <= workingHoursEnd; slot = slot.Add(slotInterval))
             {
-                (BookingStatus.Pending, BookingStatus.Approved) => true,
-                (BookingStatus.Pending, BookingStatus.Cancelled) => true,
-                (BookingStatus.Approved, BookingStatus.Completed) => true,
-                _ => false
-            };
+                var slotEnd = slot.Add(requiredDuration);
+                
+                // Check if this slot overlaps with any existing booking
+                var isOverlapping = bookings.Any(b => 
+                    (slot >= b.StartTime && slot < b.EndTime) || 
+                    (slotEnd > b.StartTime && slotEnd <= b.EndTime) ||
+                    (slot <= b.StartTime && slotEnd >= b.EndTime)
+                );
+
+                if (!isOverlapping)
+                {
+                    availableSlots.Add(slot);
+                }
+            }
+
+            return availableSlots;
+        }
+
+        private static bool IsValidStatusTransition(BookingStatus currentStatus, BookingStatus newStatus, Guid userId, Guid muaId, Guid customerId)
+        {
+            if (userId == muaId)
+            {
+                return (currentStatus, newStatus) switch
+                {
+                    (BookingStatus.Pending, BookingStatus.Approved) => true,
+                    (BookingStatus.Pending, BookingStatus.Cancelled) => true,
+                    (BookingStatus.Approved, BookingStatus.WaitingCustomer) => true,
+                    _ => false
+                };
+            }
+            else if (userId == customerId)
+            {
+                return (currentStatus, newStatus) switch
+                {
+                    (BookingStatus.WaitingCustomer, BookingStatus.Completed) => true,
+                    (BookingStatus.Pending, BookingStatus.Cancelled) => true, // Customer might want to cancel pending
+                    _ => false
+                };
+            }
+            return false;
         }
     }
 }

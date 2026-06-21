@@ -12,9 +12,9 @@ namespace BeautyBookBackend.Repositories
     {
         Task AddProfileAsync(MakeupArtistProfile profile);
         Task<bool> ProfileExistsAsync(Guid muaId);
-        Task<List<MakeupArtistProfile>> GetProfilesAsync(MuaFilterDto filter);
+        Task<List<MakeupArtistProfile>> GetProfilesAsync(int page, int pageSize);
         Task<MakeupArtistProfile?> GetProfileByIdAsync(Guid muaId);
-        Task<MakeupArtistProfile?> GetProfileWithUserByIdAsync(Guid muaId);
+        Task<MakeupArtistProfile?> GetProfileWithFullDetailsAsync(Guid muaId);
         Task<List<string>> GetStyleNamesByMuaIdAsync(Guid muaId);
         Task<List<MakeupService>> GetServicesByMuaIdAsync(Guid muaId);
         Task<decimal?> GetMinPriceByMuaIdAsync(Guid muaId);

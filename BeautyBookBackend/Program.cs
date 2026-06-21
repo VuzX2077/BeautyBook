@@ -123,6 +123,7 @@ builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IMuaService, MuaService>();
 builder.Services.AddScoped<IBookingService, BookingService>();
 builder.Services.AddScoped<IWalletService, WalletService>();
+builder.Services.AddScoped<IFeedService, FeedService>();
 
 // Register Data Access Layer (Repositories + Unit of Work)
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
@@ -148,7 +149,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
+// app.UseHttpsRedirection();
 
 app.UseCors("AllowAll"); // Enable CORS policy
 

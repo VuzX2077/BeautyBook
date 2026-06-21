@@ -31,29 +31,41 @@ namespace BeautyBookBackend.Controllers
             }
         }
 
-        [HttpPost]
+        [HttpPost("create")]
         public async Task<IActionResult> CreateBooking([FromBody] BookingCreateDto createDto)
         {
-            if (!ModelState.IsValid) return BadRequest(ModelState);
-
-            // Chỉ khách hàng mới được đặt lịch
-            if (CurrentUserRole != UserRole.Customer)
+            try
             {
-                return BadRequest(new { Message = "Chỉ tài khoản khách hàng mới được thực hiện đặt lịch hẹn." });
-            }
+                if (!ModelState.IsValid) return BadRequest(ModelState);
 
-            var booking = await _bookingService.CreateBookingAsync(CurrentUserId, createDto);
-            if (booking == null)
+                if (CurrentUserId == createDto.MUAId)
+                {
+                    return BadRequest(new { Message = "Không thể tự đặt lịch cho chính mình." });
+                }
+
+                var booking = await _bookingService.CreateBookingAsync(CurrentUserId, createDto);
+                if (booking == null)
+                {
+                    return BadRequest(new { Message = "Đặt lịch thất bại. Gói dịch vụ không tồn tại hoặc không thuộc Makeup Artist đã chọn." });
+                }
+
+                return Ok(new { Message = "Đặt lịch hẹn thành công! Booking đang ở trạng thái Pending.", Booking = booking });
+            }
+            catch (Exception ex)
             {
-                return BadRequest(new { Message = "Đặt lịch thất bại. Gói dịch vụ không tồn tại hoặc không thuộc Makeup Artist đã chọn." });
+                return StatusCode(500, new
+                {
+                    Message = ex.Message,
+                    Inner = ex.InnerException?.Message,
+                    StackTrace = ex.StackTrace
+                });
             }
-
-            return Ok(new { Message = "Đặt lịch hẹn thành công! Booking đang ở trạng thái Pending.", Booking = booking });
         }
+        
         [HttpGet]
-        public async Task<IActionResult> GetBookings()
+        public async Task<IActionResult> GetBookings([FromQuery] string viewAs = "customer")
         {
-            var bookings = await _bookingService.GetBookingsAsync(CurrentUserId, CurrentUserRole);
+            var bookings = await _bookingService.GetBookingsAsync(CurrentUserId, viewAs);
             return Ok(bookings);
         }
 
@@ -71,19 +83,13 @@ namespace BeautyBookBackend.Controllers
         [HttpPut("{id}/status")]
         public async Task<IActionResult> UpdateBookingStatus(Guid id, [FromBody] BookingStatusUpdateDto updateDto)
         {
-            if (CurrentUserRole != UserRole.MUA)
-            {
-                return Forbid();
-            }
-
-            // Kiểm tra tính hợp lệ của trạng thái đổi
             var booking = await _bookingService.GetBookingByIdAsync(id, CurrentUserId);
             if (booking == null)
             {
                 return NotFound(new { Message = "Không tìm thấy đơn đặt lịch." });
             }
 
-            var success = await _bookingService.UpdateBookingStatusAsync(id, CurrentUserId, CurrentUserRole, updateDto.Status);
+            var success = await _bookingService.UpdateBookingStatusAsync(id, CurrentUserId, updateDto.Status);
             if (!success)
             {
                 return BadRequest(new { Message = "Cập nhật trạng thái lịch hẹn thất bại. Makeup Artist chỉ có thể duyệt/từ chối lịch Pending hoặc hoàn thành lịch Approved của mình." });
@@ -92,6 +98,7 @@ namespace BeautyBookBackend.Controllers
             string statusMsg = updateDto.Status switch
             {
                 BookingStatus.Approved => "đã duyệt lịch hẹn và cam kết thực hiện",
+                BookingStatus.WaitingCustomer => "đã tải lên bằng chứng. Chờ khách hàng xác nhận",
                 BookingStatus.Completed => "đã hoàn thành. Tiền cọc (trừ phí dịch vụ) đã giải ngân sang ví Makeup Artist",
                 BookingStatus.Cancelled => "đã bị hủy bỏ. Tiền cọc đã tự động hoàn trả đầy đủ vào ví khách hàng",
                 _ => "đã được cập nhật"

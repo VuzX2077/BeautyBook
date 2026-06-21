@@ -25,7 +25,7 @@ namespace BeautyBookBackend.Controllers
         [HttpGet("profile")]
         public async Task<IActionResult> GetProfile()
         {
-            var user = await _userService.GetProfileAsync(CurrentUserId);
+            var user = await _userService.GetFullUserProfileAsync(CurrentUserId);
             if (user == null)
             {
                 return NotFound(new { Message = "Khong tim thay thong tin nguoi dung." });

@@ -23,15 +23,15 @@ namespace BeautyBookBackend.Repositories
             return _context.Bookings.AddAsync(booking).AsTask();
         }
 
-        public Task<List<Booking>> GetByUserAsync(Guid userId, UserRole role)
+        public Task<List<Booking>> GetByUserAsync(Guid userId, string viewAs)
         {
             var query = BookingDetailsQuery();
 
-            if (role == UserRole.MUA)
+            if (viewAs.Equals("mua", StringComparison.OrdinalIgnoreCase))
             {
                 query = query.Where(b => b.MUAId == userId);
             }
-            else if (role == UserRole.Customer)
+            else
             {
                 query = query.Where(b => b.CustomerId == userId);
             }
@@ -61,7 +61,16 @@ namespace BeautyBookBackend.Repositories
                 .Include(b => b.Customer)
                 .Include(b => b.MakeupArtistProfile)
                     .ThenInclude(m => m!.User)
-                .Include(b => b.Service);
+                .Include(b => b.BookingServices)
+                    .ThenInclude(bs => bs.Service);
+        }
+
+        public async Task<List<Booking>> GetBookingsByDateAsync(Guid muaId, DateTime date)
+        {
+            var dateOnly = date.Date;
+            return await _context.Bookings
+                .Where(b => b.MUAId == muaId && b.BookingDate.Date == dateOnly && b.Status != BookingStatus.Cancelled)
+                .ToListAsync();
         }
     }
 }

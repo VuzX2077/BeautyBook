@@ -10,6 +10,8 @@ namespace BeautyBookBackend.DTOs
         public string? Description { get; set; }
         public decimal Price { get; set; }
         public int DurationMinutes { get; set; }
+        public string? ImageUrl { get; set; }
+        public List<string> Tags { get; set; } = new();
     }
 
     public class ServiceCreateDto
@@ -28,5 +30,8 @@ namespace BeautyBookBackend.DTOs
         [Required]
         [Range(1, 1440)]
         public int DurationMinutes { get; set; }
+
+        public string? ImageUrl { get; set; }
+        public List<string> Tags { get; set; } = new();
     }
 }

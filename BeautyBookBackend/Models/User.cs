@@ -12,6 +12,7 @@ namespace BeautyBookBackend.Models
         public string? PasswordHash { get; set; }
         public string? AvatarUrl { get; set; }
         public string? PhoneNumber { get; set; }
+        public bool PhoneVerified { get; set; }
         public UserRole Role { get; set; }
         public DateTime CreatedAt { get; set; }
         public bool IsActive { get; set; }

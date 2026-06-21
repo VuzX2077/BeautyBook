@@ -72,7 +72,7 @@ namespace BeautyBookBackend.Services
                     MUAId = user.UserId,
                     Bio = "Hay viet vai dong gioi thieu ban than...",
                     ExperienceYears = 0,
-                    RatingAverage = 5.0m,
+                    AverageRating = 5.0m,
                     TotalBookings = 0,
                     PortfolioCoverUrl = null
                 });
@@ -80,7 +80,7 @@ namespace BeautyBookBackend.Services
 
             await _unitOfWork.SaveChangesAsync();
 
-            return ToUserDto(user);
+            return ToUserDto(user, registerDto.Role == UserRole.MUA);
         }
 
         public async Task<TokenDto?> LoginAsync(LoginDto loginDto)
@@ -91,7 +91,7 @@ namespace BeautyBookBackend.Services
                 return null;
             }
 
-            return GenerateJwtToken(user);
+            return await GenerateJwtTokenAsync(user);
         }
 
         public async Task<TokenDto?> BecomeMuaAsync(Guid userId)
@@ -111,7 +111,7 @@ namespace BeautyBookBackend.Services
                     MUAId = user.UserId,
                     Bio = "Hay viet vai dong gioi thieu ban than...",
                     ExperienceYears = 0,
-                    RatingAverage = 5.0m,
+                    AverageRating = 5.0m,
                     TotalBookings = 0,
                     PortfolioCoverUrl = null
                 });
@@ -119,7 +119,7 @@ namespace BeautyBookBackend.Services
 
             await _unitOfWork.SaveChangesAsync();
 
-            return GenerateJwtToken(user);
+            return await GenerateJwtTokenAsync(user);
         }
 
         public async Task<TokenDto?> GoogleLoginAsync(GoogleLoginDto googleLoginDto)
@@ -199,10 +199,10 @@ namespace BeautyBookBackend.Services
                 }
             }
 
-            return GenerateJwtToken(user);
+            return await GenerateJwtTokenAsync(user);
         }
 
-        private static UserDto ToUserDto(User user)
+        private static UserDto ToUserDto(User user, bool hasMuaProfile)
         {
             return new UserDto
             {
@@ -213,7 +213,8 @@ namespace BeautyBookBackend.Services
                 PhoneNumber = user.PhoneNumber,
                 Role = user.Role,
                 CreatedAt = user.CreatedAt,
-                IsActive = user.IsActive
+                IsActive = user.IsActive,
+                HasMuaProfile = hasMuaProfile
             };
         }
 
@@ -242,7 +243,7 @@ namespace BeautyBookBackend.Services
                 .ToList();
         }
 
-        private TokenDto GenerateJwtToken(User user)
+        private async Task<TokenDto> GenerateJwtTokenAsync(User user)
         {
             var jwtKey = _configuration["Jwt:Key"]
                 ?? throw new InvalidOperationException("Jwt:Key is not configured.");
@@ -274,6 +275,8 @@ namespace BeautyBookBackend.Services
                 signingCredentials: creds
             );
 
+            bool hasMuaProfile = await _muaRepository.ProfileExistsAsync(user.UserId);
+
             return new TokenDto
             {
                 Token = new JwtSecurityTokenHandler().WriteToken(token),
@@ -281,7 +284,8 @@ namespace BeautyBookBackend.Services
                 UserId = user.UserId,
                 FullName = user.FullName ?? "",
                 Email = user.Email ?? "",
-                Role = user.Role
+                Role = user.Role,
+                HasMuaProfile = hasMuaProfile
             };
         }
     }

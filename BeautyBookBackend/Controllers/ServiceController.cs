@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
@@ -74,14 +74,20 @@ namespace BeautyBookBackend.Controllers
                 return Forbid();
             }
 
-            var success = await _muaService.DeleteMuaServiceAsync(CurrentUserId, id);
-            if (!success)
+            try
             {
-                return NotFound(new { Message = "KhÃ´ng tÃ¬m tháº¥y gÃ³i dá»‹ch vá»¥ nÃ y hoáº·c báº¡n khÃ´ng cÃ³ quyá»n xÃ³a." });
-            }
+                var success = await _muaService.DeleteMuaServiceAsync(CurrentUserId, id);
+                if (!success)
+                {
+                    return NotFound(new { Message = "Không tìm thấy gói dịch vụ này hoặc bạn không có quyền xóa." });
+                }
 
-            return Ok(new { Message = "ÄÃ£ xÃ³a gÃ³i dá»‹ch vá»¥ trang Ä‘iá»ƒm thÃ nh cÃ´ng." });
+                return Ok(new { Message = "Đã xóa gói dịch vụ trang điểm thành công." });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { Message = "Không thể xóa dịch vụ này vì nó đã có lịch đặt liên quan." });
+            }
         }
     }
 }
-

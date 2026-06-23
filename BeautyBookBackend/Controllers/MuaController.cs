@@ -85,7 +85,7 @@ namespace BeautyBookBackend.Controllers
         public async Task<IActionResult> AddPortfolioImage([FromBody] PortfolioCreateRequest request)
         {
             var roleClaim = User.FindFirst(ClaimTypes.Role)?.Value;
-            if (roleClaim != UserRole.MUA.ToString()) return Forbid();
+            if (roleClaim != UserRole.MUA.ToString() && roleClaim != UserRole.Admin.ToString()) return Forbid();
 
             var success = await _muaService.AddPortfolioImageAsync(CurrentUserId, request);
             if (!success) return BadRequest(new { Message = "Không thể thêm ảnh vào Portfolio." });
@@ -98,7 +98,7 @@ namespace BeautyBookBackend.Controllers
         public async Task<IActionResult> DeletePortfolioImage(Guid portfolioId)
         {
             var roleClaim = User.FindFirst(ClaimTypes.Role)?.Value;
-            if (roleClaim != UserRole.MUA.ToString()) return Forbid();
+            if (roleClaim != UserRole.MUA.ToString() && roleClaim != UserRole.Admin.ToString()) return Forbid();
 
             var success = await _muaService.DeletePortfolioAsync(CurrentUserId, portfolioId);
             if (!success) return BadRequest(new { Message = "Không thể xóa tác phẩm này." });
@@ -119,7 +119,7 @@ namespace BeautyBookBackend.Controllers
         public async Task<IActionResult> UpdateStyles([FromBody] List<int> styleIds)
         {
             var roleClaim = User.FindFirst(ClaimTypes.Role)?.Value;
-            if (roleClaim != UserRole.MUA.ToString()) return Forbid();
+            if (roleClaim != UserRole.MUA.ToString() && roleClaim != UserRole.Admin.ToString()) return Forbid();
 
             var success = await _muaService.UpdateStylesAsync(CurrentUserId, styleIds);
             if (!success) return BadRequest(new { Message = "Không thể cập nhật danh sách phong cách trang điểm." });

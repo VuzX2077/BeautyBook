@@ -11,5 +11,6 @@ namespace BeautyBookBackend.Repositories
         Task AddAsync(Review review);
         Task<List<int>> GetRatingsByMuaIdAsync(Guid muaId);
         Task<List<Review>> GetByMuaIdAsync(Guid muaId);
+        Task<Review?> GetByIdAsync(Guid reviewId);
     }
 }

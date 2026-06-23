@@ -12,7 +12,10 @@ namespace BeautyBookBackend.DTOs
         public Guid MUAId { get; set; }
         public int Rating { get; set; }
         public string? Comment { get; set; }
+        public string? ImageUrl { get; set; }
         public DateTime CreatedAt { get; set; }
+        public string? MuaReply { get; set; }
+        public DateTime? MuaReplyAt { get; set; }
     }
 
     public class ReviewCreateDto
@@ -23,11 +26,21 @@ namespace BeautyBookBackend.DTOs
 
         [MaxLength(1000)]
         public string? Comment { get; set; }
+
+        [MaxLength(2048)]
+        public string? ImageUrl { get; set; }
     }
 
     public class ReviewCreateWithBookingDto : ReviewCreateDto
     {
         [Required]
         public Guid BookingId { get; set; }
+    }
+
+    public class ReviewReplyDto
+    {
+        [Required]
+        [MaxLength(2000)]
+        public string ReplyContent { get; set; } = string.Empty;
     }
 }

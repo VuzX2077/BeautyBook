@@ -7,6 +7,7 @@ using System.Text;
 using Microsoft.OpenApi.Models;
 using BeautyBookBackend.Services;
 using BeautyBookBackend.Repositories;
+using BeautyBookBackend.Hubs;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -55,9 +56,10 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
     {
-        policy.AllowAnyOrigin()
+        policy.SetIsOriginAllowed(_ => true)
               .AllowAnyMethod()
-              .AllowAnyHeader();
+              .AllowAnyHeader()
+              .AllowCredentials();
     });
 });
 
@@ -124,6 +126,7 @@ builder.Services.AddScoped<IMuaService, MuaService>();
 builder.Services.AddScoped<IBookingService, BookingService>();
 builder.Services.AddScoped<IWalletService, WalletService>();
 builder.Services.AddScoped<IFeedService, FeedService>();
+builder.Services.AddScoped<IChatService, ChatService>();
 
 // Register Data Access Layer (Repositories + Unit of Work)
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
@@ -132,6 +135,9 @@ builder.Services.AddScoped<IMuaRepository, MuaRepository>();
 builder.Services.AddScoped<IBookingRepository, BookingRepository>();
 builder.Services.AddScoped<IWalletRepository, WalletRepository>();
 builder.Services.AddScoped<IReviewRepository, ReviewRepository>();
+builder.Services.AddScoped<IChatRepository, ChatRepository>();
+
+builder.Services.AddSignalR();
 
 var app = builder.Build();
 
@@ -155,6 +161,7 @@ app.UseAuthorization();
 
 app.MapGet("/health", () => Results.Ok(new { Status = "Healthy" }));
 app.MapControllers();
+app.MapHub<ChatHub>("/chathub");
 
 var port = Environment.GetEnvironmentVariable("PORT");
 if (!string.IsNullOrWhiteSpace(port))

@@ -70,5 +70,26 @@ namespace BeautyBookBackend.Controllers
 
             return Ok(new { Message = "Cảm ơn bạn đã gửi đánh giá! Phản hồi của bạn đã được ghi nhận." });
         }
+
+        [Authorize]
+        [HttpPost("{reviewId}/reply")]
+        public async Task<IActionResult> AddReply(Guid reviewId, [FromBody] ReviewReplyDto replyDto)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+
+            if (CurrentUserRole != UserRole.MUA && CurrentUserRole != UserRole.Admin)
+            {
+                return BadRequest(new { Message = "Chỉ Make Up Artist hoặc Admin mới có quyền phản hồi đánh giá." });
+            }
+
+            bool isAdmin = CurrentUserRole == UserRole.Admin;
+            var success = await _bookingService.ReplyReviewAsync(reviewId, CurrentUserId, replyDto.ReplyContent, isAdmin);
+            if (!success)
+            {
+                return BadRequest(new { Message = "Phản hồi đánh giá thất bại. Đánh giá không tồn tại hoặc không thuộc về bạn." });
+            }
+
+            return Ok(new { Message = "Phản hồi thành công!" });
+        }
     }
 }

@@ -179,6 +179,7 @@ namespace BeautyBookBackend.Services
                 MUAId = booking.MUAId,
                 Rating = reviewDto.Rating,
                 Comment = reviewDto.Comment,
+                ImageUrl = reviewDto.ImageUrl,
                 CreatedAt = DateTime.UtcNow
             });
 
@@ -198,6 +199,20 @@ namespace BeautyBookBackend.Services
             return true;
         }
 
+        public async Task<bool> ReplyReviewAsync(Guid reviewId, Guid muaId, string replyContent, bool isAdmin = false)
+        {
+            var review = await _reviewRepository.GetByIdAsync(reviewId);
+            if (review == null) return false;
+
+            if (!isAdmin && review.MUAId != muaId) return false;
+
+            review.MuaReply = replyContent;
+            review.MuaReplyAt = DateTime.UtcNow;
+
+            await _unitOfWork.SaveChangesAsync();
+            return true;
+        }
+
         public async Task<List<ReviewDto>> GetMuaReviewsAsync(Guid muaId)
         {
             var reviews = await _reviewRepository.GetByMuaIdAsync(muaId);
@@ -210,6 +225,9 @@ namespace BeautyBookBackend.Services
                 MUAId = r.MUAId,
                 Rating = r.Rating,
                 Comment = r.Comment,
+                ImageUrl = r.ImageUrl,
+                MuaReply = r.MuaReply,
+                MuaReplyAt = r.MuaReplyAt,
                 CreatedAt = r.CreatedAt
             }).ToList();
         }
@@ -293,8 +311,10 @@ namespace BeautyBookBackend.Services
                 BookingId = booking.BookingId,
                 CustomerId = booking.CustomerId,
                 CustomerName = booking.Customer?.FullName,
+                CustomerAvatarUrl = booking.Customer?.AvatarUrl,
                 MUAId = booking.MUAId,
                 MuaName = booking.MakeupArtistProfile?.User?.FullName,
+                MuaAvatarUrl = booking.MakeupArtistProfile?.User?.AvatarUrl,
                 TotalAmount = booking.TotalAmount,
                 TotalDurationMinutes = booking.TotalDurationMinutes,
                 BookingDate = booking.BookingDate,
@@ -318,7 +338,8 @@ namespace BeautyBookBackend.Services
                         ServiceName = bs.ServiceName,
                         Price = bs.PriceSnapshot,
                         ParticipantsCount = bs.ParticipantsCount,
-                        DurationMinutes = bs.DurationMinutesSnapshot
+                        DurationMinutes = bs.DurationMinutesSnapshot,
+                        ImageUrl = bs.Service?.ImageUrl
                     });
                 }
             }

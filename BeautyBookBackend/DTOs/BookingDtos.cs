@@ -12,6 +12,7 @@ namespace BeautyBookBackend.DTOs
         public decimal Price { get; set; }
         public int ParticipantsCount { get; set; }
         public int DurationMinutes { get; set; }
+        public string? ImageUrl { get; set; }
     }
 
     public class BookingDto
@@ -19,8 +20,10 @@ namespace BeautyBookBackend.DTOs
         public Guid BookingId { get; set; }
         public Guid CustomerId { get; set; }
         public string? CustomerName { get; set; }
+        public string? CustomerAvatarUrl { get; set; }
         public Guid MUAId { get; set; }
         public string? MuaName { get; set; }
+        public string? MuaAvatarUrl { get; set; }
         
         public decimal TotalAmount { get; set; }
         public int TotalDurationMinutes { get; set; }

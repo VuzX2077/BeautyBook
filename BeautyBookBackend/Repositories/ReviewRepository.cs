@@ -43,5 +43,9 @@ namespace BeautyBookBackend.Repositories
                 .OrderByDescending(r => r.CreatedAt)
                 .ToListAsync();
         }
+        public Task<Review?> GetByIdAsync(Guid reviewId)
+        {
+            return _context.Reviews.FirstOrDefaultAsync(r => r.ReviewId == reviewId);
+        }
     }
 }

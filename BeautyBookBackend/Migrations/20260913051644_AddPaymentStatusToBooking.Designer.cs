@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using BeautyBookBackend.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace BeautyBookBackend.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260913051644_AddPaymentStatusToBooking")]
+    partial class AddPaymentStatusToBooking
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -145,9 +148,17 @@ namespace BeautyBookBackend.Migrations
                     b.Property<int>("StyleId")
                         .HasColumnType("integer");
 
+                    b.Property<Guid?>("MakeupArtistProfileMUAId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int?>("MakeupStyleStyleId")
+                        .HasColumnType("integer");
+
                     b.HasKey("MUAId", "StyleId");
 
-                    b.HasIndex("StyleId");
+                    b.HasIndex("MakeupArtistProfileMUAId");
+
+                    b.HasIndex("MakeupStyleStyleId");
 
                     b.ToTable("MUAStyles");
                 });
@@ -490,6 +501,9 @@ namespace BeautyBookBackend.Migrations
                     b.Property<Guid>("MUAId")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("MakeupArtistProfileMUAId")
+                        .HasColumnType("uuid");
+
                     b.Property<decimal>("Price")
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)");
@@ -504,7 +518,7 @@ namespace BeautyBookBackend.Migrations
 
                     b.HasKey("ServiceId");
 
-                    b.HasIndex("MUAId");
+                    b.HasIndex("MakeupArtistProfileMUAId");
 
                     b.ToTable("Services");
                 });
@@ -663,15 +677,11 @@ namespace BeautyBookBackend.Migrations
                 {
                     b.HasOne("BeautyBookBackend.Models.MakeupArtistProfile", "MakeupArtistProfile")
                         .WithMany()
-                        .HasForeignKey("MUAId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .HasForeignKey("MakeupArtistProfileMUAId");
 
                     b.HasOne("BeautyBookBackend.Models.MakeupStyle", "MakeupStyle")
                         .WithMany()
-                        .HasForeignKey("StyleId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .HasForeignKey("MakeupStyleStyleId");
 
                     b.Navigation("MakeupArtistProfile");
 
@@ -800,9 +810,7 @@ namespace BeautyBookBackend.Migrations
                 {
                     b.HasOne("BeautyBookBackend.Models.MakeupArtistProfile", "MakeupArtistProfile")
                         .WithMany("Services")
-                        .HasForeignKey("MUAId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .HasForeignKey("MakeupArtistProfileMUAId");
 
                     b.Navigation("MakeupArtistProfile");
                 });

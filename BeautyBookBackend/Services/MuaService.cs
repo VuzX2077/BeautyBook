@@ -33,7 +33,8 @@ namespace BeautyBookBackend.Services
 
             foreach (var profile in profiles)
             {
-                result.Add(await ToMuaProfileDtoWithPriceAsync(profile, new List<string>()));
+                var styles = await _muaRepository.GetStyleNamesByMuaIdAsync(profile.MUAId);
+                result.Add(await ToMuaProfileDtoWithPriceAsync(profile, styles));
             }
 
             return result;
@@ -434,9 +435,11 @@ namespace BeautyBookBackend.Services
                 Email = profile.User?.Email,
                 AvatarUrl = profile.User?.AvatarUrl,
                 PhoneNumber = profile.User?.PhoneNumber,
+                PhoneVerified = profile.User?.PhoneVerified ?? false,
                 City = profile.City,
                 Specialization = profile.Specialization,
                 SocialLinks = profile.SocialLinks,
+                Styles = styles,
                 Status = profile.Status.ToString(),
                 RankScore = profile.RankScore,
                 ListedAt = profile.ListedAt,
@@ -447,6 +450,7 @@ namespace BeautyBookBackend.Services
         private async Task<MuaProfileDto> ToMuaProfileDtoWithPriceAsync(MakeupArtistProfile profile, List<string> styles)
         {
             var dto = ToMuaProfileDto(profile, styles);
+            dto.MinPrice = await _muaRepository.GetMinPriceByMuaIdAsync(profile.MUAId);
             return dto;
         }
 
@@ -468,9 +472,12 @@ namespace BeautyBookBackend.Services
                 Email = profile.User?.Email,
                 AvatarUrl = profile.User?.AvatarUrl,
                 PhoneNumber = profile.User?.PhoneNumber,
+                PhoneVerified = profile.User?.PhoneVerified ?? false,
                 City = profile.City,
                 Specialization = profile.Specialization,
                 SocialLinks = profile.SocialLinks,
+                Styles = styles,
+                MinPrice = services.Any() ? services.Min(s => s.Price) : null,
                 Status = profile.Status.ToString(),
                 RankScore = profile.RankScore,
                 ListedAt = profile.ListedAt,

@@ -38,6 +38,7 @@ namespace BeautyBookBackend.DTOs
         public List<BookingServiceDto> Services { get; set; } = new();
 
         public BookingStatus Status { get; set; }
+        public PaymentStatus PaymentStatus { get; set; }
         public bool HasReview { get; set; }
         public DateTime CreatedAt { get; set; }
     }

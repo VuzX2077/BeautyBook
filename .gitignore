@@ -66,6 +66,7 @@ artifacts/
 # Local application settings with secrets
 appsettings.Local.json
 appsettings.*.Local.json
+BeautyBookBackend/appsettings.Development.json
 
 # ASP.NET Scaffolding
 ScaffoldingReadMe.txt

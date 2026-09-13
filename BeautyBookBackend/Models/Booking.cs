@@ -21,6 +21,7 @@ namespace BeautyBookBackend.Models
         public string? Notes { get; set; }
 
         public BookingStatus Status { get; set; }
+        public PaymentStatus PaymentStatus { get; set; }
         public DateTime CreatedAt { get; set; }
 
         // Navigation

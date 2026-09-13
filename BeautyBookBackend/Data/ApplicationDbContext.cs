@@ -67,6 +67,16 @@ namespace BeautyBookBackend.Data
             modelBuilder.Entity<MUAStyle>(b =>
             {
                 b.HasKey(ms => new { ms.MUAId, ms.StyleId });
+
+                b.HasOne(ms => ms.MakeupArtistProfile)
+                    .WithMany()
+                    .HasForeignKey(ms => ms.MUAId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                b.HasOne(ms => ms.MakeupStyle)
+                    .WithMany()
+                    .HasForeignKey(ms => ms.StyleId)
+                    .OnDelete(DeleteBehavior.Cascade);
             });
 
             modelBuilder.Entity<Portfolio>(b =>
@@ -113,6 +123,11 @@ namespace BeautyBookBackend.Data
                 b.Property(s => s.ServiceName).HasMaxLength(100);
                 b.Property(s => s.Description).HasMaxLength(500);
                 b.Property(s => s.Price).HasPrecision(18, 2);
+
+                b.HasOne(s => s.MakeupArtistProfile)
+                    .WithMany(m => m.Services)
+                    .HasForeignKey(s => s.MUAId)
+                    .OnDelete(DeleteBehavior.Cascade);
             });
 
             modelBuilder.Entity<Booking>(b =>

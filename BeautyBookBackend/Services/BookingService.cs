@@ -65,6 +65,15 @@ namespace BeautyBookBackend.Services
             }
 
             var customerWallet = await _walletRepository.GetByUserIdAsync(customerId);
+            if (customerWallet == null)
+            {
+                throw new InvalidOperationException("Không tìm thấy ví của khách hàng.");
+            }
+
+            if (customerWallet.Balance < totalAmount)
+            {
+                throw new InvalidOperationException("Số dư ví không đủ để thanh toán booking.");
+            }
 
             var endTime = createDto.StartTime.Add(TimeSpan.FromMinutes(totalDuration));
 
@@ -81,27 +90,25 @@ namespace BeautyBookBackend.Services
                 Address = createDto.Address,
                 Notes = createDto.Notes,
                 Status = BookingStatus.Pending,
+                PaymentStatus = PaymentStatus.Paid,
                 CreatedAt = DateTime.UtcNow,
                 BookingServices = bookingServices
             };
 
             await _bookingRepository.AddAsync(booking);
 
-            if (customerWallet != null)
-            {
-                customerWallet.Balance -= totalAmount;
-                customerWallet.UpdatedAt = DateTime.UtcNow;
+            customerWallet.Balance -= totalAmount;
+            customerWallet.UpdatedAt = DateTime.UtcNow;
 
-                await _walletRepository.AddTransactionAsync(new WalletTransaction
-                {
-                    TransactionId = Guid.NewGuid(),
-                    WalletId = customerWallet.WalletId,
-                    Amount = -totalAmount,
-                    TransactionType = TransactionType.BookingPayment,
-                    Description = $"Thanh toan dat lich #{booking.BookingId.ToString().Substring(0, 8)}",
-                    CreatedAt = DateTime.UtcNow
-                });
-            }
+            await _walletRepository.AddTransactionAsync(new WalletTransaction
+            {
+                TransactionId = Guid.NewGuid(),
+                WalletId = customerWallet.WalletId,
+                Amount = -totalAmount,
+                TransactionType = TransactionType.BookingPayment,
+                Description = $"Thanh toan dat lich #{booking.BookingId.ToString().Substring(0, 8)}",
+                CreatedAt = DateTime.UtcNow
+            });
 
             await _unitOfWork.SaveChangesAsync();
             return await ToBookingDtoAsync(booking);
@@ -139,21 +146,37 @@ namespace BeautyBookBackend.Services
 
             if (booking.Status == newStatus) return true;
 
+            if (IsFinalStatus(booking.Status))
+            {
+                return false;
+            }
+
             if (!IsValidStatusTransition(booking.Status, newStatus, userId, booking.MUAId, booking.CustomerId))
             {
                 return false;
             }
 
-            booking.Status = newStatus;
+            if (RequiresPaidBooking(newStatus) && booking.PaymentStatus != PaymentStatus.Paid)
+            {
+                return false;
+            }
 
             if (newStatus == BookingStatus.Completed)
             {
-                await CompleteBookingAsync(booking);
+                if (!await CompleteBookingAsync(booking))
+                {
+                    return false;
+                }
             }
             else if (newStatus == BookingStatus.Cancelled || newStatus == BookingStatus.Pending)
             {
-                await RefundBookingAsync(booking);
+                if (!await RefundBookingAsync(booking))
+                {
+                    return false;
+                }
             }
+
+            booking.Status = newStatus;
 
             return await _unitOfWork.SaveChangesAsync() > 0;
         }
@@ -232,17 +255,13 @@ namespace BeautyBookBackend.Services
             }).ToList();
         }
 
-        private async Task CompleteBookingAsync(Booking booking)
+        private async Task<bool> CompleteBookingAsync(Booking booking)
         {
-            if (!await _walletRepository.HasBookingPaymentAsync(booking.BookingId))
+            if (booking.PaymentStatus != PaymentStatus.Paid
+                || !await _walletRepository.HasBookingPaymentAsync(booking.BookingId)
+                || await _walletRepository.HasBookingEarningAsync(booking.BookingId))
             {
-                var unpaidMuaProfile = await _muaRepository.GetProfileByIdAsync(booking.MUAId);
-                if (unpaidMuaProfile != null)
-                {
-                    unpaidMuaProfile.TotalBookings += 1;
-                }
-
-                return;
+                return false;
             }
 
             const decimal commissionFee = 10000m;
@@ -251,21 +270,23 @@ namespace BeautyBookBackend.Services
             if (artistEarnings < 0) artistEarnings = 0;
 
             var muaWallet = await _walletRepository.GetByUserIdAsync(booking.MUAId);
-            if (muaWallet != null)
+            if (muaWallet == null)
             {
-                muaWallet.Balance += artistEarnings;
-                muaWallet.UpdatedAt = DateTime.UtcNow;
-
-                await _walletRepository.AddTransactionAsync(new WalletTransaction
-                {
-                    TransactionId = Guid.NewGuid(),
-                    WalletId = muaWallet.WalletId,
-                    Amount = artistEarnings,
-                    TransactionType = TransactionType.BookingEarning,
-                    Description = $"Nhan tien thanh toan lich dat #{booking.BookingId.ToString().Substring(0, 8)} sau phi dich vu {commissionFee} VND",
-                    CreatedAt = DateTime.UtcNow
-                });
+                return false;
             }
+
+            muaWallet.Balance += artistEarnings;
+            muaWallet.UpdatedAt = DateTime.UtcNow;
+
+            await _walletRepository.AddTransactionAsync(new WalletTransaction
+            {
+                TransactionId = Guid.NewGuid(),
+                WalletId = muaWallet.WalletId,
+                Amount = artistEarnings,
+                TransactionType = TransactionType.BookingEarning,
+                Description = $"Nhan tien thanh toan lich dat #{booking.BookingId.ToString().Substring(0, 8)} sau phi dich vu {commissionFee} VND",
+                CreatedAt = DateTime.UtcNow
+            });
 
             var muaProfile = await _muaRepository.GetProfileByIdAsync(booking.MUAId);
             if (muaProfile != null)
@@ -276,17 +297,29 @@ namespace BeautyBookBackend.Services
                 // "RankScore is recalculated synchronously on profile update or booking update."
                 // Wait, I should do that.
             }
+
+            return true;
         }
 
-        private async Task RefundBookingAsync(Booking booking)
+        private async Task<bool> RefundBookingAsync(Booking booking)
         {
+            if (booking.PaymentStatus == PaymentStatus.Refunded || await _walletRepository.HasBookingRefundAsync(booking.BookingId))
+            {
+                return false;
+            }
+
+            if (booking.PaymentStatus == PaymentStatus.Unpaid || booking.PaymentStatus == PaymentStatus.Failed)
+            {
+                return true;
+            }
+
             if (!await _walletRepository.HasBookingPaymentAsync(booking.BookingId))
             {
-                return;
+                return false;
             }
 
             var customerWallet = await _walletRepository.GetByUserIdAsync(booking.CustomerId);
-            if (customerWallet == null) return;
+            if (customerWallet == null) return false;
 
             var servicePrice = booking.TotalAmount;
 
@@ -302,6 +335,9 @@ namespace BeautyBookBackend.Services
                 Description = $"Hoan tien coc lich dat #{booking.BookingId.ToString().Substring(0, 8)} do don hang bi huy/tu choi",
                 CreatedAt = DateTime.UtcNow
             });
+
+            booking.PaymentStatus = PaymentStatus.Refunded;
+            return true;
         }
 
         private async Task<BookingDto> ToBookingDtoAsync(Booking booking)
@@ -323,6 +359,7 @@ namespace BeautyBookBackend.Services
                 Address = booking.Address,
                 Notes = booking.Notes,
                 Status = booking.Status,
+                PaymentStatus = booking.PaymentStatus,
                 HasReview = await _reviewRepository.ExistsForBookingAsync(booking.BookingId),
                 CreatedAt = booking.CreatedAt,
                 Services = new List<BookingServiceDto>()
@@ -400,6 +437,18 @@ namespace BeautyBookBackend.Services
                 };
             }
             return false;
+        }
+
+        private static bool IsFinalStatus(BookingStatus status)
+        {
+            return status == BookingStatus.Completed || status == BookingStatus.Cancelled;
+        }
+
+        private static bool RequiresPaidBooking(BookingStatus status)
+        {
+            return status == BookingStatus.Approved
+                || status == BookingStatus.WaitingCustomer
+                || status == BookingStatus.Completed;
         }
     }
 }

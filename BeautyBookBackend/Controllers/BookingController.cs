@@ -51,6 +51,10 @@ namespace BeautyBookBackend.Controllers
 
                 return Ok(new { Message = "Đặt lịch hẹn thành công! Booking đang ở trạng thái Pending.", Booking = booking });
             }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { Message = ex.Message });
+            }
             catch (Exception ex)
             {
                 return StatusCode(500, new

@@ -127,6 +127,11 @@ builder.Services.AddScoped<IBookingService, BookingService>();
 builder.Services.AddScoped<IWalletService, WalletService>();
 builder.Services.AddScoped<IFeedService, FeedService>();
 builder.Services.AddScoped<IChatService, ChatService>();
+builder.Services.AddHttpClient<IPayOsService, PayOsService>(client =>
+{
+    var baseUrl = builder.Configuration["PayOS:BaseUrl"] ?? "https://api-merchant.payos.vn";
+    client.BaseAddress = new Uri(baseUrl);
+});
 
 // Register Data Access Layer (Repositories + Unit of Work)
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();

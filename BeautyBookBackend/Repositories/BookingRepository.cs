@@ -72,5 +72,17 @@ namespace BeautyBookBackend.Repositories
                 .Where(b => b.MUAId == muaId && b.BookingDate.Date == dateOnly && b.Status != BookingStatus.Cancelled)
                 .ToListAsync();
         }
+
+        public Task<bool> HasOverlappingBookingAsync(Guid muaId, DateTime date, TimeSpan startTime, TimeSpan endTime)
+        {
+            var dateOnly = date.Date;
+
+            return _context.Bookings.AnyAsync(b =>
+                b.MUAId == muaId
+                && b.BookingDate.Date == dateOnly
+                && b.Status != BookingStatus.Cancelled
+                && startTime < b.EndTime
+                && endTime > b.StartTime);
+        }
     }
 }

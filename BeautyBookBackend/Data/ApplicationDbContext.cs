@@ -23,6 +23,7 @@ namespace BeautyBookBackend.Data
         public DbSet<Message> Messages { get; set; } = null!;
         public DbSet<Wallet> Wallets { get; set; } = null!;
         public DbSet<WalletTransaction> WalletTransactions { get; set; } = null!;
+        public DbSet<WalletTopUp> WalletTopUps { get; set; } = null!;
         public DbSet<Product> Products { get; set; } = null!;
         public DbSet<ProductReview> ProductReviews { get; set; } = null!;
         public DbSet<PortfolioLike> PortfolioLikes { get; set; } = null!;
@@ -192,6 +193,30 @@ namespace BeautyBookBackend.Data
             {
                 b.HasKey(t => t.TransactionId);
                 b.Property(t => t.Amount).HasPrecision(18, 2);
+                b.Property(t => t.ReferenceType).HasMaxLength(50);
+                b.HasIndex(t => new { t.ReferenceId, t.TransactionType });
+            });
+
+            modelBuilder.Entity<WalletTopUp>(b =>
+            {
+                b.HasKey(t => t.TopUpId);
+                b.Property(t => t.Amount).HasPrecision(18, 2);
+                b.Property(t => t.ProviderPaymentLinkId).HasMaxLength(100);
+                b.Property(t => t.CheckoutUrl).HasMaxLength(1000);
+                b.Property(t => t.QrCode).HasMaxLength(4000);
+                b.Property(t => t.ProviderReference).HasMaxLength(255);
+                b.HasIndex(t => t.ProviderOrderCode).IsUnique();
+                b.HasIndex(t => t.ProviderPaymentLinkId).IsUnique();
+
+                b.HasOne(t => t.User)
+                    .WithMany()
+                    .HasForeignKey(t => t.UserId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                b.HasOne(t => t.Wallet)
+                    .WithMany()
+                    .HasForeignKey(t => t.WalletId)
+                    .OnDelete(DeleteBehavior.Restrict);
             });
 
             modelBuilder.Entity<Product>(b =>

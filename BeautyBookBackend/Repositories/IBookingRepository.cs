@@ -14,5 +14,6 @@ namespace BeautyBookBackend.Repositories
         Task<Booking?> GetByIdForParticipantAsync(Guid bookingId, Guid userId);
         Task<Booking?> GetByIdForCustomerAsync(Guid bookingId, Guid customerId);
         Task<List<Booking>> GetBookingsByDateAsync(Guid muaId, DateTime date);
+        Task<bool> HasOverlappingBookingAsync(Guid muaId, DateTime date, TimeSpan startTime, TimeSpan endTime);
     }
 }

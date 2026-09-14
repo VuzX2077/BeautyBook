@@ -11,6 +11,10 @@ namespace BeautyBookBackend.Services
 {
     public class BookingService : IBookingService
     {
+        private const decimal PlatformCommissionFee = 10000m;
+        private static readonly TimeSpan WorkingHoursStart = TimeSpan.FromHours(8);
+        private static readonly TimeSpan WorkingHoursEnd = TimeSpan.FromHours(20);
+
         private readonly IBookingRepository _bookingRepository;
         private readonly IMuaRepository _muaRepository;
         private readonly IWalletRepository _walletRepository;
@@ -34,6 +38,7 @@ namespace BeautyBookBackend.Services
         public async Task<BookingDto?> CreateBookingAsync(Guid customerId, BookingCreateDto createDto)
         {
             if (createDto.Services == null || !createDto.Services.Any()) return null;
+            if (createDto.MUAId == Guid.Empty || createDto.BookingDate == default) return null;
 
             decimal totalAmount = 0;
             int totalDuration = 0;
@@ -43,6 +48,8 @@ namespace BeautyBookBackend.Services
 
             foreach (var s in createDto.Services)
             {
+                if (s.ParticipantsCount <= 0) return null;
+
                 var service = await _muaRepository.GetServiceByIdForMuaAsync(s.ServiceId, createDto.MUAId);
                 if (service == null) return null;
                 
@@ -72,10 +79,30 @@ namespace BeautyBookBackend.Services
 
             if (customerWallet.Balance < totalAmount)
             {
-                throw new InvalidOperationException("Số dư ví không đủ để thanh toán booking.");
+                throw new InsufficientBalanceException(totalAmount, customerWallet.Balance);
             }
 
             var endTime = createDto.StartTime.Add(TimeSpan.FromMinutes(totalDuration));
+            if (totalAmount <= 0 || totalDuration <= 0)
+            {
+                return null;
+            }
+
+            if (createDto.StartTime < WorkingHoursStart || endTime > WorkingHoursEnd)
+            {
+                throw new InvalidOperationException("Khung giờ đặt lịch phải nằm trong giờ làm việc 08:00 - 20:00.");
+            }
+
+            var bookingLocalTime = createDto.BookingDate.Date.Add(createDto.StartTime);
+            if (bookingLocalTime <= DateTime.Now)
+            {
+                throw new InvalidOperationException("Không thể đặt lịch ở thời điểm trong quá khứ.");
+            }
+
+            if (await _bookingRepository.HasOverlappingBookingAsync(createDto.MUAId, createDto.BookingDate, createDto.StartTime, endTime))
+            {
+                throw new InvalidOperationException("Khung giờ này đã có booking khác. Vui lòng chọn giờ khác.");
+            }
 
             var booking = new Booking
             {
@@ -106,6 +133,8 @@ namespace BeautyBookBackend.Services
                 WalletId = customerWallet.WalletId,
                 Amount = -totalAmount,
                 TransactionType = TransactionType.BookingPayment,
+                ReferenceId = booking.BookingId,
+                ReferenceType = nameof(Booking),
                 Description = $"Thanh toan dat lich #{booking.BookingId.ToString().Substring(0, 8)}",
                 CreatedAt = DateTime.UtcNow
             });
@@ -168,7 +197,7 @@ namespace BeautyBookBackend.Services
                     return false;
                 }
             }
-            else if (newStatus == BookingStatus.Cancelled || newStatus == BookingStatus.Pending)
+            else if (newStatus == BookingStatus.Cancelled)
             {
                 if (!await RefundBookingAsync(booking))
                 {
@@ -264,10 +293,9 @@ namespace BeautyBookBackend.Services
                 return false;
             }
 
-            const decimal commissionFee = 10000m;
             var servicePrice = booking.TotalAmount;
+            var commissionFee = Math.Min(PlatformCommissionFee, servicePrice);
             var artistEarnings = servicePrice - commissionFee;
-            if (artistEarnings < 0) artistEarnings = 0;
 
             var muaWallet = await _walletRepository.GetByUserIdAsync(booking.MUAId);
             if (muaWallet == null)
@@ -282,20 +310,36 @@ namespace BeautyBookBackend.Services
             {
                 TransactionId = Guid.NewGuid(),
                 WalletId = muaWallet.WalletId,
-                Amount = artistEarnings,
+                Amount = servicePrice,
                 TransactionType = TransactionType.BookingEarning,
-                Description = $"Nhan tien thanh toan lich dat #{booking.BookingId.ToString().Substring(0, 8)} sau phi dich vu {commissionFee} VND",
+                ReferenceId = booking.BookingId,
+                ReferenceType = nameof(Booking),
+                Description = $"Nhan tien thanh toan lich dat #{booking.BookingId.ToString().Substring(0, 8)}",
                 CreatedAt = DateTime.UtcNow
             });
 
-            var muaProfile = await _muaRepository.GetProfileByIdAsync(booking.MUAId);
+            if (commissionFee > 0)
+            {
+                await _walletRepository.AddTransactionAsync(new WalletTransaction
+                {
+                    TransactionId = Guid.NewGuid(),
+                    WalletId = muaWallet.WalletId,
+                    Amount = -commissionFee,
+                    TransactionType = TransactionType.Commission,
+                    ReferenceId = booking.BookingId,
+                    ReferenceType = nameof(Booking),
+                    Description = $"Phi nen tang booking #{booking.BookingId.ToString().Substring(0, 8)}",
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+
+            var muaProfile = await _muaRepository.GetProfileWithFullDetailsAsync(booking.MUAId);
             if (muaProfile != null)
             {
                 muaProfile.TotalBookings += 1;
-                // Since total bookings increased, we need to recalculate rank score.
-                // We'll call it in the controller or we can leave it to the next profile update, but spec says:
-                // "RankScore is recalculated synchronously on profile update or booking update."
-                // Wait, I should do that.
+                muaProfile.RankScore = (muaProfile.Portfolios.Count * 2)
+                    + (int)(muaProfile.AverageRating * 10)
+                    + (muaProfile.TotalBookings * 3);
             }
 
             return true;
@@ -332,6 +376,8 @@ namespace BeautyBookBackend.Services
                 WalletId = customerWallet.WalletId,
                 Amount = servicePrice,
                 TransactionType = TransactionType.BookingPayment,
+                ReferenceId = booking.BookingId,
+                ReferenceType = nameof(Booking),
                 Description = $"Hoan tien coc lich dat #{booking.BookingId.ToString().Substring(0, 8)} do don hang bi huy/tu choi",
                 CreatedAt = DateTime.UtcNow
             });
@@ -387,15 +433,12 @@ namespace BeautyBookBackend.Services
         {
             var bookings = await _bookingRepository.GetBookingsByDateAsync(muaId, date);
             
-            // Assume working hours are 08:00 to 20:00 for MVP
-            var workingHoursStart = TimeSpan.FromHours(8);
-            var workingHoursEnd = TimeSpan.FromHours(20);
             var slotInterval = TimeSpan.FromMinutes(30);
 
             var availableSlots = new List<TimeSpan>();
             var requiredDuration = TimeSpan.FromMinutes(totalDurationMinutes);
 
-            for (var slot = workingHoursStart; slot.Add(requiredDuration) <= workingHoursEnd; slot = slot.Add(slotInterval))
+            for (var slot = WorkingHoursStart; slot.Add(requiredDuration) <= WorkingHoursEnd; slot = slot.Add(slotInterval))
             {
                 var slotEnd = slot.Add(requiredDuration);
                 
@@ -423,6 +466,7 @@ namespace BeautyBookBackend.Services
                 {
                     (BookingStatus.Pending, BookingStatus.Approved) => true,
                     (BookingStatus.Pending, BookingStatus.Cancelled) => true,
+                    (BookingStatus.Approved, BookingStatus.Cancelled) => true,
                     (BookingStatus.Approved, BookingStatus.WaitingCustomer) => true,
                     _ => false
                 };
@@ -432,7 +476,8 @@ namespace BeautyBookBackend.Services
                 return (currentStatus, newStatus) switch
                 {
                     (BookingStatus.WaitingCustomer, BookingStatus.Completed) => true,
-                    (BookingStatus.Pending, BookingStatus.Cancelled) => true, // Customer might want to cancel pending
+                    (BookingStatus.Pending, BookingStatus.Cancelled) => true,
+                    (BookingStatus.Approved, BookingStatus.Cancelled) => true,
                     _ => false
                 };
             }

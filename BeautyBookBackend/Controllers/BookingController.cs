@@ -51,6 +51,17 @@ namespace BeautyBookBackend.Controllers
 
                 return Ok(new { Message = "Đặt lịch hẹn thành công! Booking đang ở trạng thái Pending.", Booking = booking });
             }
+            catch (InsufficientBalanceException ex)
+            {
+                return BadRequest(new
+                {
+                    Code = "INSUFFICIENT_BALANCE",
+                    Message = ex.Message,
+                    RequiredAmount = ex.RequiredAmount,
+                    CurrentBalance = ex.CurrentBalance,
+                    MissingAmount = ex.MissingAmount
+                });
+            }
             catch (Exception ex)
             {
                 return StatusCode(500, new

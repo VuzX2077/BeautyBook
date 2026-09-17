@@ -12,6 +12,10 @@ namespace BeautyBookBackend.Models
         public Guid MUAId { get; set; }
         
         public decimal TotalAmount { get; set; }
+        public decimal DepositAmount { get; set; }
+        public decimal PlatformFeeAmount { get; set; }
+        public decimal MuaEscrowAmount { get; set; }
+        public decimal RemainingAmount { get; set; }
         public int TotalDurationMinutes { get; set; }
         public DateTime BookingDate { get; set; }
         public TimeSpan StartTime { get; set; }
@@ -21,6 +25,7 @@ namespace BeautyBookBackend.Models
         public string? Notes { get; set; }
 
         public BookingStatus Status { get; set; }
+        public PaymentStatus PaymentStatus { get; set; } = PaymentStatus.Unpaid;
         public DateTime CreatedAt { get; set; }
 
         // Navigation

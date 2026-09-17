@@ -38,8 +38,30 @@ namespace BeautyBookBackend.Repositories
             return _context.WalletTransactions.AnyAsync(t =>
                 t.TransactionType == TransactionType.BookingPayment
                 && t.Amount < 0
-                && t.Description != null
-                && t.Description.Contains(bookingCode));
+                && ((t.ReferenceId == bookingId && t.ReferenceType == nameof(Booking))
+                    || (t.Description != null && t.Description.Contains(bookingCode))));
+        }
+
+        public Task<bool> HasBookingEarningAsync(Guid bookingId)
+        {
+            var bookingCode = bookingId.ToString().Substring(0, 8);
+
+            return _context.WalletTransactions.AnyAsync(t =>
+                t.TransactionType == TransactionType.BookingEarning
+                && t.Amount > 0
+                && ((t.ReferenceId == bookingId && t.ReferenceType == nameof(Booking))
+                    || (t.Description != null && t.Description.Contains(bookingCode))));
+        }
+
+        public Task<bool> HasBookingRefundAsync(Guid bookingId)
+        {
+            var bookingCode = bookingId.ToString().Substring(0, 8);
+
+            return _context.WalletTransactions.AnyAsync(t =>
+                t.TransactionType == TransactionType.BookingPayment
+                && t.Amount > 0
+                && ((t.ReferenceId == bookingId && t.ReferenceType == nameof(Booking))
+                    || (t.Description != null && t.Description.Contains(bookingCode))));
         }
 
         public Task AddAsync(Wallet wallet)

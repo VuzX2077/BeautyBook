@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using BeautyBookBackend.DTOs;
+using BeautyBookBackend.Models.Enums;
 using BeautyBookBackend.Services;
 
 namespace BeautyBookBackend.Controllers
@@ -33,6 +34,7 @@ namespace BeautyBookBackend.Controllers
             return Ok(wallet);
         }
 
+        [Authorize(Roles = nameof(UserRole.Admin))]
         [HttpPost("deposit")]
         public async Task<IActionResult> Deposit([FromBody] DepositDto depositDto)
         {
@@ -45,6 +47,49 @@ namespace BeautyBookBackend.Controllers
             }
 
             return Ok(new { Message = $"Nạp thành công {depositDto.Amount:N0} VND vào ví ảo! Chúc bạn có trải nghiệm tuyệt vời." });
+        }
+
+        [HttpPost("topups")]
+        public async Task<IActionResult> CreateTopUp([FromBody] CreateTopUpDto request)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+
+            try
+            {
+                var topUp = await _walletService.CreateTopUpAsync(CurrentUserId, request);
+                return Ok(topUp);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { Message = ex.Message });
+            }
+        }
+
+        [HttpGet("topups")]
+        public async Task<IActionResult> GetTopUps()
+        {
+            var topUps = await _walletService.GetTopUpsAsync(CurrentUserId);
+            return Ok(topUps);
+        }
+
+        [HttpGet("topups/{topUpId:guid}")]
+        public async Task<IActionResult> GetTopUp(Guid topUpId)
+        {
+            var topUp = await _walletService.GetTopUpAsync(CurrentUserId, topUpId);
+            return topUp == null ? NotFound(new { Message = "Không tìm thấy yêu cầu nạp tiền." }) : Ok(topUp);
+        }
+
+        [AllowAnonymous]
+        [HttpPost("topups/payos/webhook")]
+        public async Task<IActionResult> PayOsWebhook([FromBody] PayOsWebhookDto webhook)
+        {
+            var handled = await _walletService.HandlePayOsWebhookAsync(webhook);
+            if (!handled)
+            {
+                return BadRequest(new { Message = "Webhook payOS không hợp lệ hoặc không khớp giao dịch nạp tiền." });
+            }
+
+            return Ok(new { Message = "Webhook payOS đã được xử lý." });
         }
 
         [HttpPost("withdraw")]

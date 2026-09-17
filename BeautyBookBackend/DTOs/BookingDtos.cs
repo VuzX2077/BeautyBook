@@ -26,6 +26,10 @@ namespace BeautyBookBackend.DTOs
         public string? MuaAvatarUrl { get; set; }
         
         public decimal TotalAmount { get; set; }
+        public decimal DepositAmount { get; set; }
+        public decimal PlatformFeeAmount { get; set; }
+        public decimal MuaEscrowAmount { get; set; }
+        public decimal RemainingAmount { get; set; }
         public int TotalDurationMinutes { get; set; }
         
         public DateTime BookingDate { get; set; }
@@ -38,6 +42,7 @@ namespace BeautyBookBackend.DTOs
         public List<BookingServiceDto> Services { get; set; } = new();
 
         public BookingStatus Status { get; set; }
+        public PaymentStatus PaymentStatus { get; set; }
         public bool HasReview { get; set; }
         public DateTime CreatedAt { get; set; }
     }

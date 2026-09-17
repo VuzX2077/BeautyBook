@@ -11,6 +11,9 @@ using BeautyBookBackend.Hubs;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Local payment credentials are intentionally kept outside source control.
+builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
+
 // Build PostgreSQL connection string from configuration and optional environment variables.
 var baseConn = builder.Configuration.GetConnectionString("DefaultConnection");
 var dbHost = Environment.GetEnvironmentVariable("DB_HOST");
@@ -127,6 +130,11 @@ builder.Services.AddScoped<IBookingService, BookingService>();
 builder.Services.AddScoped<IWalletService, WalletService>();
 builder.Services.AddScoped<IFeedService, FeedService>();
 builder.Services.AddScoped<IChatService, ChatService>();
+builder.Services.AddHttpClient<IPayOsService, PayOsService>(client =>
+{
+    var baseUrl = builder.Configuration["PayOS:BaseUrl"] ?? "https://api-merchant.payos.vn";
+    client.BaseAddress = new Uri(baseUrl);
+});
 
 // Register Data Access Layer (Repositories + Unit of Work)
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
@@ -140,6 +148,14 @@ builder.Services.AddScoped<IChatRepository, ChatRepository>();
 builder.Services.AddSignalR();
 
 var app = builder.Build();
+
+var uploadsPath = Path.Combine(app.Environment.ContentRootPath, "uploads");
+Directory.CreateDirectory(uploadsPath);
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(uploadsPath),
+    RequestPath = "/uploads"
+});
 
 if (builder.Configuration.GetValue<bool>("ApplyMigrations"))
 {

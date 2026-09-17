@@ -12,6 +12,11 @@ namespace BeautyBookBackend.Models
         public Guid MUAId { get; set; }
         
         public decimal TotalAmount { get; set; }
+        public decimal DepositRate { get; set; }
+        public decimal DepositAmount { get; set; }
+        public decimal RemainingAmount { get; set; }
+        public decimal PlatformFeeAmount { get; set; }
+        public decimal MuaPayoutAmount { get; set; }
         public int TotalDurationMinutes { get; set; }
         public DateTime BookingDate { get; set; }
         public TimeSpan StartTime { get; set; }
@@ -23,6 +28,17 @@ namespace BeautyBookBackend.Models
         public BookingStatus Status { get; set; }
         public PaymentStatus PaymentStatus { get; set; }
         public DateTime CreatedAt { get; set; }
+        public DateTime UpdatedAt { get; set; }
+        public DateTime? DepositPaidAt { get; set; }
+        public DateTime? ConfirmedAt { get; set; }
+        public DateTime? StartedAt { get; set; }
+        public DateTime? WaitingCustomerAt { get; set; }
+        public DateTime? CustomerConfirmationDeadline { get; set; }
+        public DateTime? CompletedAt { get; set; }
+        public DateTime? RejectedAt { get; set; }
+        public DateTime? CancelledAt { get; set; }
+        public DateTime? DisputedAt { get; set; }
+        public string? DisputeReason { get; set; }
 
         // Navigation
         public User? Customer { get; set; }

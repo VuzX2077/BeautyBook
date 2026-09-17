@@ -147,6 +147,12 @@ namespace BeautyBookBackend.Data
                     .OnDelete(DeleteBehavior.Restrict);
                     
                 b.Property(x => x.TotalAmount).HasPrecision(18, 2);
+                b.Property(x => x.DepositRate).HasPrecision(5, 4);
+                b.Property(x => x.DepositAmount).HasPrecision(18, 2);
+                b.Property(x => x.RemainingAmount).HasPrecision(18, 2);
+                b.Property(x => x.PlatformFeeAmount).HasPrecision(18, 2);
+                b.Property(x => x.MuaPayoutAmount).HasPrecision(18, 2);
+                b.Property(x => x.DisputeReason).HasMaxLength(1000);
             });
 
             modelBuilder.Entity<BookingService>(b =>

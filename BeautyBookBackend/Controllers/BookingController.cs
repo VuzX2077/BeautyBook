@@ -49,7 +49,7 @@ namespace BeautyBookBackend.Controllers
                     return BadRequest(new { Message = "Đặt lịch thất bại. Gói dịch vụ không tồn tại hoặc không thuộc Makeup Artist đã chọn." });
                 }
 
-                return Ok(new { Message = "Đặt lịch hẹn thành công! Booking đang ở trạng thái Pending.", Booking = booking });
+                return Ok(new { Message = "Đã tạo booking. Vui lòng thanh toán tiền cọc 30%.", Booking = booking });
             }
             catch (InsufficientBalanceException ex)
             {
@@ -74,6 +74,33 @@ namespace BeautyBookBackend.Controllers
                     Inner = ex.InnerException?.Message,
                     StackTrace = ex.StackTrace
                 });
+            }
+        }
+
+        [HttpPost("{id}/pay-deposit")]
+        public async Task<IActionResult> PayDeposit(Guid id)
+        {
+            try
+            {
+                var booking = await _bookingService.PayDepositAsync(id, CurrentUserId);
+                return booking == null
+                    ? NotFound(new { Message = "Không tìm thấy booking của khách hàng." })
+                    : Ok(booking);
+            }
+            catch (InsufficientBalanceException ex)
+            {
+                return BadRequest(new
+                {
+                    Code = "INSUFFICIENT_BALANCE",
+                    Message = ex.Message,
+                    RequiredAmount = ex.RequiredAmount,
+                    CurrentBalance = ex.CurrentBalance,
+                    MissingAmount = ex.MissingAmount
+                });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { Message = ex.Message });
             }
         }
         
@@ -104,22 +131,35 @@ namespace BeautyBookBackend.Controllers
                 return NotFound(new { Message = "Không tìm thấy đơn đặt lịch." });
             }
 
-            var success = await _bookingService.UpdateBookingStatusAsync(id, CurrentUserId, updateDto.Status);
-            if (!success)
+            try
             {
-                return BadRequest(new { Message = "Cập nhật trạng thái lịch hẹn thất bại. Makeup Artist chỉ có thể duyệt/từ chối lịch Pending hoặc hoàn thành lịch Approved của mình." });
+                var updated = await _bookingService.UpdateBookingStatusAsync(id, CurrentUserId, updateDto.Status, updateDto.Reason);
+                if (updated == null)
+                    return BadRequest(new { Message = "Chuyển trạng thái không hợp lệ hoặc không đúng quyền." });
+                return Ok(updated);
             }
-
-            string statusMsg = updateDto.Status switch
+            catch (InvalidOperationException ex)
             {
-                BookingStatus.Approved => "đã duyệt lịch hẹn và cam kết thực hiện",
-                BookingStatus.WaitingCustomer => "đã tải lên bằng chứng. Chờ khách hàng xác nhận",
-                BookingStatus.Completed => "đã hoàn thành. Tiền cọc (trừ phí dịch vụ) đã giải ngân sang ví Makeup Artist",
-                BookingStatus.Cancelled => "đã bị hủy bỏ. Tiền cọc đã tự động hoàn trả đầy đủ vào ví khách hàng",
-                _ => "đã được cập nhật"
-            };
+                return BadRequest(new { Message = ex.Message });
+            }
+        }
 
-            return Ok(new { Message = $"Đơn đặt lịch #{id.ToString().Substring(0, 8)} {statusMsg}!" });
+        [Authorize(Roles = "Admin")]
+        [HttpPost("{id}/resolve-dispute")]
+        public async Task<IActionResult> ResolveDispute(Guid id, [FromBody] DisputeResolutionDto dto)
+        {
+            var booking = await _bookingService.ResolveDisputeAsync(id, dto.RefundCustomer);
+            return booking == null
+                ? BadRequest(new { Message = "Booking không ở trạng thái tranh chấp." })
+                : Ok(booking);
+        }
+
+        [Authorize(Roles = "Admin")]
+        [HttpPost("auto-complete-overdue")]
+        public async Task<IActionResult> AutoCompleteOverdue()
+        {
+            var count = await _bookingService.AutoCompleteOverdueAsync();
+            return Ok(new { CompletedBookings = count });
         }
     }
 }

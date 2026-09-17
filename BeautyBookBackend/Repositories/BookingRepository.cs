@@ -67,22 +67,43 @@ namespace BeautyBookBackend.Repositories
 
         public async Task<List<Booking>> GetBookingsByDateAsync(Guid muaId, DateTime date)
         {
-            var dateOnly = date.Date;
+            var dateOnly = DateTime.SpecifyKind(date.Date, DateTimeKind.Utc);
+            var nextDate = dateOnly.AddDays(1);
             return await _context.Bookings
-                .Where(b => b.MUAId == muaId && b.BookingDate.Date == dateOnly && b.Status != BookingStatus.Cancelled)
+                .Where(b => b.MUAId == muaId && b.BookingDate >= dateOnly && b.BookingDate < nextDate
+                    && b.Status != BookingStatus.Cancelled && b.Status != BookingStatus.Rejected
+                    && b.Status != BookingStatus.PendingPayment)
                 .ToListAsync();
         }
 
-        public Task<bool> HasOverlappingBookingAsync(Guid muaId, DateTime date, TimeSpan startTime, TimeSpan endTime)
+        public Task<Booking?> GetByIdAsync(Guid bookingId)
         {
-            var dateOnly = date.Date;
+            return _context.Bookings.FirstOrDefaultAsync(b => b.BookingId == bookingId);
+        }
+
+        public Task<bool> HasOverlappingBookingAsync(Guid muaId, DateTime date, TimeSpan startTime, TimeSpan endTime, Guid? excludeBookingId = null)
+        {
+            var dateOnly = DateTime.SpecifyKind(date.Date, DateTimeKind.Utc);
+            var nextDate = dateOnly.AddDays(1);
 
             return _context.Bookings.AnyAsync(b =>
                 b.MUAId == muaId
-                && b.BookingDate.Date == dateOnly
+                && b.BookingDate >= dateOnly && b.BookingDate < nextDate
                 && b.Status != BookingStatus.Cancelled
+                && b.Status != BookingStatus.Rejected
+                && b.Status != BookingStatus.PendingPayment
+                && (!excludeBookingId.HasValue || b.BookingId != excludeBookingId.Value)
                 && startTime < b.EndTime
                 && endTime > b.StartTime);
+        }
+
+        public Task<List<Booking>> GetOverdueCustomerConfirmationsAsync(DateTime utcNow)
+        {
+            return _context.Bookings
+                .Where(b => b.Status == BookingStatus.WaitingCustomer
+                    && b.CustomerConfirmationDeadline != null
+                    && b.CustomerConfirmationDeadline <= utcNow)
+                .ToListAsync();
         }
     }
 }

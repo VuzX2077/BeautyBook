@@ -5,6 +5,9 @@ namespace BeautyBookBackend.Models.Enums
         Unpaid = 0,
         Paid = 1,
         Refunded = 2,
-        Failed = 3
+        Failed = 3,
+        DepositHeld = 4,
+        Released = 5,
+        Frozen = 6
     }
 }

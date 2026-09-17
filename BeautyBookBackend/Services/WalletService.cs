@@ -216,7 +216,9 @@ namespace BeautyBookBackend.Services
 
             if (topUp == null)
             {
-                return false;
+                // payOS sends a signed sample payload when registering a webhook URL.
+                // Acknowledge it without changing any wallet when no matching top-up exists.
+                return true;
             }
 
             topUp.RawWebhookPayload = JsonSerializer.Serialize(webhook);

@@ -26,6 +26,11 @@ namespace BeautyBookBackend.DTOs
         public string? MuaAvatarUrl { get; set; }
         
         public decimal TotalAmount { get; set; }
+        public decimal DepositRate { get; set; }
+        public decimal DepositAmount { get; set; }
+        public decimal RemainingAmount { get; set; }
+        public decimal PlatformFeeAmount { get; set; }
+        public decimal MuaPayoutAmount { get; set; }
         public int TotalDurationMinutes { get; set; }
         
         public DateTime BookingDate { get; set; }
@@ -41,6 +46,17 @@ namespace BeautyBookBackend.DTOs
         public PaymentStatus PaymentStatus { get; set; }
         public bool HasReview { get; set; }
         public DateTime CreatedAt { get; set; }
+        public DateTime UpdatedAt { get; set; }
+        public DateTime? DepositPaidAt { get; set; }
+        public DateTime? ConfirmedAt { get; set; }
+        public DateTime? StartedAt { get; set; }
+        public DateTime? WaitingCustomerAt { get; set; }
+        public DateTime? CustomerConfirmationDeadline { get; set; }
+        public DateTime? CompletedAt { get; set; }
+        public DateTime? RejectedAt { get; set; }
+        public DateTime? CancelledAt { get; set; }
+        public DateTime? DisputedAt { get; set; }
+        public string? DisputeReason { get; set; }
     }
 
     public class BookingServiceCreateDto
@@ -78,5 +94,14 @@ namespace BeautyBookBackend.DTOs
     {
         [Required]
         public BookingStatus Status { get; set; }
+
+        [MaxLength(1000)]
+        public string? Reason { get; set; }
+    }
+
+    public class DisputeResolutionDto
+    {
+        [Required]
+        public bool RefundCustomer { get; set; }
     }
 }

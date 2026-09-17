@@ -12,6 +12,7 @@ namespace BeautyBookBackend.Services
     public class BookingService : IBookingService
     {
         private const decimal PlatformCommissionFee = 10000m;
+        private const decimal DepositRate = 0.30m;
         private static readonly TimeSpan WorkingHoursStart = TimeSpan.FromHours(8);
         private static readonly TimeSpan WorkingHoursEnd = TimeSpan.FromHours(20);
 
@@ -71,17 +72,6 @@ namespace BeautyBookBackend.Services
                 });
             }
 
-            var customerWallet = await _walletRepository.GetByUserIdAsync(customerId);
-            if (customerWallet == null)
-            {
-                throw new InvalidOperationException("Không tìm thấy ví của khách hàng.");
-            }
-
-            if (customerWallet.Balance < totalAmount)
-            {
-                throw new InsufficientBalanceException(totalAmount, customerWallet.Balance);
-            }
-
             var endTime = createDto.StartTime.Add(TimeSpan.FromMinutes(totalDuration));
             if (totalAmount <= 0 || totalDuration <= 0)
             {
@@ -111,36 +101,67 @@ namespace BeautyBookBackend.Services
                 MUAId = createDto.MUAId,
                 TotalAmount = totalAmount,
                 TotalDurationMinutes = totalDuration,
-                BookingDate = createDto.BookingDate.ToUniversalTime(),
+                BookingDate = DateTime.SpecifyKind(createDto.BookingDate.Date, DateTimeKind.Utc),
                 StartTime = createDto.StartTime,
                 EndTime = endTime,
                 Address = createDto.Address,
                 Notes = createDto.Notes,
-                Status = BookingStatus.Pending,
-                PaymentStatus = PaymentStatus.Paid,
+                DepositRate = DepositRate,
+                DepositAmount = decimal.Round(totalAmount * DepositRate, 0, MidpointRounding.AwayFromZero),
+                RemainingAmount = totalAmount - decimal.Round(totalAmount * DepositRate, 0, MidpointRounding.AwayFromZero),
+                PlatformFeeAmount = Math.Min(PlatformCommissionFee, decimal.Round(totalAmount * DepositRate, 0, MidpointRounding.AwayFromZero)),
+                MuaPayoutAmount = Math.Max(0, decimal.Round(totalAmount * DepositRate, 0, MidpointRounding.AwayFromZero) - PlatformCommissionFee),
+                Status = BookingStatus.PendingPayment,
+                PaymentStatus = PaymentStatus.Unpaid,
                 CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
                 BookingServices = bookingServices
             };
 
             await _bookingRepository.AddAsync(booking);
 
-            customerWallet.Balance -= totalAmount;
-            customerWallet.UpdatedAt = DateTime.UtcNow;
+            await _unitOfWork.SaveChangesAsync();
+            return await ToBookingDtoAsync(booking);
+        }
 
+        public async Task<BookingDto?> PayDepositAsync(Guid bookingId, Guid customerId)
+        {
+            var booking = await _bookingRepository.GetByIdForCustomerAsync(bookingId, customerId);
+            if (booking == null) return null;
+            if (booking.PaymentStatus == PaymentStatus.DepositHeld)
+                return await GetBookingByIdAsync(bookingId, customerId);
+            if (booking.Status != BookingStatus.PendingPayment
+                || (booking.PaymentStatus != PaymentStatus.Unpaid && booking.PaymentStatus != PaymentStatus.Failed))
+                throw new InvalidOperationException("Booking không ở trạng thái có thể thanh toán tiền cọc.");
+
+            if (await _bookingRepository.HasOverlappingBookingAsync(
+                    booking.MUAId, booking.BookingDate, booking.StartTime, booking.EndTime, booking.BookingId))
+                throw new InvalidOperationException("Khung giờ vừa được booking khác giữ. Vui lòng chọn giờ khác.");
+
+            var wallet = await _walletRepository.GetByUserIdAsync(customerId)
+                ?? throw new InvalidOperationException("Không tìm thấy ví của khách hàng.");
+            if (wallet.Balance < booking.DepositAmount)
+                throw new InsufficientBalanceException(booking.DepositAmount, wallet.Balance);
+
+            wallet.Balance -= booking.DepositAmount;
+            wallet.UpdatedAt = DateTime.UtcNow;
             await _walletRepository.AddTransactionAsync(new WalletTransaction
             {
                 TransactionId = Guid.NewGuid(),
-                WalletId = customerWallet.WalletId,
-                Amount = -totalAmount,
+                WalletId = wallet.WalletId,
+                Amount = -booking.DepositAmount,
                 TransactionType = TransactionType.BookingPayment,
                 ReferenceId = booking.BookingId,
                 ReferenceType = nameof(Booking),
-                Description = $"Thanh toan dat lich #{booking.BookingId.ToString().Substring(0, 8)}",
+                Description = $"Giu tien coc 30% booking #{booking.BookingId.ToString()[..8]}",
                 CreatedAt = DateTime.UtcNow
             });
-
+            booking.PaymentStatus = PaymentStatus.DepositHeld;
+            booking.Status = BookingStatus.PendingConfirmation;
+            booking.DepositPaidAt = DateTime.UtcNow;
+            booking.UpdatedAt = DateTime.UtcNow;
             await _unitOfWork.SaveChangesAsync();
-            return await ToBookingDtoAsync(booking);
+            return await GetBookingByIdAsync(bookingId, customerId);
         }
 
         public async Task<List<BookingDto>> GetBookingsAsync(Guid userId, string viewAs)
@@ -162,58 +183,92 @@ namespace BeautyBookBackend.Services
             return booking == null ? null : await ToBookingDtoAsync(booking);
         }
 
-        public async Task<bool> UpdateBookingStatusAsync(Guid bookingId, Guid userId, BookingStatus newStatus)
+        public async Task<BookingDto?> UpdateBookingStatusAsync(Guid bookingId, Guid userId, BookingStatus newStatus, string? reason = null)
         {
             var booking = await _bookingRepository.GetByIdForParticipantAsync(bookingId, userId);
-            if (booking == null) return false;
-
-            // MUA or Customer can update based on valid transitions
-            if (booking.MUAId != userId && booking.CustomerId != userId)
-            {
-                return false;
-            }
-
-            if (booking.Status == newStatus) return true;
-
-            if (IsFinalStatus(booking.Status))
-            {
-                return false;
-            }
-
-            if (!IsValidStatusTransition(booking.Status, newStatus, userId, booking.MUAId, booking.CustomerId))
-            {
-                return false;
-            }
-
-            if (RequiresPaidBooking(newStatus) && booking.PaymentStatus != PaymentStatus.Paid)
-            {
-                return false;
-            }
+            if (booking == null || (booking.MUAId != userId && booking.CustomerId != userId)) return null;
+            if (booking.Status == newStatus) return await GetBookingByIdAsync(bookingId, userId);
+            if (IsFinalStatus(booking.Status)
+                || !IsValidStatusTransition(booking.Status, newStatus, userId, booking.MUAId, booking.CustomerId)) return null;
+            if (RequiresHeldDeposit(newStatus)
+                && booking.PaymentStatus != PaymentStatus.DepositHeld
+                && booking.PaymentStatus != PaymentStatus.Paid
+                && booking.PaymentStatus != PaymentStatus.Frozen) return null;
 
             if (newStatus == BookingStatus.Completed)
             {
-                if (!await CompleteBookingAsync(booking))
-                {
-                    return false;
-                }
+                if (!await CompleteBookingAsync(booking)) return null;
+                booking.CompletedAt = DateTime.UtcNow;
             }
-            else if (newStatus == BookingStatus.Cancelled)
+            else if (newStatus == BookingStatus.Cancelled || newStatus == BookingStatus.Rejected)
             {
-                if (!await RefundBookingAsync(booking))
-                {
-                    return false;
-                }
+                if (!await RefundBookingAsync(booking)) return null;
+                if (newStatus == BookingStatus.Rejected) booking.RejectedAt = DateTime.UtcNow;
+                else booking.CancelledAt = DateTime.UtcNow;
+            }
+            else if (newStatus == BookingStatus.Approved) booking.ConfirmedAt = DateTime.UtcNow;
+            else if (newStatus == BookingStatus.InProgress) booking.StartedAt = DateTime.UtcNow;
+            else if (newStatus == BookingStatus.WaitingCustomer)
+            {
+                booking.WaitingCustomerAt = DateTime.UtcNow;
+                booking.CustomerConfirmationDeadline = DateTime.UtcNow.AddHours(24);
+            }
+            else if (newStatus == BookingStatus.Disputed)
+            {
+                if (string.IsNullOrWhiteSpace(reason))
+                    throw new InvalidOperationException("Vui lòng nhập lý do khiếu nại.");
+                booking.DisputedAt = DateTime.UtcNow;
+                booking.DisputeReason = reason.Trim();
+                booking.PaymentStatus = PaymentStatus.Frozen;
             }
 
             booking.Status = newStatus;
+            booking.UpdatedAt = DateTime.UtcNow;
+            await _unitOfWork.SaveChangesAsync();
+            return await GetBookingByIdAsync(bookingId, userId);
+        }
 
-            return await _unitOfWork.SaveChangesAsync() > 0;
+        public async Task<BookingDto?> ResolveDisputeAsync(Guid bookingId, bool refundCustomer)
+        {
+            var booking = await _bookingRepository.GetByIdAsync(bookingId);
+            if (booking == null || booking.Status != BookingStatus.Disputed || booking.PaymentStatus != PaymentStatus.Frozen)
+                return null;
+            if (refundCustomer)
+            {
+                if (!await RefundBookingAsync(booking)) return null;
+                booking.Status = BookingStatus.Cancelled;
+            }
+            else
+            {
+                if (!await CompleteBookingAsync(booking)) return null;
+                booking.Status = BookingStatus.Completed;
+                booking.CompletedAt = DateTime.UtcNow;
+            }
+            booking.UpdatedAt = DateTime.UtcNow;
+            await _unitOfWork.SaveChangesAsync();
+            return await ToBookingDtoAsync(booking);
+        }
+
+        public async Task<int> AutoCompleteOverdueAsync()
+        {
+            var bookings = await _bookingRepository.GetOverdueCustomerConfirmationsAsync(DateTime.UtcNow);
+            var count = 0;
+            foreach (var booking in bookings)
+            {
+                if (!await CompleteBookingAsync(booking)) continue;
+                booking.Status = BookingStatus.AutoCompleted;
+                booking.CompletedAt = DateTime.UtcNow;
+                booking.UpdatedAt = DateTime.UtcNow;
+                count++;
+            }
+            if (count > 0) await _unitOfWork.SaveChangesAsync();
+            return count;
         }
 
         public async Task<bool> AddReviewAsync(Guid bookingId, Guid customerId, ReviewCreateDto reviewDto)
         {
             var booking = await _bookingRepository.GetByIdForCustomerAsync(bookingId, customerId);
-            if (booking == null || booking.Status != BookingStatus.Completed)
+            if (booking == null || (booking.Status != BookingStatus.Completed && booking.Status != BookingStatus.AutoCompleted))
             {
                 return false;
             }
@@ -286,16 +341,18 @@ namespace BeautyBookBackend.Services
 
         private async Task<bool> CompleteBookingAsync(Booking booking)
         {
-            if (booking.PaymentStatus != PaymentStatus.Paid
+            if ((booking.PaymentStatus != PaymentStatus.DepositHeld
+                    && booking.PaymentStatus != PaymentStatus.Paid
+                    && booking.PaymentStatus != PaymentStatus.Frozen)
                 || !await _walletRepository.HasBookingPaymentAsync(booking.BookingId)
                 || await _walletRepository.HasBookingEarningAsync(booking.BookingId))
             {
                 return false;
             }
 
-            var servicePrice = booking.TotalAmount;
-            var commissionFee = Math.Min(PlatformCommissionFee, servicePrice);
-            var artistEarnings = servicePrice - commissionFee;
+            var servicePrice = booking.DepositAmount;
+            var commissionFee = booking.PlatformFeeAmount;
+            var artistEarnings = booking.MuaPayoutAmount;
 
             var muaWallet = await _walletRepository.GetByUserIdAsync(booking.MUAId);
             if (muaWallet == null)
@@ -342,6 +399,8 @@ namespace BeautyBookBackend.Services
                     + (muaProfile.TotalBookings * 3);
             }
 
+            booking.PaymentStatus = PaymentStatus.Released;
+
             return true;
         }
 
@@ -365,7 +424,7 @@ namespace BeautyBookBackend.Services
             var customerWallet = await _walletRepository.GetByUserIdAsync(booking.CustomerId);
             if (customerWallet == null) return false;
 
-            var servicePrice = booking.TotalAmount;
+            var servicePrice = booking.DepositAmount;
 
             customerWallet.Balance += servicePrice;
             customerWallet.UpdatedAt = DateTime.UtcNow;
@@ -375,7 +434,7 @@ namespace BeautyBookBackend.Services
                 TransactionId = Guid.NewGuid(),
                 WalletId = customerWallet.WalletId,
                 Amount = servicePrice,
-                TransactionType = TransactionType.BookingPayment,
+                TransactionType = TransactionType.BookingRefund,
                 ReferenceId = booking.BookingId,
                 ReferenceType = nameof(Booking),
                 Description = $"Hoan tien coc lich dat #{booking.BookingId.ToString().Substring(0, 8)} do don hang bi huy/tu choi",
@@ -398,6 +457,11 @@ namespace BeautyBookBackend.Services
                 MuaName = booking.MakeupArtistProfile?.User?.FullName,
                 MuaAvatarUrl = booking.MakeupArtistProfile?.User?.AvatarUrl,
                 TotalAmount = booking.TotalAmount,
+                DepositRate = booking.DepositRate,
+                DepositAmount = booking.DepositAmount,
+                RemainingAmount = booking.RemainingAmount,
+                PlatformFeeAmount = booking.PlatformFeeAmount,
+                MuaPayoutAmount = booking.MuaPayoutAmount,
                 TotalDurationMinutes = booking.TotalDurationMinutes,
                 BookingDate = booking.BookingDate,
                 StartTime = booking.StartTime,
@@ -408,6 +472,17 @@ namespace BeautyBookBackend.Services
                 PaymentStatus = booking.PaymentStatus,
                 HasReview = await _reviewRepository.ExistsForBookingAsync(booking.BookingId),
                 CreatedAt = booking.CreatedAt,
+                UpdatedAt = booking.UpdatedAt,
+                DepositPaidAt = booking.DepositPaidAt,
+                ConfirmedAt = booking.ConfirmedAt,
+                StartedAt = booking.StartedAt,
+                WaitingCustomerAt = booking.WaitingCustomerAt,
+                CustomerConfirmationDeadline = booking.CustomerConfirmationDeadline,
+                CompletedAt = booking.CompletedAt,
+                RejectedAt = booking.RejectedAt,
+                CancelledAt = booking.CancelledAt,
+                DisputedAt = booking.DisputedAt,
+                DisputeReason = booking.DisputeReason,
                 Services = new List<BookingServiceDto>()
             };
             
@@ -464,10 +539,13 @@ namespace BeautyBookBackend.Services
             {
                 return (currentStatus, newStatus) switch
                 {
+                    (BookingStatus.PendingConfirmation, BookingStatus.Approved) => true,
+                    (BookingStatus.PendingConfirmation, BookingStatus.Rejected) => true,
                     (BookingStatus.Pending, BookingStatus.Approved) => true,
                     (BookingStatus.Pending, BookingStatus.Cancelled) => true,
                     (BookingStatus.Approved, BookingStatus.Cancelled) => true,
-                    (BookingStatus.Approved, BookingStatus.WaitingCustomer) => true,
+                    (BookingStatus.Approved, BookingStatus.InProgress) => true,
+                    (BookingStatus.InProgress, BookingStatus.WaitingCustomer) => true,
                     _ => false
                 };
             }
@@ -476,6 +554,9 @@ namespace BeautyBookBackend.Services
                 return (currentStatus, newStatus) switch
                 {
                     (BookingStatus.WaitingCustomer, BookingStatus.Completed) => true,
+                    (BookingStatus.WaitingCustomer, BookingStatus.Disputed) => true,
+                    (BookingStatus.PendingPayment, BookingStatus.Cancelled) => true,
+                    (BookingStatus.PendingConfirmation, BookingStatus.Cancelled) => true,
                     (BookingStatus.Pending, BookingStatus.Cancelled) => true,
                     (BookingStatus.Approved, BookingStatus.Cancelled) => true,
                     _ => false
@@ -486,14 +567,18 @@ namespace BeautyBookBackend.Services
 
         private static bool IsFinalStatus(BookingStatus status)
         {
-            return status == BookingStatus.Completed || status == BookingStatus.Cancelled;
+            return status == BookingStatus.Completed || status == BookingStatus.AutoCompleted
+                || status == BookingStatus.Cancelled || status == BookingStatus.Rejected;
         }
 
-        private static bool RequiresPaidBooking(BookingStatus status)
+        private static bool RequiresHeldDeposit(BookingStatus status)
         {
             return status == BookingStatus.Approved
+                || status == BookingStatus.InProgress
                 || status == BookingStatus.WaitingCustomer
-                || status == BookingStatus.Completed;
+                || status == BookingStatus.Completed
+                || status == BookingStatus.Disputed
+                || status == BookingStatus.Rejected;
         }
     }
 }

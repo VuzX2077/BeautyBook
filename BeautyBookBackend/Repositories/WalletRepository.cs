@@ -58,7 +58,7 @@ namespace BeautyBookBackend.Repositories
             var bookingCode = bookingId.ToString().Substring(0, 8);
 
             return _context.WalletTransactions.AnyAsync(t =>
-                t.TransactionType == TransactionType.BookingPayment
+                (t.TransactionType == TransactionType.BookingPayment || t.TransactionType == TransactionType.BookingRefund)
                 && t.Amount > 0
                 && ((t.ReferenceId == bookingId && t.ReferenceType == nameof(Booking))
                     || (t.Description != null && t.Description.Contains(bookingCode))));

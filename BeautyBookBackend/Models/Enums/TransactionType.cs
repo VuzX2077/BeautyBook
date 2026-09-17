@@ -6,6 +6,7 @@ namespace BeautyBookBackend.Models.Enums
         Withdraw = 1,
         BookingPayment = 2,
         BookingEarning = 3,
-        Commission = 4
+        Commission = 4,
+        BookingRefund = 5
     }
 }

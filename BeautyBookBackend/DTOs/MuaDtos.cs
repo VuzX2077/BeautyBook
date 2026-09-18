@@ -58,6 +58,7 @@ namespace BeautyBookBackend.DTOs
         // Include Author Info if needed for Feed
         public string? AuthorName { get; set; }
         public string? AuthorAvatarUrl { get; set; }
+        public ServiceDto? Service { get; set; }
     }
 
     public class MakeupStyleDto
@@ -99,6 +100,7 @@ namespace BeautyBookBackend.DTOs
         public List<string> ImageUrls { get; set; } = new();
         public string? Description { get; set; }
         public List<string> Tags { get; set; } = new();
+        public Guid? ServiceId { get; set; }
     }
 
     public class ContentRequest

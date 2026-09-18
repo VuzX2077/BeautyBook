@@ -21,19 +21,22 @@ namespace BeautyBookBackend.Services
         private readonly IWalletRepository _walletRepository;
         private readonly IReviewRepository _reviewRepository;
         private readonly IUnitOfWork _unitOfWork;
+        private readonly IBookingNotificationService _notificationService;
 
         public BookingService(
             IBookingRepository bookingRepository,
             IMuaRepository muaRepository,
             IWalletRepository walletRepository,
             IReviewRepository reviewRepository,
-            IUnitOfWork unitOfWork)
+            IUnitOfWork unitOfWork,
+            IBookingNotificationService notificationService)
         {
             _bookingRepository = bookingRepository;
             _muaRepository = muaRepository;
             _walletRepository = walletRepository;
             _reviewRepository = reviewRepository;
             _unitOfWork = unitOfWork;
+            _notificationService = notificationService;
         }
 
         public async Task<BookingDto?> CreateBookingAsync(Guid customerId, BookingCreateDto createDto)
@@ -160,6 +163,7 @@ namespace BeautyBookBackend.Services
             booking.Status = BookingStatus.PendingConfirmation;
             booking.DepositPaidAt = DateTime.UtcNow;
             booking.UpdatedAt = DateTime.UtcNow;
+            await _notificationService.QueueBookingStatusAsync(booking, BookingStatus.PendingConfirmation, customerId);
             await _unitOfWork.SaveChangesAsync();
             return await GetBookingByIdAsync(bookingId, customerId);
         }
@@ -206,7 +210,11 @@ namespace BeautyBookBackend.Services
                 if (newStatus == BookingStatus.Rejected) booking.RejectedAt = DateTime.UtcNow;
                 else booking.CancelledAt = DateTime.UtcNow;
             }
-            else if (newStatus == BookingStatus.Approved) booking.ConfirmedAt = DateTime.UtcNow;
+            else if (newStatus == BookingStatus.Approved)
+            {
+                booking.ConfirmedAt = DateTime.UtcNow;
+                await _notificationService.ScheduleRemindersAsync(booking);
+            }
             else if (newStatus == BookingStatus.InProgress) booking.StartedAt = DateTime.UtcNow;
             else if (newStatus == BookingStatus.WaitingCustomer)
             {
@@ -224,6 +232,9 @@ namespace BeautyBookBackend.Services
 
             booking.Status = newStatus;
             booking.UpdatedAt = DateTime.UtcNow;
+            if (newStatus == BookingStatus.Cancelled || newStatus == BookingStatus.Rejected)
+                await _notificationService.CancelPendingAsync(booking.BookingId);
+            await _notificationService.QueueBookingStatusAsync(booking, newStatus, userId);
             await _unitOfWork.SaveChangesAsync();
             return await GetBookingByIdAsync(bookingId, userId);
         }

@@ -89,7 +89,7 @@ namespace BeautyBookBackend.Controllers
             try
             {
                 var userId = GetCurrentUserId();
-                var messageDto = await _chatService.SendMessageAsync(roomId, userId, request.Content);
+                var messageDto = await _chatService.SendMessageAsync(roomId, userId, request.Content, request.ImageUrl, request.ReplyToMessageId);
 
                 // Broadcast via SignalR to the room participants
                 // In a real app, we might get the room participants and send to their user groups
@@ -108,6 +108,19 @@ namespace BeautyBookBackend.Controllers
             {
                 return BadRequest(new { Message = ex.Message });
             }
+        }
+
+        [HttpPost("rooms/{roomId:guid}/messages/{messageId:guid}/reaction")]
+        public async Task<IActionResult> ToggleReaction(Guid roomId, Guid messageId, [FromBody] ReactionRequest request)
+        {
+            try
+            {
+                var message = await _chatService.ToggleReactionAsync(roomId, messageId, GetCurrentUserId(), request.Emoji);
+                await _hubContext.Clients.Group(roomId.ToString()).SendAsync("MessageUpdated", message);
+                return Ok(message);
+            }
+            catch (UnauthorizedAccessException) { return Forbid(); }
+            catch (Exception ex) { return BadRequest(new { Message = ex.Message }); }
         }
 
         [HttpPost("rooms/{roomId}/join")]

@@ -124,7 +124,9 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IMuaService, MuaService>();
 builder.Services.AddScoped<IBookingService, BookingService>();
+builder.Services.AddScoped<IBookingNotificationService, BookingNotificationService>();
 builder.Services.AddHostedService<BookingAutoCompletionService>();
+builder.Services.AddHostedService<PushNotificationWorker>();
 builder.Services.AddScoped<IWalletService, WalletService>();
 builder.Services.AddScoped<IFeedService, FeedService>();
 builder.Services.AddScoped<IChatService, ChatService>();
@@ -133,6 +135,7 @@ builder.Services.AddHttpClient<IPayOsService, PayOsService>(client =>
     var baseUrl = builder.Configuration["PayOS:BaseUrl"] ?? "https://api-merchant.payos.vn";
     client.BaseAddress = new Uri(baseUrl);
 });
+builder.Services.AddHttpClient("ExpoPush", client => client.BaseAddress = new Uri("https://exp.host/"));
 
 // Register Data Access Layer (Repositories + Unit of Work)
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
@@ -161,6 +164,7 @@ app.UseSwaggerUI();
 // app.UseHttpsRedirection();
 
 app.UseCors("AllowAll"); // Enable CORS policy
+app.UseStaticFiles();
 
 app.UseAuthentication(); // Must be called before UseAuthorization
 app.UseAuthorization();

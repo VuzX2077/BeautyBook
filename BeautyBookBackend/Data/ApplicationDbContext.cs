@@ -21,6 +21,7 @@ namespace BeautyBookBackend.Data
         public DbSet<Review> Reviews { get; set; } = null!;
         public DbSet<ChatRoom> ChatRooms { get; set; } = null!;
         public DbSet<Message> Messages { get; set; } = null!;
+        public DbSet<MessageReaction> MessageReactions { get; set; } = null!;
         public DbSet<Wallet> Wallets { get; set; } = null!;
         public DbSet<WalletTransaction> WalletTransactions { get; set; } = null!;
         public DbSet<WalletTopUp> WalletTopUps { get; set; } = null!;
@@ -29,6 +30,8 @@ namespace BeautyBookBackend.Data
         public DbSet<PortfolioLike> PortfolioLikes { get; set; } = null!;
         public DbSet<PortfolioSave> PortfolioSaves { get; set; } = null!;
         public DbSet<PortfolioComment> PortfolioComments { get; set; } = null!;
+        public DbSet<DevicePushToken> DevicePushTokens { get; set; } = null!;
+        public DbSet<AppNotification> AppNotifications { get; set; } = null!;
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -88,6 +91,10 @@ namespace BeautyBookBackend.Data
                  .WithMany(m => m.Portfolios)
                  .HasForeignKey(p => p.MUAId)
                  .OnDelete(DeleteBehavior.Cascade);
+                b.HasOne(p => p.Service)
+                 .WithMany()
+                 .HasForeignKey(p => p.ServiceId)
+                 .OnDelete(DeleteBehavior.SetNull);
             });
 
             modelBuilder.Entity<PortfolioLike>(b =>
@@ -187,6 +194,43 @@ namespace BeautyBookBackend.Data
             {
                 b.HasKey(m => m.MessageId);
                 b.Property(m => m.Content);
+                b.Property(m => m.ImageUrl).HasMaxLength(1000);
+                b.HasOne(m => m.ReplyToMessage)
+                    .WithMany()
+                    .HasForeignKey(m => m.ReplyToMessageId)
+                    .OnDelete(DeleteBehavior.SetNull);
+            });
+
+            modelBuilder.Entity<DevicePushToken>(b =>
+            {
+                b.HasKey(x => x.Id);
+                b.Property(x => x.ExpoPushToken).HasMaxLength(255).IsRequired();
+                b.HasIndex(x => x.ExpoPushToken).IsUnique();
+                b.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<AppNotification>(b =>
+            {
+                b.HasKey(x => x.Id);
+                b.Property(x => x.Type).HasMaxLength(80).IsRequired();
+                b.Property(x => x.Title).HasMaxLength(200).IsRequired();
+                b.Property(x => x.Body).HasMaxLength(1000).IsRequired();
+                b.Property(x => x.Status).HasMaxLength(20).IsRequired();
+                b.HasIndex(x => new { x.BookingId, x.UserId, x.Type }).IsUnique();
+                b.HasIndex(x => new { x.Status, x.ScheduledAt });
+                b.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+                b.HasOne(x => x.Booking).WithMany().HasForeignKey(x => x.BookingId).OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<MessageReaction>(b =>
+            {
+                b.HasKey(r => r.Id);
+                b.Property(r => r.Emoji).HasMaxLength(16).IsRequired();
+                b.HasIndex(r => new { r.MessageId, r.UserId }).IsUnique();
+                b.HasOne(r => r.Message)
+                    .WithMany(m => m.Reactions)
+                    .HasForeignKey(r => r.MessageId)
+                    .OnDelete(DeleteBehavior.Cascade);
             });
 
             modelBuilder.Entity<Wallet>(b =>

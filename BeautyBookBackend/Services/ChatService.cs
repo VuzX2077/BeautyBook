@@ -5,16 +5,20 @@ using System.Threading.Tasks;
 using BeautyBookBackend.DTOs.Chat;
 using BeautyBookBackend.Models;
 using BeautyBookBackend.Repositories;
+using BeautyBookBackend.Data;
+using Microsoft.EntityFrameworkCore;
 
 namespace BeautyBookBackend.Services
 {
     public class ChatService : IChatService
     {
         private readonly IChatRepository _chatRepository;
+        private readonly ApplicationDbContext _context;
 
-        public ChatService(IChatRepository chatRepository)
+        public ChatService(IChatRepository chatRepository, ApplicationDbContext context)
         {
             _chatRepository = chatRepository;
+            _context = context;
         }
 
         public async Task<ChatRoomDto> GetOrCreateChatRoomAsync(Guid customerId, Guid muaId)
@@ -59,10 +63,10 @@ namespace BeautyBookBackend.Services
             }
 
             var messages = await _chatRepository.GetMessagesByRoomIdAsync(roomId);
-            return messages.Select(MapToMessageDto);
+            return messages.Select(m => MapToMessageDto(m, userId));
         }
 
-        public async Task<MessageDto> SendMessageAsync(Guid roomId, Guid senderId, string content)
+        public async Task<MessageDto> SendMessageAsync(Guid roomId, Guid senderId, string? content, string? imageUrl, Guid? replyToMessageId)
         {
             var room = await _chatRepository.GetChatRoomByIdAsync(roomId);
             if (room == null)
@@ -75,18 +79,48 @@ namespace BeautyBookBackend.Services
                 throw new UnauthorizedAccessException("You are not part of this chat room.");
             }
 
+            if (string.IsNullOrWhiteSpace(content) && string.IsNullOrWhiteSpace(imageUrl))
+                throw new ArgumentException("Tin nhắn phải có nội dung hoặc hình ảnh.");
+
+            Message? replyTo = null;
+            if (replyToMessageId.HasValue)
+            {
+                replyTo = await _context.Messages.FirstOrDefaultAsync(m => m.MessageId == replyToMessageId && m.ChatRoomId == roomId);
+                if (replyTo == null) throw new ArgumentException("Tin nhắn phản hồi không hợp lệ.");
+            }
+
             var message = new Message
             {
                 MessageId = Guid.NewGuid(),
                 ChatRoomId = roomId,
                 SenderId = senderId,
-                Content = content,
+                Content = content?.Trim(),
+                ImageUrl = imageUrl,
+                ReplyToMessageId = replyToMessageId,
+                ReplyToMessage = replyTo,
                 SentAt = DateTime.UtcNow,
                 IsRead = false
             };
 
             var savedMessage = await _chatRepository.AddMessageAsync(message);
-            return MapToMessageDto(savedMessage);
+            return MapToMessageDto(savedMessage, senderId);
+        }
+
+        public async Task<MessageDto> ToggleReactionAsync(Guid roomId, Guid messageId, Guid userId, string emoji)
+        {
+            var room = await _chatRepository.GetChatRoomByIdAsync(roomId);
+            if (room == null || (room.CustomerId != userId && room.MUAId != userId))
+                throw new UnauthorizedAccessException();
+            var message = await _context.Messages.Include(m => m.ReplyToMessage).Include(m => m.Reactions)
+                .FirstOrDefaultAsync(m => m.MessageId == messageId && m.ChatRoomId == roomId)
+                ?? throw new ArgumentException("Không tìm thấy tin nhắn.");
+            var existing = message.Reactions.FirstOrDefault(r => r.UserId == userId);
+            if (existing != null && existing.Emoji == emoji) _context.MessageReactions.Remove(existing);
+            else if (existing != null) existing.Emoji = emoji;
+            else _context.MessageReactions.Add(new MessageReaction { MessageId = messageId, UserId = userId, Emoji = emoji });
+            await _context.SaveChangesAsync();
+            await _context.Entry(message).Collection(m => m.Reactions).LoadAsync();
+            return MapToMessageDto(message, userId);
         }
 
         private ChatRoomDto MapToChatRoomDto(ChatRoom room)
@@ -127,7 +161,7 @@ namespace BeautyBookBackend.Services
             };
         }
 
-        private MessageDto MapToMessageDto(Message message)
+        private MessageDto MapToMessageDto(Message message, Guid? currentUserId = null)
         {
             return new MessageDto
             {
@@ -137,6 +171,16 @@ namespace BeautyBookBackend.Services
                 Content = message.Content,
                 SentAt = message.SentAt,
                 IsRead = message.IsRead
+                ,ImageUrl = message.ImageUrl
+                ,ReplyToMessageId = message.ReplyToMessageId
+                ,ReplyToContent = message.ReplyToMessage?.Content
+                ,ReplyToImageUrl = message.ReplyToMessage?.ImageUrl
+                ,Reactions = message.Reactions.GroupBy(r => r.Emoji).Select(g => new MessageReactionDto
+                {
+                    Emoji = g.Key,
+                    Count = g.Count(),
+                    ReactedByMe = currentUserId.HasValue && g.Any(r => r.UserId == currentUserId.Value)
+                }).ToList()
             };
         }
     }

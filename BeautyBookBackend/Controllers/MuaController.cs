@@ -76,8 +76,38 @@ namespace BeautyBookBackend.Controllers
         [HttpGet("{id}/portfolio")]
         public async Task<IActionResult> GetPortfolio(Guid id)
         {
-            var portfolio = await _muaService.GetMuaPortfolioAsync(id);
+            Guid? currentUserId = User.Identity?.IsAuthenticated == true ? CurrentUserId : null;
+            var portfolio = await _muaService.GetMuaPortfolioAsync(id, currentUserId);
             return Ok(portfolio);
+        }
+
+        [Authorize]
+        [HttpPost("portfolio/{portfolioId:guid}/like")]
+        public async Task<IActionResult> TogglePortfolioLike(Guid portfolioId)
+        {
+            return await _muaService.TogglePortfolioLikeAsync(CurrentUserId, portfolioId)
+                ? Ok() : NotFound();
+        }
+
+        [Authorize]
+        [HttpPost("portfolio/{portfolioId:guid}/save")]
+        public async Task<IActionResult> TogglePortfolioSave(Guid portfolioId)
+        {
+            return await _muaService.TogglePortfolioSaveAsync(CurrentUserId, portfolioId)
+                ? Ok() : NotFound();
+        }
+
+        [HttpGet("portfolio/{portfolioId:guid}/comments")]
+        public async Task<IActionResult> GetPortfolioComments(Guid portfolioId) =>
+            Ok(await _muaService.GetPortfolioCommentsAsync(portfolioId));
+
+        [Authorize]
+        [HttpPost("portfolio/{portfolioId:guid}/comments")]
+        public async Task<IActionResult> AddPortfolioComment(Guid portfolioId, [FromBody] ContentRequest request)
+        {
+            if (string.IsNullOrWhiteSpace(request.Content)) return BadRequest(new { Message = "Nội dung không được để trống." });
+            var comment = await _muaService.AddPortfolioCommentAsync(CurrentUserId, portfolioId, request.Content.Trim());
+            return comment == null ? NotFound() : Ok(comment);
         }
 
         [Authorize]
@@ -91,6 +121,19 @@ namespace BeautyBookBackend.Controllers
             if (!success) return BadRequest(new { Message = "Không thể thêm ảnh vào Portfolio." });
 
             return Ok(new { Message = "Đã thêm tác phẩm vào bộ sưu tập Portfolio thành công!" });
+        }
+
+        [Authorize]
+        [HttpPut("portfolio/{portfolioId:guid}")]
+        public async Task<IActionResult> UpdatePortfolioImage(Guid portfolioId, [FromBody] PortfolioCreateRequest request)
+        {
+            var roleClaim = User.FindFirst(ClaimTypes.Role)?.Value;
+            if (roleClaim != UserRole.MUA.ToString() && roleClaim != UserRole.Admin.ToString()) return Forbid();
+
+            var success = await _muaService.UpdatePortfolioImageAsync(CurrentUserId, portfolioId, request);
+            if (!success) return BadRequest(new { Message = "Không thể cập nhật tác phẩm này." });
+
+            return Ok(new { Message = "Đã cập nhật tác phẩm thành công!" });
         }
 
         [Authorize]

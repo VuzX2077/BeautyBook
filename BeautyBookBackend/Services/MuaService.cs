@@ -203,6 +203,7 @@ namespace BeautyBookBackend.Services
                 .Include(p => p.Comments)
                 .Include(p => p.MakeupArtistProfile)
                 .ThenInclude(m => m.User)
+                .Include(p => p.Service)
                 .Where(p => p.MUAId == muaId)
                 .OrderByDescending(p => p.CreatedAt)
                 .ToListAsync();
@@ -225,12 +226,14 @@ namespace BeautyBookBackend.Services
                 IsSaved = currentUserId.HasValue && p.Saves.Any(s => s.UserId == currentUserId.Value),
                 AuthorName = p.MakeupArtistProfile?.User?.FullName,
                 AuthorAvatarUrl = p.MakeupArtistProfile?.User?.AvatarUrl
+                ,Service = p.Service == null ? null : ToServiceDto(p.Service)
             }).ToList();
         }
 
         public async Task<bool> AddPortfolioImageAsync(Guid muaId, PortfolioCreateRequest request)
         {
             if (!await _muaRepository.ProfileExistsAsync(muaId)) return false;
+            if (request.ServiceId.HasValue && !await _dbContext.Services.AnyAsync(s => s.ServiceId == request.ServiceId && s.MUAId == muaId)) return false;
 
             await _muaRepository.AddPortfolioAsync(new Portfolio
             {
@@ -243,6 +246,7 @@ namespace BeautyBookBackend.Services
                 IsHidden = false,
                 IsPinned = false,
                 CreatedAt = DateTime.UtcNow
+                ,ServiceId = request.ServiceId
             });
 
             var success = await _unitOfWork.SaveChangesAsync() > 0;
@@ -254,11 +258,13 @@ namespace BeautyBookBackend.Services
         {
             var portfolio = await _muaRepository.GetPortfolioByIdForMuaAsync(portfolioId, muaId);
             if (portfolio == null) return false;
+            if (request.ServiceId.HasValue && !await _dbContext.Services.AnyAsync(s => s.ServiceId == request.ServiceId && s.MUAId == muaId)) return false;
 
             portfolio.Title = request.Title;
             portfolio.ImageUrls = request.ImageUrls;
             portfolio.Description = request.Description;
             portfolio.Tags = request.Tags ?? new List<string>();
+            portfolio.ServiceId = request.ServiceId;
 
             var success = await _unitOfWork.SaveChangesAsync() > 0;
             if (success) await RecalculateProfileStateAsync(muaId);

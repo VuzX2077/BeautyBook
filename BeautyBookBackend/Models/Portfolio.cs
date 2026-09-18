@@ -14,8 +14,10 @@ namespace BeautyBookBackend.Models
         public bool IsHidden { get; set; } = false;
         public bool IsPinned { get; set; } = false;
         public DateTime CreatedAt { get; set; }
+        public Guid? ServiceId { get; set; }
 
         public MakeupArtistProfile? MakeupArtistProfile { get; set; }
+        public Service? Service { get; set; }
 
         public ICollection<PortfolioLike> Likes { get; set; } = new List<PortfolioLike>();
         public ICollection<PortfolioSave> Saves { get; set; } = new List<PortfolioSave>();

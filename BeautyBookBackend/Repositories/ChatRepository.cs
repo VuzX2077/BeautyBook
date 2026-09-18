@@ -62,6 +62,8 @@ namespace BeautyBookBackend.Repositories
         public async Task<IEnumerable<Message>> GetMessagesByRoomIdAsync(Guid roomId)
         {
             return await _context.Messages
+                .Include(m => m.ReplyToMessage)
+                .Include(m => m.Reactions)
                 .Where(m => m.ChatRoomId == roomId)
                 .OrderBy(m => m.SentAt)
                 .ToListAsync();
@@ -71,6 +73,7 @@ namespace BeautyBookBackend.Repositories
         {
             _context.Messages.Add(message);
             await _context.SaveChangesAsync();
+            await _context.Entry(message).Collection(m => m.Reactions).LoadAsync();
             return message;
         }
 

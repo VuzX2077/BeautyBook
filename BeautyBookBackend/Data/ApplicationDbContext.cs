@@ -196,6 +196,9 @@ namespace BeautyBookBackend.Data
                 b.Property(x => x.RemainingAmount).HasPrecision(18, 2);
                 b.Property(x => x.PlatformFeeAmount).HasPrecision(18, 2);
                 b.Property(x => x.MuaPayoutAmount).HasPrecision(18, 2);
+                b.Property(x => x.ServiceAddress).HasMaxLength(500);
+                b.Property(x => x.ServiceLatitude).HasPrecision(9, 6);
+                b.Property(x => x.ServiceLongitude).HasPrecision(9, 6);
                 b.Property(x => x.DisputeReason).HasMaxLength(1000);
             });
 

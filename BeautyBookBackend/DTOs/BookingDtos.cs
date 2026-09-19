@@ -38,6 +38,9 @@ namespace BeautyBookBackend.DTOs
         public TimeSpan EndTime { get; set; }
         
         public string? Address { get; set; }
+        public string? ServiceAddress { get; set; }
+        public decimal? ServiceLatitude { get; set; }
+        public decimal? ServiceLongitude { get; set; }
         public string? Notes { get; set; }
 
         public List<BookingServiceDto> Services { get; set; } = new();
@@ -100,6 +103,15 @@ namespace BeautyBookBackend.DTOs
 
         [MaxLength(500)]
         public string? Address { get; set; }
+
+        [MaxLength(500)]
+        public string? ServiceAddress { get; set; }
+
+        [Range(typeof(decimal), "-90", "90", ErrorMessage = "Vĩ độ phải nằm trong khoảng -90 đến 90.")]
+        public decimal? ServiceLatitude { get; set; }
+
+        [Range(typeof(decimal), "-180", "180", ErrorMessage = "Kinh độ phải nằm trong khoảng -180 đến 180.")]
+        public decimal? ServiceLongitude { get; set; }
 
         [MaxLength(1000)]
         public string? Notes { get; set; }

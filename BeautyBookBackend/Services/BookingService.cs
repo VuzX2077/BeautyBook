@@ -118,6 +118,23 @@ namespace BeautyBookBackend.Services
             if (eligibility?.CanReceiveBookings != true)
                 throw new BookingRuleException("MUA_NOT_ACCEPTING_BOOKINGS", "Makeup Artist hiện chưa thể nhận booking.");
 
+            // ServiceAddress is the canonical booking snapshot. Address remains an
+            // accepted alias so existing mobile clients keep working during rollout.
+            var serviceAddress = (createDto.ServiceAddress ?? createDto.Address)?.Trim();
+            if (string.IsNullOrWhiteSpace(serviceAddress))
+                throw new InvalidOperationException("Địa điểm thực hiện không hợp lệ.");
+            if (serviceAddress.Length > 500)
+                throw new InvalidOperationException("Địa điểm thực hiện không được vượt quá 500 ký tự.");
+
+            var hasLatitude = createDto.ServiceLatitude.HasValue;
+            var hasLongitude = createDto.ServiceLongitude.HasValue;
+            if (hasLatitude != hasLongitude
+                || (hasLatitude && (createDto.ServiceLatitude < -90 || createDto.ServiceLatitude > 90))
+                || (hasLongitude && (createDto.ServiceLongitude < -180 || createDto.ServiceLongitude > 180)))
+            {
+                throw new InvalidOperationException("Địa điểm thực hiện không hợp lệ.");
+            }
+
             decimal totalAmount = 0;
             var totalDuration = 0;
             var bookingId = Guid.NewGuid();
@@ -161,14 +178,31 @@ namespace BeautyBookBackend.Services
             var now = DateTime.UtcNow;
             var booking = new Booking
             {
-                BookingId = bookingId, CustomerId = customerId, MUAId = createDto.MUAId, IdempotencyKey = idempotencyKey,
-                TotalAmount = totalAmount, TotalDurationMinutes = totalDuration,
-                BookingDate = DateTime.SpecifyKind(createDto.BookingDate.Date, DateTimeKind.Utc), StartTime = createDto.StartTime, EndTime = endTime,
-                Address = createDto.Address?.Trim(), Notes = createDto.Notes?.Trim(), DepositRate = DepositRate,
-                DepositAmount = depositAmount, RemainingAmount = totalAmount - depositAmount,
-                PlatformFeeAmount = platformFeeAmount, MuaPayoutAmount = depositAmount - platformFeeAmount,
-                Status = BookingStatus.PendingPayment, PaymentStatus = PaymentStatus.Unpaid,
-                CreatedAt = now, UpdatedAt = now, PaymentExpiresAt = now.AddMinutes(15), BookingServices = bookingServices
+                BookingId = bookingId,
+                CustomerId = customerId,
+                MUAId = createDto.MUAId,
+                IdempotencyKey = idempotencyKey,
+                TotalAmount = totalAmount,
+                TotalDurationMinutes = totalDuration,
+                BookingDate = DateTime.SpecifyKind(createDto.BookingDate.Date, DateTimeKind.Utc),
+                StartTime = createDto.StartTime,
+                EndTime = endTime,
+                Address = serviceAddress,
+                ServiceAddress = serviceAddress,
+                ServiceLatitude = createDto.ServiceLatitude,
+                ServiceLongitude = createDto.ServiceLongitude,
+                Notes = createDto.Notes?.Trim(),
+                DepositRate = DepositRate,
+                DepositAmount = depositAmount,
+                RemainingAmount = totalAmount - depositAmount,
+                PlatformFeeAmount = platformFeeAmount,
+                MuaPayoutAmount = depositAmount - platformFeeAmount,
+                Status = BookingStatus.PendingPayment,
+                PaymentStatus = PaymentStatus.Unpaid,
+                CreatedAt = now,
+                UpdatedAt = now,
+                PaymentExpiresAt = now.AddMinutes(15),
+                BookingServices = bookingServices
             };
             await _bookingRepository.AddAsync(booking);
             await _unitOfWork.SaveChangesAsync();
@@ -731,7 +765,10 @@ namespace BeautyBookBackend.Services
                 BookingDate = booking.BookingDate,
                 StartTime = booking.StartTime,
                 EndTime = booking.EndTime,
-                Address = booking.Address,
+                Address = booking.ServiceAddress ?? booking.Address,
+                ServiceAddress = booking.ServiceAddress ?? booking.Address,
+                ServiceLatitude = booking.ServiceLatitude,
+                ServiceLongitude = booking.ServiceLongitude,
                 Notes = booking.Notes,
                 Status = booking.Status,
                 PaymentStatus = booking.PaymentStatus,

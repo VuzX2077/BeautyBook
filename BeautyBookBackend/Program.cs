@@ -10,6 +10,8 @@ using BeautyBookBackend.Services;
 using BeautyBookBackend.Repositories;
 using BeautyBookBackend.Hubs;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.FileProviders;
+using BeautyBookBackend.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -204,6 +206,21 @@ app.UseSwaggerUI();
 
 app.UseCors("AllowAll"); // Enable CORS policy
 app.UseStaticFiles();
+
+// Local development continues to use wwwroot/uploads. In production, point
+// UPLOAD_STORAGE_PATH (or Uploads:StoragePath) at a mounted persistent disk.
+// Keeping the public request path stable avoids invalidating URLs in the DB.
+var uploadStoragePath = UploadStorage.ResolvePath(app.Configuration, app.Environment);
+var defaultUploadPath = Path.GetFullPath(Path.Combine(app.Environment.ContentRootPath, "wwwroot", "uploads"));
+Directory.CreateDirectory(uploadStoragePath);
+if (!string.Equals(uploadStoragePath, defaultUploadPath, StringComparison.OrdinalIgnoreCase))
+{
+    app.UseStaticFiles(new StaticFileOptions
+    {
+        FileProvider = new PhysicalFileProvider(uploadStoragePath),
+        RequestPath = UploadStorage.RequestPath
+    });
+}
 
 app.UseAuthentication(); // Must be called before UseAuthorization
 app.UseAuthorization();

@@ -34,6 +34,8 @@ namespace BeautyBookBackend.Services
         Task<bool> TogglePortfolioSaveAsync(Guid userId, Guid portfolioId);
         Task<PortfolioCommentDto?> AddPortfolioCommentAsync(Guid userId, Guid portfolioId, string content);
         Task<List<PortfolioCommentDto>> GetPortfolioCommentsAsync(Guid portfolioId);
+        Task<PortfolioCommentDto?> ReplyToPortfolioCommentAsync(Guid userId, Guid portfolioId, Guid parentCommentId, string content);
+        Task<List<PortfolioDto>> GetFavoritePortfolioAsync(Guid userId, string type);
 
         // Styles
         Task<bool> UpdateStylesAsync(Guid muaId, List<int> styleIds);

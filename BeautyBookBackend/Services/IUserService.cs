@@ -9,5 +9,6 @@ namespace BeautyBookBackend.Services
         Task<UserDto?> GetProfileAsync(Guid userId);
         Task<UserProfileDto?> GetFullUserProfileAsync(Guid userId);
         Task<UserDto?> UpdateProfileAsync(Guid userId, UserUpdateDto updateDto);
+        Task<AccountDeletionResultDto> DeleteOwnAccountAsync(Guid userId);
     }
 }

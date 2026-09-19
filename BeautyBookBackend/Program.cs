@@ -4,6 +4,7 @@ using Npgsql;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
+using System.Security.Claims;
 using Microsoft.OpenApi.Models;
 using BeautyBookBackend.Services;
 using BeautyBookBackend.Repositories;
@@ -117,6 +118,22 @@ builder.Services.AddAuthentication(options =>
         ValidAudience = jwtAudience,
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
     };
+    options.Events = new JwtBearerEvents
+    {
+        OnTokenValidated = async context =>
+        {
+            var userIdValue = context.Principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(userIdValue, out var userId))
+            {
+                context.Fail("Invalid user identifier.");
+                return;
+            }
+
+            var db = context.HttpContext.RequestServices.GetRequiredService<ApplicationDbContext>();
+            var isActive = await db.Users.AnyAsync(x => x.UserId == userId && x.IsActive && x.DeletedAt == null);
+            if (!isActive) context.Fail("Account is inactive or deleted.");
+        }
+    };
 });
 
 // Register Application Services (Dependency Injection)
@@ -125,7 +142,14 @@ builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IMuaService, MuaService>();
 builder.Services.AddScoped<IBookingService, BookingService>();
 builder.Services.AddScoped<IBookingNotificationService, BookingNotificationService>();
+builder.Services.AddScoped<IRefundService, RefundService>();
+builder.Services.AddScoped<IMuaReceivableService, MuaReceivableService>();
+builder.Services.AddScoped<IPayoutService, PayoutService>();
 builder.Services.AddHostedService<BookingAutoCompletionService>();
+builder.Services.AddHostedService<PaymentExpirationService>();
+builder.Services.AddHostedService<RefundProcessingService>();
+builder.Services.AddHostedService<MuaReceivableReconciliationService>();
+builder.Services.AddHostedService<PayoutReconciliationService>();
 builder.Services.AddHostedService<PushNotificationWorker>();
 builder.Services.AddScoped<IWalletService, WalletService>();
 builder.Services.AddScoped<IFeedService, FeedService>();

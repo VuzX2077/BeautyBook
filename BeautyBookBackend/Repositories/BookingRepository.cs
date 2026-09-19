@@ -72,7 +72,8 @@ namespace BeautyBookBackend.Repositories
             return await _context.Bookings
                 .Where(b => b.MUAId == muaId && b.BookingDate >= dateOnly && b.BookingDate < nextDate
                     && b.Status != BookingStatus.Cancelled && b.Status != BookingStatus.Rejected
-                    && b.Status != BookingStatus.PendingPayment)
+                    && (b.Status != BookingStatus.PendingPayment
+                        || (b.PaymentExpiresAt != null && b.PaymentExpiresAt > DateTime.UtcNow)))
                 .ToListAsync();
         }
 
@@ -91,7 +92,8 @@ namespace BeautyBookBackend.Repositories
                 && b.BookingDate >= dateOnly && b.BookingDate < nextDate
                 && b.Status != BookingStatus.Cancelled
                 && b.Status != BookingStatus.Rejected
-                && b.Status != BookingStatus.PendingPayment
+                && (b.Status != BookingStatus.PendingPayment
+                    || (b.PaymentExpiresAt != null && b.PaymentExpiresAt > DateTime.UtcNow))
                 && (!excludeBookingId.HasValue || b.BookingId != excludeBookingId.Value)
                 && startTime < b.EndTime
                 && endTime > b.StartTime);

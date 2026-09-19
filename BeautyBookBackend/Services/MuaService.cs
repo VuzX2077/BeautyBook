@@ -303,6 +303,7 @@ namespace BeautyBookBackend.Services
         // Portfolio Interactions
         public async Task<bool> TogglePortfolioLikeAsync(Guid userId, Guid portfolioId)
         {
+            if (!await _dbContext.Portfolios.AnyAsync(p => p.PortfolioId == portfolioId)) return false;
             var existingLike = await _dbContext.PortfolioLikes
                 .FirstOrDefaultAsync(l => l.UserId == userId && l.PortfolioId == portfolioId);
 
@@ -326,6 +327,7 @@ namespace BeautyBookBackend.Services
 
         public async Task<bool> TogglePortfolioSaveAsync(Guid userId, Guid portfolioId)
         {
+            if (!await _dbContext.Portfolios.AnyAsync(p => p.PortfolioId == portfolioId)) return false;
             var existingSave = await _dbContext.PortfolioSaves
                 .FirstOrDefaultAsync(s => s.UserId == userId && s.PortfolioId == portfolioId);
 
@@ -350,7 +352,7 @@ namespace BeautyBookBackend.Services
         public async Task<PortfolioCommentDto?> AddPortfolioCommentAsync(Guid userId, Guid portfolioId, string content)
         {
             var user = await _userRepository.GetByIdAsync(userId);
-            if (user == null) return null;
+            if (user == null || !await _dbContext.Portfolios.AnyAsync(p => p.PortfolioId == portfolioId)) return null;
 
             var comment = new PortfolioComment
             {
@@ -389,6 +391,7 @@ namespace BeautyBookBackend.Services
                           Id = c.Id,
                           PortfolioId = c.PortfolioId,
                           UserId = c.UserId,
+                          ParentCommentId = c.ParentCommentId,
                           UserName = u.FullName,
                           UserAvatarUrl = u.AvatarUrl,
                           Content = c.Content,
@@ -396,7 +399,33 @@ namespace BeautyBookBackend.Services
                       })
                 .ToListAsync();
 
-            return comments;
+            var byId = comments.ToDictionary(c => c.Id);
+            foreach (var reply in comments.Where(c => c.ParentCommentId.HasValue))
+                if (byId.TryGetValue(reply.ParentCommentId!.Value, out var parent)) parent.Replies.Add(reply);
+            return comments.Where(c => !c.ParentCommentId.HasValue).ToList();
+        }
+
+        public async Task<PortfolioCommentDto?> ReplyToPortfolioCommentAsync(Guid userId, Guid portfolioId, Guid parentCommentId, string content)
+        {
+            var parentExists = await _dbContext.PortfolioComments.AnyAsync(c => c.Id == parentCommentId && c.PortfolioId == portfolioId);
+            if (!parentExists) return null;
+            var user = await _userRepository.GetByIdAsync(userId);
+            if (user == null) return null;
+            var reply = new PortfolioComment { UserId = userId, PortfolioId = portfolioId, ParentCommentId = parentCommentId, Content = content };
+            _dbContext.PortfolioComments.Add(reply);
+            await _dbContext.SaveChangesAsync();
+            return new PortfolioCommentDto { Id = reply.Id, PortfolioId = portfolioId, UserId = userId, ParentCommentId = parentCommentId, UserName = user.FullName, UserAvatarUrl = user.AvatarUrl, Content = content, CreatedAt = reply.CreatedAt };
+        }
+
+        public async Task<List<PortfolioDto>> GetFavoritePortfolioAsync(Guid userId, string type)
+        {
+            var query = _dbContext.Portfolios
+                .Include(p => p.Likes).Include(p => p.Saves).Include(p => p.Comments)
+                .Include(p => p.MakeupArtistProfile).ThenInclude(m => m.User)
+                .Include(p => p.Service).AsQueryable();
+            query = type == "liked" ? query.Where(p => p.Likes.Any(x => x.UserId == userId)) : query.Where(p => p.Saves.Any(x => x.UserId == userId));
+            var posts = await query.OrderByDescending(p => type == "liked" ? p.Likes.First(x => x.UserId == userId).CreatedAt : p.Saves.First(x => x.UserId == userId).CreatedAt).ToListAsync();
+            return posts.Select(p => new PortfolioDto { PortfolioId = p.PortfolioId, MUAId = p.MUAId, Title = p.Title, ImageUrls = p.ImageUrls, Description = p.Description, Tags = p.Tags, CreatedAt = p.CreatedAt, LikesCount = p.Likes.Count, CommentsCount = p.Comments.Count, SavesCount = p.Saves.Count, IsLiked = p.Likes.Any(x => x.UserId == userId), IsSaved = p.Saves.Any(x => x.UserId == userId), AuthorName = p.MakeupArtistProfile?.User?.FullName, AuthorAvatarUrl = p.MakeupArtistProfile?.User?.AvatarUrl, Service = p.Service == null ? null : ToServiceDto(p.Service) }).ToList();
         }
 
         public async Task<bool> UpdateStylesAsync(Guid muaId, List<int> styleIds)

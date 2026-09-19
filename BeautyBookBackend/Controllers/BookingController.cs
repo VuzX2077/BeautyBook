@@ -66,42 +66,44 @@ namespace BeautyBookBackend.Controllers
             {
                 return BadRequest(new { Message = ex.Message });
             }
-            catch (Exception ex)
+            catch (BookingConcurrencyException ex)
             {
-                return StatusCode(500, new
-                {
-                    Message = ex.Message,
-                    Inner = ex.InnerException?.Message,
-                    StackTrace = ex.StackTrace
-                });
+                return Conflict(new { Message = ex.Message });
+            }
+            catch (Exception)
+            {
+                return StatusCode(500, new { Message = "Không thể tạo booking lúc này. Vui lòng thử lại." });
             }
         }
 
-        [HttpPost("{id}/pay-deposit")]
-        public async Task<IActionResult> PayDeposit(Guid id)
+        [HttpPost("{id}/deposit-payment")]
+        public async Task<IActionResult> CreateDepositPayment(Guid id)
         {
             try
             {
-                var booking = await _bookingService.PayDepositAsync(id, CurrentUserId);
-                return booking == null
+                var payment = await _bookingService.CreateDepositPaymentAsync(id, CurrentUserId);
+                return payment == null
                     ? NotFound(new { Message = "Không tìm thấy booking của khách hàng." })
-                    : Ok(booking);
-            }
-            catch (InsufficientBalanceException ex)
-            {
-                return BadRequest(new
-                {
-                    Code = "INSUFFICIENT_BALANCE",
-                    Message = ex.Message,
-                    RequiredAmount = ex.RequiredAmount,
-                    CurrentBalance = ex.CurrentBalance,
-                    MissingAmount = ex.MissingAmount
-                });
+                    : Ok(payment);
             }
             catch (InvalidOperationException ex)
             {
                 return BadRequest(new { Message = ex.Message });
             }
+            catch (BookingConcurrencyException ex)
+            {
+                return Conflict(new { Message = ex.Message });
+            }
+        }
+
+        [AllowAnonymous]
+        [HttpPost("payos/webhook")]
+        public async Task<IActionResult> PayOsWebhook([FromBody] PayOsWebhookDto webhook)
+        {
+            var handled = await _bookingService.HandlePayOsWebhookAsync(webhook);
+            return handled
+                ? Ok(new { Message = "Webhook payOS đã được xử lý." })
+                : BadRequest(new { Message = "Webhook payOS không hợp lệ hoặc không khớp payment." });
         }
         
         [HttpGet]
@@ -141,6 +143,10 @@ namespace BeautyBookBackend.Controllers
             catch (InvalidOperationException ex)
             {
                 return BadRequest(new { Message = ex.Message });
+            }
+            catch (BookingConcurrencyException ex)
+            {
+                return Conflict(new { Message = ex.Message });
             }
         }
 

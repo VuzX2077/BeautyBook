@@ -9,12 +9,14 @@ namespace BeautyBookBackend.Services
     public interface IBookingService
     {
         Task<BookingDto?> CreateBookingAsync(Guid customerId, BookingCreateDto createDto);
-        Task<BookingDto?> PayDepositAsync(Guid bookingId, Guid customerId);
+        Task<BookingPaymentDto?> CreateDepositPaymentAsync(Guid bookingId, Guid customerId);
+        Task<bool> HandlePayOsWebhookAsync(PayOsWebhookDto webhook);
         Task<List<BookingDto>> GetBookingsAsync(Guid userId, string viewAs);
         Task<BookingDto?> GetBookingByIdAsync(Guid bookingId, Guid userId);
         Task<BookingDto?> UpdateBookingStatusAsync(Guid bookingId, Guid userId, BookingStatus status, string? reason = null);
         Task<BookingDto?> ResolveDisputeAsync(Guid bookingId, bool refundCustomer);
         Task<int> AutoCompleteOverdueAsync();
+        Task<int> ExpirePendingPaymentsAsync();
         Task<List<TimeSpan>> GetAvailableSlotsAsync(Guid muaId, DateTime date, int totalDurationMinutes);
         
         // Reviews

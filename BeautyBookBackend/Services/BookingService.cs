@@ -3,40 +3,61 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using BeautyBookBackend.DTOs;
+using BeautyBookBackend.Data;
 using BeautyBookBackend.Models;
 using BeautyBookBackend.Models.Enums;
 using BeautyBookBackend.Repositories;
+using Microsoft.EntityFrameworkCore;
+using System.Security.Cryptography;
+using System.Text.Json;
 
 namespace BeautyBookBackend.Services
 {
+    public sealed class BookingConcurrencyException : Exception
+    {
+        public BookingConcurrencyException(string message) : base(message) { }
+    }
+
     public class BookingService : IBookingService
     {
-        private const decimal PlatformCommissionFee = 10000m;
         private const decimal DepositRate = 0.30m;
+        private const decimal PlatformFeeRate = 0.08m;
         private static readonly TimeSpan WorkingHoursStart = TimeSpan.FromHours(8);
         private static readonly TimeSpan WorkingHoursEnd = TimeSpan.FromHours(20);
 
         private readonly IBookingRepository _bookingRepository;
         private readonly IMuaRepository _muaRepository;
-        private readonly IWalletRepository _walletRepository;
         private readonly IReviewRepository _reviewRepository;
         private readonly IUnitOfWork _unitOfWork;
         private readonly IBookingNotificationService _notificationService;
+        private readonly ApplicationDbContext _context;
+        private readonly IPayOsService _payOsService;
+        private readonly IRefundService _refundService;
+        private readonly IMuaReceivableService _receivableService;
+        private readonly IConfiguration _configuration;
 
         public BookingService(
             IBookingRepository bookingRepository,
             IMuaRepository muaRepository,
-            IWalletRepository walletRepository,
             IReviewRepository reviewRepository,
             IUnitOfWork unitOfWork,
-            IBookingNotificationService notificationService)
+            IBookingNotificationService notificationService,
+            ApplicationDbContext context,
+            IPayOsService payOsService,
+            IRefundService refundService,
+            IMuaReceivableService receivableService,
+            IConfiguration configuration)
         {
             _bookingRepository = bookingRepository;
             _muaRepository = muaRepository;
-            _walletRepository = walletRepository;
             _reviewRepository = reviewRepository;
             _unitOfWork = unitOfWork;
             _notificationService = notificationService;
+            _context = context;
+            _payOsService = payOsService;
+            _refundService = refundService;
+            _receivableService = receivableService;
+            _configuration = configuration;
         }
 
         public async Task<BookingDto?> CreateBookingAsync(Guid customerId, BookingCreateDto createDto)
@@ -92,10 +113,8 @@ namespace BeautyBookBackend.Services
                 throw new InvalidOperationException("Không thể đặt lịch ở thời điểm trong quá khứ.");
             }
 
-            if (await _bookingRepository.HasOverlappingBookingAsync(createDto.MUAId, createDto.BookingDate, createDto.StartTime, endTime))
-            {
-                throw new InvalidOperationException("Khung giờ này đã có booking khác. Vui lòng chọn giờ khác.");
-            }
+            var depositAmount = decimal.Round(totalAmount * DepositRate, 0, MidpointRounding.AwayFromZero);
+            var platformFeeAmount = decimal.Round(depositAmount * PlatformFeeRate, 0, MidpointRounding.AwayFromZero);
 
             var booking = new Booking
             {
@@ -110,62 +129,238 @@ namespace BeautyBookBackend.Services
                 Address = createDto.Address,
                 Notes = createDto.Notes,
                 DepositRate = DepositRate,
-                DepositAmount = decimal.Round(totalAmount * DepositRate, 0, MidpointRounding.AwayFromZero),
-                RemainingAmount = totalAmount - decimal.Round(totalAmount * DepositRate, 0, MidpointRounding.AwayFromZero),
-                PlatformFeeAmount = Math.Min(PlatformCommissionFee, decimal.Round(totalAmount * DepositRate, 0, MidpointRounding.AwayFromZero)),
-                MuaPayoutAmount = Math.Max(0, decimal.Round(totalAmount * DepositRate, 0, MidpointRounding.AwayFromZero) - PlatformCommissionFee),
+                DepositAmount = depositAmount,
+                RemainingAmount = totalAmount - depositAmount,
+                PlatformFeeAmount = platformFeeAmount,
+                MuaPayoutAmount = depositAmount - platformFeeAmount,
                 Status = BookingStatus.PendingPayment,
                 PaymentStatus = PaymentStatus.Unpaid,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow,
+                PaymentExpiresAt = DateTime.UtcNow.AddMinutes(15),
                 BookingServices = bookingServices
             };
 
-            await _bookingRepository.AddAsync(booking);
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+            var slotLockKey = $"booking-slot:{createDto.MUAId:N}:{createDto.BookingDate:yyyyMMdd}";
+            await _context.Database.ExecuteSqlInterpolatedAsync(
+                $"SELECT pg_advisory_xact_lock(hashtextextended({slotLockKey}, 0))");
 
+            if (await _bookingRepository.HasOverlappingBookingAsync(createDto.MUAId, createDto.BookingDate, createDto.StartTime, endTime))
+                throw new BookingConcurrencyException("Khung giờ này vừa được khách hàng khác giữ. Vui lòng chọn giờ khác.");
+
+            await _bookingRepository.AddAsync(booking);
             await _unitOfWork.SaveChangesAsync();
+            await transaction.CommitAsync();
             return await ToBookingDtoAsync(booking);
         }
 
-        public async Task<BookingDto?> PayDepositAsync(Guid bookingId, Guid customerId)
+        public async Task<BookingPaymentDto?> CreateDepositPaymentAsync(Guid bookingId, Guid customerId)
         {
-            var booking = await _bookingRepository.GetByIdForCustomerAsync(bookingId, customerId);
-            if (booking == null) return null;
-            if (booking.PaymentStatus == PaymentStatus.DepositHeld)
-                return await GetBookingByIdAsync(bookingId, customerId);
-            if (booking.Status != BookingStatus.PendingPayment
-                || (booking.PaymentStatus != PaymentStatus.Unpaid && booking.PaymentStatus != PaymentStatus.Failed))
-                throw new InvalidOperationException("Booking không ở trạng thái có thể thanh toán tiền cọc.");
-
-            if (await _bookingRepository.HasOverlappingBookingAsync(
-                    booking.MUAId, booking.BookingDate, booking.StartTime, booking.EndTime, booking.BookingId))
-                throw new InvalidOperationException("Khung giờ vừa được booking khác giữ. Vui lòng chọn giờ khác.");
-
-            var wallet = await _walletRepository.GetByUserIdAsync(customerId)
-                ?? throw new InvalidOperationException("Không tìm thấy ví của khách hàng.");
-            if (wallet.Balance < booking.DepositAmount)
-                throw new InsufficientBalanceException(booking.DepositAmount, wallet.Balance);
-
-            wallet.Balance -= booking.DepositAmount;
-            wallet.UpdatedAt = DateTime.UtcNow;
-            await _walletRepository.AddTransactionAsync(new WalletTransaction
+            BookingPayment payment;
+            await using (var transaction = await _context.Database.BeginTransactionAsync())
             {
-                TransactionId = Guid.NewGuid(),
-                WalletId = wallet.WalletId,
-                Amount = -booking.DepositAmount,
-                TransactionType = TransactionType.BookingPayment,
-                ReferenceId = booking.BookingId,
-                ReferenceType = nameof(Booking),
-                Description = $"Giu tien coc 30% booking #{booking.BookingId.ToString()[..8]}",
-                CreatedAt = DateTime.UtcNow
+                var booking = await GetBookingForUpdateAsync(bookingId);
+                if (booking == null || booking.CustomerId != customerId) return null;
+
+                var now = DateTime.UtcNow;
+                await ExpirePaymentAttemptsAsync(booking.BookingId, now);
+
+                if (booking.PaymentStatus == PaymentStatus.DepositHeld || booking.PaymentStatus == PaymentStatus.Paid)
+                    throw new InvalidOperationException("Tiền cọc của booking đã được thanh toán.");
+                if (booking.Status != BookingStatus.PendingPayment
+                    || (booking.PaymentStatus != PaymentStatus.Unpaid && booking.PaymentStatus != PaymentStatus.Failed))
+                    throw new InvalidOperationException("Booking không ở trạng thái có thể thanh toán tiền cọc.");
+
+                if (booking.PaymentExpiresAt.HasValue && booking.PaymentExpiresAt <= now)
+                {
+                    ExpireBooking(booking, now);
+                    await _unitOfWork.SaveChangesAsync();
+                    await transaction.CommitAsync();
+                    throw new InvalidOperationException("Thời gian giữ lịch đã hết. Vui lòng tạo booking mới.");
+                }
+
+                var existing = await _context.BookingPayments
+                    .Where(x => x.BookingId == bookingId
+                        && (x.Status == BookingPaymentStatus.Created || x.Status == BookingPaymentStatus.Pending)
+                        && x.ExpiresAt > now)
+                    .OrderByDescending(x => x.CreatedAt)
+                    .FirstOrDefaultAsync();
+                if (existing != null)
+                {
+                    await transaction.CommitAsync();
+                    if (existing.Status == BookingPaymentStatus.Created)
+                        throw new BookingConcurrencyException("Yêu cầu thanh toán đang được tạo. Vui lòng thử lại sau ít giây.");
+                    return ToPaymentDto(existing);
+                }
+
+                var orderCode = await GeneratePaymentOrderCodeAsync();
+                var expiresAt = booking.PaymentExpiresAt ?? now.AddMinutes(15);
+                payment = new BookingPayment
+                {
+                    PaymentId = Guid.NewGuid(),
+                    BookingId = booking.BookingId,
+                    CustomerId = customerId,
+                    Provider = PaymentProvider.PayOS,
+                    ProviderOrderCode = orderCode,
+                    Amount = booking.DepositAmount,
+                    Status = BookingPaymentStatus.Created,
+                    ExpiresAt = expiresAt,
+                    CreatedAt = now,
+                    UpdatedAt = now
+                };
+                await _context.BookingPayments.AddAsync(payment);
+                await _unitOfWork.SaveChangesAsync();
+                await transaction.CommitAsync();
+            }
+
+            try
+            {
+                var returnUrl = BuildPaymentCallbackUrl("PayOS:BookingReturnUrl", bookingId, "bbookapp://checkout/success");
+                var cancelUrl = BuildPaymentCallbackUrl("PayOS:BookingCancelUrl", bookingId, "bbookapp://booking/{bookingId}");
+                var paymentLink = await _payOsService.CreatePaymentLinkAsync(new PayOsCreatePaymentRequest
+                {
+                    OrderCode = payment.ProviderOrderCode,
+                    Amount = decimal.ToInt32(payment.Amount),
+                    Description = $"COC BBOOK {payment.ProviderOrderCode}",
+                    ReturnUrl = returnUrl,
+                    CancelUrl = cancelUrl,
+                    ExpiredAt = checked((int)new DateTimeOffset(payment.ExpiresAt).ToUnixTimeSeconds())
+                });
+
+                await using var finalizeTransaction = await _context.Database.BeginTransactionAsync();
+                var lockedPayment = await GetPaymentForUpdateAsync(payment.PaymentId);
+                if (lockedPayment == null) throw new InvalidOperationException("Không tìm thấy payment attempt vừa tạo.");
+                if (lockedPayment.Status != BookingPaymentStatus.Created)
+                    return ToPaymentDto(lockedPayment);
+
+                lockedPayment.ProviderPaymentLinkId = paymentLink.PaymentLinkId;
+                lockedPayment.CheckoutUrl = paymentLink.CheckoutUrl;
+                lockedPayment.QrCode = paymentLink.QrCode;
+                lockedPayment.Status = BookingPaymentStatus.Pending;
+                lockedPayment.UpdatedAt = DateTime.UtcNow;
+                await _unitOfWork.SaveChangesAsync();
+                await finalizeTransaction.CommitAsync();
+                return ToPaymentDto(lockedPayment);
+            }
+            catch
+            {
+                await MarkPaymentCreationFailedAsync(payment.PaymentId);
+                throw;
+            }
+        }
+
+        public async Task<bool> HandlePayOsWebhookAsync(PayOsWebhookDto webhook)
+        {
+            if (webhook.Data == null) return false;
+
+            var valid = _payOsService.IsValidWebhookSignature(new PayOsWebhookVerificationData
+            {
+                OrderCode = webhook.Data.OrderCode,
+                Amount = webhook.Data.Amount,
+                Description = webhook.Data.Description,
+                AccountNumber = webhook.Data.AccountNumber,
+                Reference = webhook.Data.Reference,
+                TransactionDateTime = webhook.Data.TransactionDateTime,
+                Currency = webhook.Data.Currency,
+                PaymentLinkId = webhook.Data.PaymentLinkId,
+                Code = webhook.Data.Code,
+                Desc = webhook.Data.Desc,
+                ExtraData = webhook.Data.ExtraData,
+                Signature = webhook.Signature
             });
+            if (!valid) return false;
+
+            var paymentIdentity = await _context.BookingPayments.AsNoTracking()
+                .Where(x => x.ProviderOrderCode == webhook.Data.OrderCode)
+                .Select(x => new { x.PaymentId, x.BookingId })
+                .FirstOrDefaultAsync();
+
+            // payOS sends a signed sample payload while registering a webhook URL.
+            if (paymentIdentity == null) return true;
+
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+            var booking = await GetBookingForUpdateAsync(paymentIdentity.BookingId);
+            var payment = await GetPaymentForUpdateAsync(paymentIdentity.PaymentId);
+            if (booking == null || payment == null) return false;
+
+            if (payment.Status == BookingPaymentStatus.RefundPending)
+            {
+                await _refundService.EnsureFullRefundAsync(
+                    booking,
+                    payment,
+                    RefundReasonCode.LatePayment,
+                    "Thanh toán thành công sau khi booking không còn giữ slot hợp lệ.",
+                    null);
+                await _unitOfWork.SaveChangesAsync();
+                await transaction.CommitAsync();
+                return true;
+            }
+            if (payment.Status == BookingPaymentStatus.Paid
+                || payment.Status == BookingPaymentStatus.Refunded)
+            {
+                await transaction.CommitAsync();
+                return true;
+            }
+
+            var paymentLinkMismatch = !string.IsNullOrWhiteSpace(webhook.Data.PaymentLinkId)
+                && !string.IsNullOrWhiteSpace(payment.ProviderPaymentLinkId)
+                && !string.Equals(payment.ProviderPaymentLinkId, webhook.Data.PaymentLinkId, StringComparison.Ordinal);
+            var currencyMismatch = !string.IsNullOrWhiteSpace(webhook.Data.Currency)
+                && !string.Equals(webhook.Data.Currency, "VND", StringComparison.OrdinalIgnoreCase);
+            if (payment.Amount != webhook.Data.Amount || paymentLinkMismatch || currencyMismatch)
+                return false;
+
+            var now = DateTime.UtcNow;
+            payment.RawWebhookPayload = JsonSerializer.Serialize(webhook);
+            payment.ProviderReference = webhook.Data.Reference;
+            payment.ProviderPaymentLinkId ??= webhook.Data.PaymentLinkId;
+            payment.UpdatedAt = now;
+
+            if (!webhook.Success || webhook.Data.Code != "00")
+            {
+                payment.Status = BookingPaymentStatus.Failed;
+                if (booking.Status == BookingStatus.PendingPayment)
+                    booking.PaymentStatus = PaymentStatus.Failed;
+                await _unitOfWork.SaveChangesAsync();
+                await transaction.CommitAsync();
+                return true;
+            }
+
+            payment.PaidAt = TryParseProviderDateTime(webhook.Data.TransactionDateTime) ?? now;
+            var canActivateBooking = booking.Status == BookingStatus.PendingPayment
+                && booking.PaymentExpiresAt.HasValue
+                && booking.PaymentExpiresAt > now
+                && payment.ExpiresAt > now;
+
+            if (!canActivateBooking)
+            {
+                // Money was received, but the slot is no longer valid. Preserve that fact and
+                // route the payment to the existing refund/reconciliation state without reviving the booking.
+                payment.Status = BookingPaymentStatus.RefundPending;
+                payment.RefundRequestedAt ??= now;
+                booking.PaymentStatus = PaymentStatus.RefundPending;
+                booking.UpdatedAt = now;
+                await _refundService.EnsureFullRefundAsync(
+                    booking,
+                    payment,
+                    RefundReasonCode.LatePayment,
+                    "Thanh toán thành công sau khi booking không còn giữ slot hợp lệ.",
+                    null);
+                await _unitOfWork.SaveChangesAsync();
+                await transaction.CommitAsync();
+                return true;
+            }
+
+            payment.Status = BookingPaymentStatus.Paid;
             booking.PaymentStatus = PaymentStatus.DepositHeld;
             booking.Status = BookingStatus.PendingConfirmation;
-            booking.DepositPaidAt = DateTime.UtcNow;
-            booking.UpdatedAt = DateTime.UtcNow;
-            await _notificationService.QueueBookingStatusAsync(booking, BookingStatus.PendingConfirmation, customerId);
+            booking.DepositPaidAt = payment.PaidAt;
+            booking.UpdatedAt = now;
+            await _notificationService.QueueBookingStatusAsync(booking, BookingStatus.PendingConfirmation, payment.CustomerId);
             await _unitOfWork.SaveChangesAsync();
-            return await GetBookingByIdAsync(bookingId, customerId);
+            await transaction.CommitAsync();
+            return true;
         }
 
         public async Task<List<BookingDto>> GetBookingsAsync(Guid userId, string viewAs)
@@ -189,9 +384,22 @@ namespace BeautyBookBackend.Services
 
         public async Task<BookingDto?> UpdateBookingStatusAsync(Guid bookingId, Guid userId, BookingStatus newStatus, string? reason = null)
         {
-            var booking = await _bookingRepository.GetByIdForParticipantAsync(bookingId, userId);
+            var observedStatus = await _context.Bookings.AsNoTracking()
+                .Where(x => x.BookingId == bookingId && (x.MUAId == userId || x.CustomerId == userId))
+                .Select(x => (BookingStatus?)x.Status)
+                .FirstOrDefaultAsync();
+            if (!observedStatus.HasValue) return null;
+
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+            var booking = await GetBookingForUpdateAsync(bookingId);
             if (booking == null || (booking.MUAId != userId && booking.CustomerId != userId)) return null;
-            if (booking.Status == newStatus) return await GetBookingByIdAsync(bookingId, userId);
+            if (booking.Status != observedStatus.Value)
+                throw new BookingConcurrencyException("Booking vừa được cập nhật bởi một thao tác khác. Vui lòng tải lại trạng thái.");
+            if (booking.Status == newStatus)
+            {
+                await transaction.CommitAsync();
+                return await GetBookingByIdAsync(bookingId, userId);
+            }
             if (IsFinalStatus(booking.Status)
                 || !IsValidStatusTransition(booking.Status, newStatus, userId, booking.MUAId, booking.CustomerId)) return null;
             if (RequiresHeldDeposit(newStatus)
@@ -206,7 +414,17 @@ namespace BeautyBookBackend.Services
             }
             else if (newStatus == BookingStatus.Cancelled || newStatus == BookingStatus.Rejected)
             {
-                if (!await RefundBookingAsync(booking)) return null;
+                var isPaid = booking.PaymentStatus != PaymentStatus.Unpaid && booking.PaymentStatus != PaymentStatus.Failed;
+                if (isPaid && userId == booking.CustomerId)
+                    throw new InvalidOperationException("Chính sách hoàn tiền khi khách hàng hủy chưa được cấu hình. Vui lòng liên hệ hỗ trợ.");
+
+                var refundReason = newStatus == BookingStatus.Rejected
+                    ? RefundReasonCode.MuaRejected
+                    : RefundReasonCode.MuaCancelled;
+                var refundDescription = newStatus == BookingStatus.Rejected
+                    ? "MUA từ chối booking đã thanh toán cọc."
+                    : "MUA hủy booking trước khi dịch vụ hoàn thành.";
+                if (!await RefundBookingAsync(booking, refundReason, refundDescription, userId)) return null;
                 if (newStatus == BookingStatus.Rejected) booking.RejectedAt = DateTime.UtcNow;
                 else booking.CancelledAt = DateTime.UtcNow;
             }
@@ -228,6 +446,7 @@ namespace BeautyBookBackend.Services
                 booking.DisputedAt = DateTime.UtcNow;
                 booking.DisputeReason = reason.Trim();
                 booking.PaymentStatus = PaymentStatus.Frozen;
+                await _receivableService.FreezeForDisputeAsync(booking.BookingId);
             }
 
             booking.Status = newStatus;
@@ -236,27 +455,36 @@ namespace BeautyBookBackend.Services
                 await _notificationService.CancelPendingAsync(booking.BookingId);
             await _notificationService.QueueBookingStatusAsync(booking, newStatus, userId);
             await _unitOfWork.SaveChangesAsync();
+            await transaction.CommitAsync();
             return await GetBookingByIdAsync(bookingId, userId);
         }
 
         public async Task<BookingDto?> ResolveDisputeAsync(Guid bookingId, bool refundCustomer)
         {
-            var booking = await _bookingRepository.GetByIdAsync(bookingId);
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+            var booking = await GetBookingForUpdateAsync(bookingId);
             if (booking == null || booking.Status != BookingStatus.Disputed || booking.PaymentStatus != PaymentStatus.Frozen)
                 return null;
             if (refundCustomer)
             {
-                if (!await RefundBookingAsync(booking)) return null;
+                if (!await RefundBookingAsync(
+                    booking,
+                    RefundReasonCode.DisputeResolvedForCustomer,
+                    "Admin giải quyết tranh chấp theo hướng hoàn tiền cho khách hàng.",
+                    null)) return null;
                 booking.Status = BookingStatus.Cancelled;
+                await _receivableService.FreezeForDisputeAsync(booking.BookingId);
             }
             else
             {
                 if (!await CompleteBookingAsync(booking)) return null;
                 booking.Status = BookingStatus.Completed;
                 booking.CompletedAt = DateTime.UtcNow;
+                await _receivableService.RestoreAfterMuaWinsAsync(booking.BookingId);
             }
             booking.UpdatedAt = DateTime.UtcNow;
             await _unitOfWork.SaveChangesAsync();
+            await transaction.CommitAsync();
             return await ToBookingDtoAsync(booking);
         }
 
@@ -264,16 +492,53 @@ namespace BeautyBookBackend.Services
         {
             var bookings = await _bookingRepository.GetOverdueCustomerConfirmationsAsync(DateTime.UtcNow);
             var count = 0;
-            foreach (var booking in bookings)
+            foreach (var candidate in bookings)
             {
+                await using var transaction = await _context.Database.BeginTransactionAsync();
+                var booking = await GetBookingForUpdateAsync(candidate.BookingId);
+                if (booking == null || booking.Status != BookingStatus.WaitingCustomer
+                    || booking.CustomerConfirmationDeadline == null
+                    || booking.CustomerConfirmationDeadline > DateTime.UtcNow)
+                    continue;
                 if (!await CompleteBookingAsync(booking)) continue;
                 booking.Status = BookingStatus.AutoCompleted;
                 booking.CompletedAt = DateTime.UtcNow;
+                await _receivableService.RestoreAfterMuaWinsAsync(booking.BookingId);
                 booking.UpdatedAt = DateTime.UtcNow;
+                await _unitOfWork.SaveChangesAsync();
+                await transaction.CommitAsync();
                 count++;
             }
-            if (count > 0) await _unitOfWork.SaveChangesAsync();
             return count;
+        }
+
+        public async Task<int> ExpirePendingPaymentsAsync()
+        {
+            var now = DateTime.UtcNow;
+            var bookingIds = await _context.Bookings.AsNoTracking()
+                .Where(x => x.Status == BookingStatus.PendingPayment
+                    && x.PaymentExpiresAt != null
+                    && x.PaymentExpiresAt <= now)
+                .Select(x => x.BookingId)
+                .ToListAsync();
+
+            var expiredCount = 0;
+            foreach (var bookingId in bookingIds)
+            {
+                await using var transaction = await _context.Database.BeginTransactionAsync();
+                var booking = await GetBookingForUpdateAsync(bookingId);
+                if (booking == null || booking.Status != BookingStatus.PendingPayment
+                    || booking.PaymentExpiresAt == null || booking.PaymentExpiresAt > DateTime.UtcNow)
+                    continue;
+
+                var lockedAt = DateTime.UtcNow;
+                await ExpirePaymentAttemptsAsync(bookingId, lockedAt);
+                ExpireBooking(booking, lockedAt);
+                await _unitOfWork.SaveChangesAsync();
+                await transaction.CommitAsync();
+                expiredCount++;
+            }
+            return expiredCount;
         }
 
         public async Task<bool> AddReviewAsync(Guid bookingId, Guid customerId, ReviewCreateDto reviewDto)
@@ -355,51 +620,21 @@ namespace BeautyBookBackend.Services
             if ((booking.PaymentStatus != PaymentStatus.DepositHeld
                     && booking.PaymentStatus != PaymentStatus.Paid
                     && booking.PaymentStatus != PaymentStatus.Frozen)
-                || !await _walletRepository.HasBookingPaymentAsync(booking.BookingId)
-                || await _walletRepository.HasBookingEarningAsync(booking.BookingId))
+                || !await _context.BookingPayments.AnyAsync(x => x.BookingId == booking.BookingId
+                    && x.Status == BookingPaymentStatus.Paid)
+                )
             {
                 return false;
             }
 
-            var servicePrice = booking.DepositAmount;
-            var commissionFee = booking.PlatformFeeAmount;
-            var artistEarnings = booking.MuaPayoutAmount;
+            var hasUnresolvedRefund = await _context.Refunds.AnyAsync(x => x.BookingId == booking.BookingId
+                && (x.Status == RefundStatus.Pending
+                    || x.Status == RefundStatus.ManualActionRequired
+                    || x.Status == RefundStatus.Processing
+                    || x.Status == RefundStatus.Failed));
+            if (hasUnresolvedRefund) return false;
 
-            var muaWallet = await _walletRepository.GetByUserIdAsync(booking.MUAId);
-            if (muaWallet == null)
-            {
-                return false;
-            }
-
-            muaWallet.Balance += artistEarnings;
-            muaWallet.UpdatedAt = DateTime.UtcNow;
-
-            await _walletRepository.AddTransactionAsync(new WalletTransaction
-            {
-                TransactionId = Guid.NewGuid(),
-                WalletId = muaWallet.WalletId,
-                Amount = servicePrice,
-                TransactionType = TransactionType.BookingEarning,
-                ReferenceId = booking.BookingId,
-                ReferenceType = nameof(Booking),
-                Description = $"Nhan tien thanh toan lich dat #{booking.BookingId.ToString().Substring(0, 8)}",
-                CreatedAt = DateTime.UtcNow
-            });
-
-            if (commissionFee > 0)
-            {
-                await _walletRepository.AddTransactionAsync(new WalletTransaction
-                {
-                    TransactionId = Guid.NewGuid(),
-                    WalletId = muaWallet.WalletId,
-                    Amount = -commissionFee,
-                    TransactionType = TransactionType.Commission,
-                    ReferenceId = booking.BookingId,
-                    ReferenceType = nameof(Booking),
-                    Description = $"Phi nen tang booking #{booking.BookingId.ToString().Substring(0, 8)}",
-                    CreatedAt = DateTime.UtcNow
-                });
-            }
+            await _receivableService.EnsureForCompletedBookingAsync(booking);
 
             var muaProfile = await _muaRepository.GetProfileWithFullDetailsAsync(booking.MUAId);
             if (muaProfile != null)
@@ -415,9 +650,19 @@ namespace BeautyBookBackend.Services
             return true;
         }
 
-        private async Task<bool> RefundBookingAsync(Booking booking)
+        private async Task<bool> RefundBookingAsync(
+            Booking booking,
+            RefundReasonCode reasonCode,
+            string reason,
+            Guid? requestedBy)
         {
-            if (booking.PaymentStatus == PaymentStatus.Refunded || await _walletRepository.HasBookingRefundAsync(booking.BookingId))
+            if (await _context.PayoutItems.AnyAsync(x => x.IsActive
+                && x.MuaReceivable!.BookingId == booking.BookingId
+                && (x.MuaReceivable.Status == MuaReceivableStatus.PayoutPending
+                    || x.MuaReceivable.Status == MuaReceivableStatus.PaidOut)))
+                throw new InvalidOperationException("Booking đang thuộc payout chưa đối soát. Cần xử lý payout trước khi hoàn tiền.");
+
+            if (booking.PaymentStatus == PaymentStatus.Refunded)
             {
                 return false;
             }
@@ -427,37 +672,25 @@ namespace BeautyBookBackend.Services
                 return true;
             }
 
-            if (!await _walletRepository.HasBookingPaymentAsync(booking.BookingId))
-            {
-                return false;
-            }
+            var payment = await _context.BookingPayments
+                .Where(x => x.BookingId == booking.BookingId && x.Status == BookingPaymentStatus.Paid)
+                .OrderByDescending(x => x.PaidAt)
+                .FirstOrDefaultAsync();
+            if (payment == null) return false;
 
-            var customerWallet = await _walletRepository.GetByUserIdAsync(booking.CustomerId);
-            if (customerWallet == null) return false;
-
-            var servicePrice = booking.DepositAmount;
-
-            customerWallet.Balance += servicePrice;
-            customerWallet.UpdatedAt = DateTime.UtcNow;
-
-            await _walletRepository.AddTransactionAsync(new WalletTransaction
-            {
-                TransactionId = Guid.NewGuid(),
-                WalletId = customerWallet.WalletId,
-                Amount = servicePrice,
-                TransactionType = TransactionType.BookingRefund,
-                ReferenceId = booking.BookingId,
-                ReferenceType = nameof(Booking),
-                Description = $"Hoan tien coc lich dat #{booking.BookingId.ToString().Substring(0, 8)} do don hang bi huy/tu choi",
-                CreatedAt = DateTime.UtcNow
-            });
-
-            booking.PaymentStatus = PaymentStatus.Refunded;
+            // A real refund/payout operation must be reconciled with the payment provider.
+            // Never create spendable customer balance before money has actually been returned.
+            payment.Status = BookingPaymentStatus.RefundPending;
+            payment.RefundRequestedAt = DateTime.UtcNow;
+            payment.UpdatedAt = DateTime.UtcNow;
+            booking.PaymentStatus = PaymentStatus.RefundPending;
+            await _refundService.EnsureFullRefundAsync(booking, payment, reasonCode, reason, requestedBy);
             return true;
         }
 
         private async Task<BookingDto> ToBookingDtoAsync(Booking booking)
         {
+            var refund = await _refundService.GetByBookingAsync(booking.BookingId);
             var dto = new BookingDto
             {
                 BookingId = booking.BookingId,
@@ -494,6 +727,8 @@ namespace BeautyBookBackend.Services
                 CancelledAt = booking.CancelledAt,
                 DisputedAt = booking.DisputedAt,
                 DisputeReason = booking.DisputeReason,
+                PaymentExpiresAt = booking.PaymentExpiresAt,
+                Refund = refund,
                 Services = new List<BookingServiceDto>()
             };
             
@@ -591,5 +826,106 @@ namespace BeautyBookBackend.Services
                 || status == BookingStatus.Disputed
                 || status == BookingStatus.Rejected;
         }
+
+        private Task<Booking?> GetBookingForUpdateAsync(Guid bookingId)
+        {
+            return _context.Bookings
+                .FromSqlInterpolated($"SELECT * FROM \"Bookings\" WHERE \"BookingId\" = {bookingId} FOR UPDATE")
+                .FirstOrDefaultAsync();
+        }
+
+        private Task<BookingPayment?> GetPaymentForUpdateAsync(Guid paymentId)
+        {
+            return _context.BookingPayments
+                .FromSqlInterpolated($"SELECT * FROM \"BookingPayments\" WHERE \"PaymentId\" = {paymentId} FOR UPDATE")
+                .FirstOrDefaultAsync();
+        }
+
+        private async Task ExpirePaymentAttemptsAsync(Guid bookingId, DateTime now)
+        {
+            var staleCreationThreshold = now.AddMinutes(-1);
+            var attempts = await _context.BookingPayments
+                .Where(x => x.BookingId == bookingId
+                    && ((x.Status == BookingPaymentStatus.Pending && x.ExpiresAt <= now)
+                        || (x.Status == BookingPaymentStatus.Created && x.CreatedAt <= staleCreationThreshold)))
+                .ToListAsync();
+            foreach (var attempt in attempts)
+            {
+                attempt.Status = BookingPaymentStatus.Expired;
+                attempt.UpdatedAt = now;
+            }
+        }
+
+        private static void ExpireBooking(Booking booking, DateTime now)
+        {
+            booking.Status = BookingStatus.Cancelled;
+            if (booking.PaymentStatus != PaymentStatus.RefundPending
+                && booking.PaymentStatus != PaymentStatus.Refunded)
+                booking.PaymentStatus = PaymentStatus.Failed;
+            booking.CancelledAt ??= now;
+            booking.UpdatedAt = now;
+        }
+
+        private async Task MarkPaymentCreationFailedAsync(Guid paymentId)
+        {
+            var identity = await _context.BookingPayments.AsNoTracking()
+                .Where(x => x.PaymentId == paymentId)
+                .Select(x => new { x.PaymentId, x.BookingId })
+                .FirstOrDefaultAsync();
+            if (identity == null) return;
+
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+            await GetBookingForUpdateAsync(identity.BookingId);
+            var payment = await GetPaymentForUpdateAsync(identity.PaymentId);
+            if (payment?.Status == BookingPaymentStatus.Created)
+            {
+                payment.Status = BookingPaymentStatus.Failed;
+                payment.UpdatedAt = DateTime.UtcNow;
+                await _unitOfWork.SaveChangesAsync();
+            }
+            await transaction.CommitAsync();
+        }
+
+        private async Task<long> GeneratePaymentOrderCodeAsync()
+        {
+            for (var i = 0; i < 10; i++)
+            {
+                var orderCode = RandomNumberGenerator.GetInt32(100000000, int.MaxValue);
+                if (!await _context.BookingPayments.AnyAsync(x => x.ProviderOrderCode == orderCode))
+                    return orderCode;
+            }
+
+            throw new InvalidOperationException("Không tạo được mã thanh toán payOS, vui lòng thử lại.");
+        }
+
+        private string BuildPaymentCallbackUrl(string configKey, Guid bookingId, string fallbackBase)
+        {
+            var configured = _configuration[configKey];
+            var baseUrl = string.IsNullOrWhiteSpace(configured) ? fallbackBase : configured.Trim();
+            if (baseUrl.Contains("{bookingId}", StringComparison.OrdinalIgnoreCase))
+                return baseUrl.Replace("{bookingId}", bookingId.ToString(), StringComparison.OrdinalIgnoreCase);
+
+            var separator = baseUrl.Contains('?') ? "&" : "?";
+            return $"{baseUrl}{separator}bookingId={bookingId}";
+        }
+
+        private static DateTime? TryParseProviderDateTime(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return null;
+            return DateTime.TryParse(value, out var parsed) ? parsed.ToUniversalTime() : null;
+        }
+
+        private static BookingPaymentDto ToPaymentDto(BookingPayment payment) => new()
+        {
+            PaymentId = payment.PaymentId,
+            BookingId = payment.BookingId,
+            OrderCode = payment.ProviderOrderCode,
+            Amount = payment.Amount,
+            Status = payment.Status,
+            CheckoutUrl = payment.CheckoutUrl,
+            QrCode = payment.QrCode,
+            ExpiresAt = payment.ExpiresAt,
+            PaidAt = payment.PaidAt
+        };
     }
 }

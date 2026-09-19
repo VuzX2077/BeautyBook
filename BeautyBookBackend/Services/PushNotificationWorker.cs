@@ -16,8 +16,30 @@ public class PushNotificationWorker : BackgroundService
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
-        do { try { await ProcessAsync(stoppingToken); } catch (Exception ex) { _logger.LogError(ex, "Push notification worker failed"); } }
-        while (await timer.WaitForNextTickAsync(stoppingToken));
+
+        try
+        {
+            do
+            {
+                try
+                {
+                    await ProcessAsync(stoppingToken);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Push notification worker failed");
+                }
+            }
+            while (await timer.WaitForNextTickAsync(stoppingToken));
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            // Normal host shutdown: do not escalate cancellation as a worker failure.
+        }
     }
 
     private async Task ProcessAsync(CancellationToken ct)
@@ -45,6 +67,7 @@ public class PushNotificationWorker : BackgroundService
                 if (response.IsSuccessStatusCode) { notification.Status = "Sent"; notification.SentAt = now; notification.LastError = null; }
                 else { notification.Status = notification.AttemptCount >= 3 ? "Failed" : "Pending"; notification.LastError = responseBody[..Math.Min(1000, responseBody.Length)]; }
             }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
             catch (Exception ex) { notification.AttemptCount++; notification.LastError = ex.Message; if (notification.AttemptCount >= 3) notification.Status = "Failed"; }
         }
         if (db.ChangeTracker.HasChanges()) await db.SaveChangesAsync(ct);

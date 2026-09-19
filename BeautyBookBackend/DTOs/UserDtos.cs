@@ -26,4 +26,11 @@ namespace BeautyBookBackend.DTOs
     {
         public MuaDetailDto? MuaProfile { get; set; }
     }
+
+    public class AccountDeletionResultDto
+    {
+        public bool Deleted { get; set; }
+        public string Code { get; set; } = string.Empty;
+        public string Message { get; set; } = string.Empty;
+    }
 }

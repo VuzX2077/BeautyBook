@@ -39,10 +39,12 @@ namespace BeautyBookBackend.Models
         public DateTime? CancelledAt { get; set; }
         public DateTime? DisputedAt { get; set; }
         public string? DisputeReason { get; set; }
+        public DateTime? PaymentExpiresAt { get; set; }
 
         // Navigation
         public User? Customer { get; set; }
         public MakeupArtistProfile? MakeupArtistProfile { get; set; }
         public ICollection<BookingService> BookingServices { get; set; } = new List<BookingService>();
+        public ICollection<BookingPayment> Payments { get; set; } = new List<BookingPayment>();
     }
 }

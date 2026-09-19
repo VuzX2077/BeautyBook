@@ -63,105 +63,17 @@ namespace BeautyBookBackend.Services
 
         public async Task<bool> DepositAsync(Guid userId, decimal amount, string? description)
         {
-            var wallet = await _walletRepository.GetByUserIdAsync(userId);
-            if (wallet == null) return false;
-
-            wallet.Balance += amount;
-            wallet.UpdatedAt = DateTime.UtcNow;
-
-            await _walletRepository.AddTransactionAsync(new WalletTransaction
-            {
-                TransactionId = Guid.NewGuid(),
-                WalletId = wallet.WalletId,
-                Amount = amount,
-                TransactionType = TransactionType.Deposit,
-                ReferenceType = "ManualDeposit",
-                Description = string.IsNullOrEmpty(description) ? "Nap tien vao vi he thong" : description,
-                CreatedAt = DateTime.UtcNow
-            });
-
-            return await _unitOfWork.SaveChangesAsync() > 0;
+            throw new InvalidOperationException("WALLET_DEPOSIT_DEPRECATED");
         }
 
         public async Task<bool> WithdrawAsync(Guid userId, decimal amount)
         {
-            var wallet = await _walletRepository.GetByUserIdAsync(userId);
-            if (wallet == null || wallet.Balance < amount)
-            {
-                return false;
-            }
-
-            wallet.Balance -= amount;
-            wallet.UpdatedAt = DateTime.UtcNow;
-
-            await _walletRepository.AddTransactionAsync(new WalletTransaction
-            {
-                TransactionId = Guid.NewGuid(),
-                WalletId = wallet.WalletId,
-                Amount = -amount,
-                TransactionType = TransactionType.Withdraw,
-                ReferenceType = "ManualWithdraw",
-                Description = "Rut tien ve tai khoan ngan hang lien ket",
-                CreatedAt = DateTime.UtcNow
-            });
-
-            return await _unitOfWork.SaveChangesAsync() > 0;
+            throw new InvalidOperationException("WALLET_WITHDRAW_DEPRECATED");
         }
 
         public async Task<WalletTopUpDto> CreateTopUpAsync(Guid userId, CreateTopUpDto request)
         {
-            if (request.Amount < 10000 || request.Amount > 100000000 || request.Amount % 1 != 0)
-            {
-                throw new InvalidOperationException("Số tiền nạp phải là VND nguyên, từ 10,000 đến 100,000,000.");
-            }
-
-            var wallet = await _walletRepository.GetByUserIdAsync(userId)
-                ?? throw new InvalidOperationException("Không tìm thấy ví của người dùng.");
-
-            var returnUrl = request.ReturnUrl ?? _configuration["PayOS:ReturnUrl"]
-                ?? throw new InvalidOperationException("PayOS:ReturnUrl chưa được cấu hình.");
-            var cancelUrl = request.CancelUrl ?? _configuration["PayOS:CancelUrl"]
-                ?? throw new InvalidOperationException("PayOS:CancelUrl chưa được cấu hình.");
-
-            var orderCode = await GenerateOrderCodeAsync();
-            var expiredAt = DateTimeOffset.UtcNow.AddMinutes(15).ToUnixTimeSeconds();
-            if (expiredAt > int.MaxValue)
-            {
-                throw new InvalidOperationException("Thời gian hết hạn link thanh toán không hợp lệ với payOS.");
-            }
-
-            var topUp = new WalletTopUp
-            {
-                TopUpId = Guid.NewGuid(),
-                UserId = userId,
-                WalletId = wallet.WalletId,
-                Amount = request.Amount,
-                Provider = PaymentProvider.PayOS,
-                ProviderOrderCode = orderCode,
-                Status = TopUpStatus.Pending,
-                ExpiredAt = DateTime.UtcNow.AddMinutes(15),
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            };
-
-            var paymentLink = await _payOsService.CreatePaymentLinkAsync(new PayOsCreatePaymentRequest
-            {
-                OrderCode = orderCode,
-                Amount = decimal.ToInt32(request.Amount),
-                Description = $"BB{orderCode % 10000000:D7}",
-                ReturnUrl = returnUrl,
-                CancelUrl = cancelUrl,
-                ExpiredAt = (int)expiredAt
-            });
-
-            topUp.ProviderPaymentLinkId = paymentLink.PaymentLinkId;
-            topUp.CheckoutUrl = paymentLink.CheckoutUrl;
-            topUp.QrCode = paymentLink.QrCode;
-
-            _context.WalletTopUps.Add(topUp);
-            await _unitOfWork.SaveChangesAsync();
-
-            return ToTopUpDto(topUp);
+            throw new InvalidOperationException("WALLET_TOPUP_DEPRECATED");
         }
 
         public async Task<List<WalletTopUpDto>> GetTopUpsAsync(Guid userId)
@@ -210,16 +122,25 @@ namespace BeautyBookBackend.Services
                 return false;
             }
 
-            var topUp = await _context.WalletTopUps
-                .Include(t => t.Wallet)
-                .FirstOrDefaultAsync(t => t.ProviderOrderCode == webhook.Data.OrderCode);
+            var topUpId = await _context.WalletTopUps.AsNoTracking()
+                .Where(t => t.ProviderOrderCode == webhook.Data.OrderCode)
+                .Select(t => (Guid?)t.TopUpId)
+                .FirstOrDefaultAsync();
 
-            if (topUp == null)
+            if (!topUpId.HasValue)
             {
                 // payOS sends a signed sample payload when registering a webhook URL.
                 // Acknowledge it without changing any wallet when no matching top-up exists.
                 return true;
             }
+
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+            var topUp = await _context.WalletTopUps
+                .FromSqlInterpolated($"SELECT * FROM \"WalletTopUps\" WHERE \"TopUpId\" = {topUpId.Value} FOR UPDATE")
+                .FirstAsync();
+            var wallet = await _context.Wallets
+                .FromSqlInterpolated($"SELECT * FROM \"Wallets\" WHERE \"WalletId\" = {topUp.WalletId} FOR UPDATE")
+                .FirstOrDefaultAsync();
 
             topUp.RawWebhookPayload = JsonSerializer.Serialize(webhook);
             topUp.UpdatedAt = DateTime.UtcNow;
@@ -227,6 +148,7 @@ namespace BeautyBookBackend.Services
             if (topUp.Status == TopUpStatus.Paid)
             {
                 await _unitOfWork.SaveChangesAsync();
+                await transaction.CommitAsync();
                 return true;
             }
 
@@ -234,13 +156,15 @@ namespace BeautyBookBackend.Services
             {
                 topUp.Status = TopUpStatus.Failed;
                 await _unitOfWork.SaveChangesAsync();
+                await transaction.CommitAsync();
                 return true;
             }
 
-            if (topUp.Amount != webhook.Data.Amount || topUp.Wallet == null)
+            if (topUp.Amount != webhook.Data.Amount || wallet == null)
             {
                 topUp.Status = TopUpStatus.Failed;
                 await _unitOfWork.SaveChangesAsync();
+                await transaction.CommitAsync();
                 return false;
             }
 
@@ -249,8 +173,8 @@ namespace BeautyBookBackend.Services
             topUp.ProviderReference = webhook.Data.Reference;
             topUp.ProviderPaymentLinkId ??= webhook.Data.PaymentLinkId;
 
-            topUp.Wallet.Balance += topUp.Amount;
-            topUp.Wallet.UpdatedAt = DateTime.UtcNow;
+            wallet.Balance += topUp.Amount;
+            wallet.UpdatedAt = DateTime.UtcNow;
 
             await _walletRepository.AddTransactionAsync(new WalletTransaction
             {
@@ -265,6 +189,7 @@ namespace BeautyBookBackend.Services
             });
 
             await _unitOfWork.SaveChangesAsync();
+            await transaction.CommitAsync();
             return true;
         }
 

@@ -16,6 +16,7 @@ namespace BeautyBookBackend.Models
         public UserRole Role { get; set; }
         public DateTime CreatedAt { get; set; }
         public bool IsActive { get; set; }
+        public DateTime? DeletedAt { get; set; }
 
         // Navigation
         public MakeupArtistProfile? MakeupArtistProfile { get; set; }

@@ -57,6 +57,21 @@ namespace BeautyBookBackend.DTOs
         public DateTime? CancelledAt { get; set; }
         public DateTime? DisputedAt { get; set; }
         public string? DisputeReason { get; set; }
+        public DateTime? PaymentExpiresAt { get; set; }
+        public RefundSummaryDto? Refund { get; set; }
+    }
+
+    public class BookingPaymentDto
+    {
+        public Guid PaymentId { get; set; }
+        public Guid BookingId { get; set; }
+        public long OrderCode { get; set; }
+        public decimal Amount { get; set; }
+        public BookingPaymentStatus Status { get; set; }
+        public string? CheckoutUrl { get; set; }
+        public string? QrCode { get; set; }
+        public DateTime ExpiresAt { get; set; }
+        public DateTime? PaidAt { get; set; }
     }
 
     public class BookingServiceCreateDto

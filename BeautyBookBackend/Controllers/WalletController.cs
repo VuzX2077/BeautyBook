@@ -38,31 +38,13 @@ namespace BeautyBookBackend.Controllers
         [HttpPost("deposit")]
         public async Task<IActionResult> Deposit([FromBody] DepositDto depositDto)
         {
-            if (!ModelState.IsValid) return BadRequest(ModelState);
-
-            var success = await _walletService.DepositAsync(CurrentUserId, depositDto.Amount, depositDto.Description);
-            if (!success)
-            {
-                return BadRequest(new { Message = "Yêu cầu nạp tiền thất bại." });
-            }
-
-            return Ok(new { Message = $"Nạp thành công {depositDto.Amount:N0} VND vào ví ảo! Chúc bạn có trải nghiệm tuyệt vời." });
+            return StatusCode(StatusCodes.Status410Gone, new { Code = "WALLET_DEPOSIT_DEPRECATED", Message = "Ví lưu trữ đã ngừng nhận giao dịch mới." });
         }
 
         [HttpPost("topups")]
         public async Task<IActionResult> CreateTopUp([FromBody] CreateTopUpDto request)
         {
-            if (!ModelState.IsValid) return BadRequest(ModelState);
-
-            try
-            {
-                var topUp = await _walletService.CreateTopUpAsync(CurrentUserId, request);
-                return Ok(topUp);
-            }
-            catch (InvalidOperationException ex)
-            {
-                return BadRequest(new { Message = ex.Message });
-            }
+            return StatusCode(StatusCodes.Status410Gone, new { Code = "WALLET_TOPUP_DEPRECATED", Message = "Nạp tiền vào Ví BBook đã ngừng hoạt động. Booking mới thanh toán cọc trực tiếp." });
         }
 
         [HttpGet("topups")]
@@ -95,18 +77,7 @@ namespace BeautyBookBackend.Controllers
         [HttpPost("withdraw")]
         public async Task<IActionResult> Withdraw([FromBody] WithdrawRequest request)
         {
-            if (request.Amount < 50000)
-            {
-                return BadRequest(new { Message = "Số tiền rút tối thiểu phải từ 50,000 VND trở lên." });
-            }
-
-            var success = await _walletService.WithdrawAsync(CurrentUserId, request.Amount);
-            if (!success)
-            {
-                return BadRequest(new { Message = "Rút tiền thất bại. Số dư trong ví ảo của bạn không đủ để thực hiện giao dịch này." });
-            }
-
-            return Ok(new { Message = $"Đã gửi yêu cầu rút {request.Amount:N0} VND thành công! Tiền sẽ được giải ngân về ngân hàng liên kết trong vòng 24 giờ." });
+            return StatusCode(StatusCodes.Status410Gone, new { Code = "WALLET_WITHDRAW_DEPRECATED", Message = "Rút tiền qua Ví BBook đã ngừng hoạt động. Số dư legacy cần được đối soát thủ công; doanh thu MUA dùng Payout." });
         }
     }
 

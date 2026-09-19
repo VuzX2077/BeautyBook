@@ -18,6 +18,12 @@ namespace BeautyBookBackend.Data
         public DbSet<Service> Services { get; set; } = null!;
         public DbSet<Booking> Bookings { get; set; } = null!;
         public DbSet<BookingService> BookingServices { get; set; } = null!;
+        public DbSet<BookingPayment> BookingPayments { get; set; } = null!;
+        public DbSet<Refund> Refunds { get; set; } = null!;
+        public DbSet<MuaReceivable> MuaReceivables { get; set; } = null!;
+        public DbSet<MuaBankAccount> MuaBankAccounts { get; set; } = null!;
+        public DbSet<Payout> Payouts { get; set; } = null!;
+        public DbSet<PayoutItem> PayoutItems { get; set; } = null!;
         public DbSet<Review> Reviews { get; set; } = null!;
         public DbSet<ChatRoom> ChatRooms { get; set; } = null!;
         public DbSet<Message> Messages { get; set; } = null!;
@@ -104,6 +110,7 @@ namespace BeautyBookBackend.Data
                  .WithMany(p => p.Likes)
                  .HasForeignKey(l => l.PortfolioId)
                  .OnDelete(DeleteBehavior.Cascade);
+                b.HasIndex(l => new { l.PortfolioId, l.UserId }).IsUnique();
             });
 
             modelBuilder.Entity<PortfolioSave>(b =>
@@ -113,6 +120,7 @@ namespace BeautyBookBackend.Data
                  .WithMany(p => p.Saves)
                  .HasForeignKey(s => s.PortfolioId)
                  .OnDelete(DeleteBehavior.Cascade);
+                b.HasIndex(s => new { s.PortfolioId, s.UserId }).IsUnique();
             });
 
             modelBuilder.Entity<PortfolioComment>(b =>
@@ -123,6 +131,10 @@ namespace BeautyBookBackend.Data
                  .WithMany(p => p.Comments)
                  .HasForeignKey(c => c.PortfolioId)
                  .OnDelete(DeleteBehavior.Cascade);
+                b.HasOne(c => c.ParentComment)
+                 .WithMany(c => c.Replies)
+                 .HasForeignKey(c => c.ParentCommentId)
+                 .OnDelete(DeleteBehavior.Restrict);
             });
 
             modelBuilder.Entity<Service>(b =>
@@ -201,6 +213,88 @@ namespace BeautyBookBackend.Data
                     .OnDelete(DeleteBehavior.SetNull);
             });
 
+            modelBuilder.Entity<BookingPayment>(b =>
+            {
+                b.HasKey(x => x.PaymentId);
+                b.Property(x => x.Amount).HasPrecision(18, 2);
+                b.Property(x => x.ProviderPaymentLinkId).HasMaxLength(100);
+                b.Property(x => x.ProviderReference).HasMaxLength(255);
+                b.Property(x => x.CheckoutUrl).HasMaxLength(1000);
+                b.Property(x => x.QrCode).HasMaxLength(4000);
+                b.HasIndex(x => x.ProviderOrderCode).IsUnique();
+                b.HasIndex(x => x.ProviderPaymentLinkId).IsUnique();
+                b.HasIndex(x => new { x.BookingId, x.Status });
+
+                b.HasOne(x => x.Booking)
+                    .WithMany(x => x.Payments)
+                    .HasForeignKey(x => x.BookingId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
+                b.HasOne(x => x.Customer)
+                    .WithMany()
+                    .HasForeignKey(x => x.CustomerId)
+                    .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            modelBuilder.Entity<Refund>(b =>
+            {
+                b.HasKey(x => x.RefundId);
+                b.Property(x => x.Amount).HasPrecision(18, 2);
+                b.Property(x => x.Reason).HasMaxLength(1000).IsRequired();
+                b.Property(x => x.ProviderReference).HasMaxLength(255);
+                b.Property(x => x.FailureCode).HasMaxLength(100);
+                b.Property(x => x.FailureMessage).HasMaxLength(1000);
+                b.HasIndex(x => x.BookingPaymentId).IsUnique();
+                b.HasIndex(x => new { x.BookingId, x.Status });
+
+                b.HasOne(x => x.Booking)
+                    .WithMany()
+                    .HasForeignKey(x => x.BookingId)
+                    .OnDelete(DeleteBehavior.Restrict);
+                b.HasOne(x => x.BookingPayment)
+                    .WithMany()
+                    .HasForeignKey(x => x.BookingPaymentId)
+                    .OnDelete(DeleteBehavior.Restrict);
+                b.HasOne(x => x.RequestedByUser)
+                    .WithMany()
+                    .HasForeignKey(x => x.RequestedBy)
+                    .OnDelete(DeleteBehavior.SetNull);
+                b.HasOne(x => x.LastHandledByUser)
+                    .WithMany()
+                    .HasForeignKey(x => x.LastHandledBy)
+                    .OnDelete(DeleteBehavior.SetNull);
+            });
+
+            modelBuilder.Entity<MuaReceivable>(b =>
+            {
+                b.HasKey(x => x.Id);
+                b.Property(x => x.GrossAmount).HasPrecision(18, 2);
+                b.Property(x => x.PlatformFeeAmount).HasPrecision(18, 2);
+                b.Property(x => x.NetAmount).HasPrecision(18, 2);
+                b.HasIndex(x => x.BookingId).IsUnique();
+                b.HasIndex(x => new { x.MuaId, x.Status });
+                b.HasOne(x => x.Booking).WithMany().HasForeignKey(x => x.BookingId).OnDelete(DeleteBehavior.Restrict);
+                b.HasOne(x => x.Mua).WithMany().HasForeignKey(x => x.MuaId).OnDelete(DeleteBehavior.Restrict);
+            });
+
+            modelBuilder.Entity<MuaBankAccount>(b =>
+            {
+                b.HasKey(x=>x.Id);b.Property(x=>x.BankCode).HasMaxLength(20).IsRequired();b.Property(x=>x.BankName).HasMaxLength(100);b.Property(x=>x.AccountNumber).HasMaxLength(30).IsRequired();b.Property(x=>x.AccountHolderName).HasMaxLength(150).IsRequired();
+                b.HasIndex(x=>new{x.MuaId,x.IsActive});b.HasIndex(x=>x.MuaId).HasDatabaseName("UX_MuaBankAccounts_Default").IsUnique().HasFilter("\"IsDefault\" = TRUE AND \"IsActive\" = TRUE");
+                b.HasOne(x=>x.Mua).WithMany().HasForeignKey(x=>x.MuaId).OnDelete(DeleteBehavior.Restrict);
+            });
+            modelBuilder.Entity<Payout>(b =>
+            {
+                b.HasKey(x=>x.Id);b.Property(x=>x.Amount).HasPrecision(18,2);b.Property(x=>x.BankCodeSnapshot).HasMaxLength(20).IsRequired();b.Property(x=>x.BankNameSnapshot).HasMaxLength(100);b.Property(x=>x.AccountNumberSnapshot).HasMaxLength(30).IsRequired();b.Property(x=>x.AccountHolderNameSnapshot).HasMaxLength(150).IsRequired();b.Property(x=>x.ProviderReference).HasMaxLength(255);b.Property(x=>x.IdempotencyKey).HasMaxLength(100).IsRequired();b.Property(x=>x.FailureCode).HasMaxLength(100);b.Property(x=>x.FailureMessage).HasMaxLength(1000);
+                b.HasIndex(x=>new{x.MuaId,x.IdempotencyKey}).IsUnique();b.HasIndex(x=>new{x.MuaId,x.Status});
+                b.HasOne(x=>x.Mua).WithMany().HasForeignKey(x=>x.MuaId).OnDelete(DeleteBehavior.Restrict);b.HasOne(x=>x.RequestedByUser).WithMany().HasForeignKey(x=>x.RequestedBy).OnDelete(DeleteBehavior.Restrict);b.HasOne(x=>x.LastHandledByUser).WithMany().HasForeignKey(x=>x.LastHandledBy).OnDelete(DeleteBehavior.SetNull);
+            });
+            modelBuilder.Entity<PayoutItem>(b =>
+            {
+                b.HasKey(x=>x.Id);b.Property(x=>x.Amount).HasPrecision(18,2);b.HasIndex(x=>new{x.PayoutId,x.MuaReceivableId}).IsUnique();b.HasIndex(x=>x.MuaReceivableId).HasDatabaseName("UX_PayoutItems_ActiveReceivable").IsUnique().HasFilter("\"IsActive\" = TRUE");
+                b.HasOne(x=>x.Payout).WithMany(x=>x.Items).HasForeignKey(x=>x.PayoutId).OnDelete(DeleteBehavior.Restrict);b.HasOne(x=>x.MuaReceivable).WithMany().HasForeignKey(x=>x.MuaReceivableId).OnDelete(DeleteBehavior.Restrict);
+            });
+
             modelBuilder.Entity<DevicePushToken>(b =>
             {
                 b.HasKey(x => x.Id);
@@ -237,6 +331,7 @@ namespace BeautyBookBackend.Data
             {
                 b.HasKey(w => w.WalletId);
                 b.Property(w => w.Balance).HasPrecision(18, 2);
+                b.HasOne(w => w.User).WithMany().HasForeignKey(w => w.UserId).OnDelete(DeleteBehavior.Restrict);
             });
 
             modelBuilder.Entity<WalletTransaction>(b =>
@@ -245,6 +340,15 @@ namespace BeautyBookBackend.Data
                 b.Property(t => t.Amount).HasPrecision(18, 2);
                 b.Property(t => t.ReferenceType).HasMaxLength(50);
                 b.HasIndex(t => new { t.ReferenceId, t.TransactionType });
+                b.HasIndex(t => new { t.ReferenceId, t.TransactionType })
+                    .HasDatabaseName("UX_WalletTransactions_BookingFinancialEffect")
+                    .IsUnique()
+                    .HasFilter("\"ReferenceId\" IS NOT NULL AND \"ReferenceType\" = 'Booking' AND \"TransactionType\" IN (3, 4)");
+                b.HasIndex(t => new { t.TransactionType, t.ReferenceId })
+                    .HasDatabaseName("UX_WalletTransactions_LegacyTopUpDeposit")
+                    .IsUnique()
+                    .HasFilter("\"ReferenceId\" IS NOT NULL AND \"ReferenceType\" = 'WalletTopUp' AND \"TransactionType\" = 0");
+                b.HasOne(t => t.Wallet).WithMany().HasForeignKey(t => t.WalletId).OnDelete(DeleteBehavior.Restrict);
             });
 
             modelBuilder.Entity<WalletTopUp>(b =>

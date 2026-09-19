@@ -29,6 +29,7 @@ namespace BeautyBookBackend.Services
                 .Include(p => p.Likes)
                 .Include(p => p.Saves)
                 .Include(p => p.Comments)
+                .Include(p => p.Service)
                 .Where(p => p.MakeupArtistProfile != null && p.MakeupArtistProfile.Status != MuaStatus.Suspended)
                 .OrderByDescending(p => p.MakeupArtistProfile.ProfileQualityScore)
                 .ThenByDescending(p => p.CreatedAt)
@@ -67,7 +68,6 @@ namespace BeautyBookBackend.Services
                 finalFeed.Add(dto);
                 muaAppearanceCount[muaId]++;
 
-                if (finalFeed.Count >= limit) break; // We only need 'limit' items
             }
 
             // 3. Inject New MUAs at specific slots (Index 2 and 7)
@@ -89,8 +89,12 @@ namespace BeautyBookBackend.Services
                 finalFeed.Add(newMuaCandidates[1]);
             }
 
-            // Slice to exact limit just in case
-            return finalFeed.Take(limit).ToList();
+            // Apply pagination only after ranking, anti-monopoly and new-MUA
+            // injection. Applying the limit inside the loop returned page one
+            // repeatedly for every page number.
+            var safePage = Math.Max(1, page);
+            var safeLimit = Math.Clamp(limit, 1, 50);
+            return finalFeed.Skip((safePage - 1) * safeLimit).Take(safeLimit).ToList();
         }
 
         private FeedItemDto MapToFeedItemDto(Portfolio p, Guid? currentUserId)
@@ -111,7 +115,18 @@ namespace BeautyBookBackend.Services
                 CommentsCount = p.Comments?.Count ?? 0,
                 SavesCount = p.Saves?.Count ?? 0,
                 IsLiked = currentUserId.HasValue && (p.Likes?.Any(l => l.UserId == currentUserId.Value) ?? false),
-                IsSaved = currentUserId.HasValue && (p.Saves?.Any(s => s.UserId == currentUserId.Value) ?? false)
+                IsSaved = currentUserId.HasValue && (p.Saves?.Any(s => s.UserId == currentUserId.Value) ?? false),
+                Service = p.Service == null ? null : new ServiceDto
+                {
+                    ServiceId = p.Service.ServiceId,
+                    MUAId = p.Service.MUAId,
+                    ServiceName = p.Service.ServiceName,
+                    Description = p.Service.Description,
+                    Price = p.Service.Price,
+                    DurationMinutes = p.Service.DurationMinutes,
+                    ImageUrl = p.Service.ImageUrl,
+                    Tags = p.Service.Tags ?? new List<string>()
+                }
             };
         }
     }

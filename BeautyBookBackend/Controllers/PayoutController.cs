@@ -1,0 +1,37 @@
+using System.Security.Claims;
+using BeautyBookBackend.DTOs;
+using BeautyBookBackend.Models.Enums;
+using BeautyBookBackend.Services;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+
+namespace BeautyBookBackend.Controllers
+{
+    [Authorize(Roles=nameof(UserRole.MUA))]
+    [ApiController]
+    [Route("api/mua")]
+    public class PayoutController : ControllerBase
+    {
+        private readonly IPayoutService _service;public PayoutController(IPayoutService service)=>_service=service;
+        private Guid CurrentUserId=>Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value??Guid.Empty.ToString());
+        [HttpGet("bank-accounts")]public async Task<IActionResult> Banks()=>Ok(await _service.GetBankAccountsAsync(CurrentUserId));
+        [HttpPost("bank-accounts")]public async Task<IActionResult> AddBank(UpsertMuaBankAccountRequest r){try{return Ok(await _service.AddBankAccountAsync(CurrentUserId,r));}catch(InvalidOperationException e){return BadRequest(new{Message=e.Message});}}
+        [HttpPut("bank-accounts/{id:guid}")]public async Task<IActionResult> UpdateBank(Guid id,UpsertMuaBankAccountRequest r){try{var x=await _service.UpdateBankAccountAsync(CurrentUserId,id,r);return x==null?NotFound():Ok(x);}catch(InvalidOperationException e){return BadRequest(new{Message=e.Message});}}
+        [HttpDelete("bank-accounts/{id:guid}")]public async Task<IActionResult> DeleteBank(Guid id)=>await _service.DeactivateBankAccountAsync(CurrentUserId,id)?NoContent():NotFound();
+        [HttpPost("payouts")]public async Task<IActionResult> Create(CreatePayoutRequest r){try{return Ok(await _service.CreateAsync(CurrentUserId,r));}catch(InvalidOperationException e){return Conflict(new{Message=e.Message});}}
+        [HttpGet("payouts")]public async Task<IActionResult> Mine()=>Ok(await _service.GetOwnAsync(CurrentUserId));
+    }
+
+    [Authorize(Roles=nameof(UserRole.Admin))]
+    [ApiController]
+    [Route("api/admin/payouts")]
+    public class AdminPayoutController : ControllerBase
+    {
+        private readonly IPayoutService _service;public AdminPayoutController(IPayoutService service)=>_service=service;
+        private Guid CurrentUserId=>Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value??Guid.Empty.ToString());
+        [HttpGet]public async Task<IActionResult> Pending()=>Ok(await _service.GetPendingAdminAsync());
+        [HttpPost("{id:guid}/start-processing")]public async Task<IActionResult> Start(Guid id,PayoutActionRequest r){var x=await _service.StartProcessingAsync(id,CurrentUserId,r.Reference);return x==null?Conflict():Ok(x);}
+        [HttpPost("{id:guid}/complete")]public async Task<IActionResult> Complete(Guid id,PayoutCompleteRequest r){var x=await _service.CompleteAsync(id,CurrentUserId,r.Reference);return x==null?Conflict():Ok(x);}
+        [HttpPost("{id:guid}/fail")]public async Task<IActionResult> Fail(Guid id,PayoutFailRequest r){var x=await _service.FailAsync(id,CurrentUserId,r.FailureCode,r.FailureMessage,r.ConfirmedFundsNotSent);return x==null?Conflict():Ok(x);}
+    }
+}

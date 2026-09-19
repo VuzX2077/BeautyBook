@@ -45,5 +45,14 @@ namespace BeautyBookBackend.Controllers
 
             return Ok(new { Message = "Cap nhat thong tin thanh cong!", User = user });
         }
+
+        [HttpDelete("me")]
+        public async Task<IActionResult> DeleteOwnAccount()
+        {
+            var result = await _userService.DeleteOwnAccountAsync(CurrentUserId);
+            if (result.Deleted) return Ok(new { result.Code, result.Message });
+            if (result.Code == "ACCOUNT_NOT_FOUND") return NotFound(new { result.Code, result.Message });
+            return Conflict(new { result.Code, result.Message });
+        }
     }
 }

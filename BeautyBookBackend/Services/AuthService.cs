@@ -17,20 +17,17 @@ namespace BeautyBookBackend.Services
     public class AuthService : IAuthService
     {
         private readonly IUserRepository _userRepository;
-        private readonly IWalletRepository _walletRepository;
         private readonly IMuaRepository _muaRepository;
         private readonly IUnitOfWork _unitOfWork;
         private readonly IConfiguration _configuration;
 
         public AuthService(
             IUserRepository userRepository,
-            IWalletRepository walletRepository,
             IMuaRepository muaRepository,
             IUnitOfWork unitOfWork,
             IConfiguration configuration)
         {
             _userRepository = userRepository;
-            _walletRepository = walletRepository;
             _muaRepository = muaRepository;
             _unitOfWork = unitOfWork;
             _configuration = configuration;
@@ -57,14 +54,6 @@ namespace BeautyBookBackend.Services
 
             await _userRepository.AddAsync(user);
 
-            await _walletRepository.AddAsync(new Wallet
-            {
-                WalletId = Guid.NewGuid(),
-                UserId = user.UserId,
-                Balance = 0,
-                UpdatedAt = DateTime.UtcNow
-            });
-
             if (registerDto.Role == UserRole.MUA)
             {
                 await _muaRepository.AddProfileAsync(new MakeupArtistProfile
@@ -86,7 +75,7 @@ namespace BeautyBookBackend.Services
         public async Task<TokenDto?> LoginAsync(LoginDto loginDto)
         {
             var user = await _userRepository.GetByEmailAsync(loginDto.Email);
-            if (user == null || user.PasswordHash != HashPassword(loginDto.Password))
+            if (user == null || !user.IsActive || user.DeletedAt.HasValue || user.PasswordHash != HashPassword(loginDto.Password))
             {
                 return null;
             }
@@ -167,18 +156,12 @@ namespace BeautyBookBackend.Services
                 };
 
                 await _userRepository.AddAsync(user);
-                await _walletRepository.AddAsync(new Wallet
-                {
-                    WalletId = Guid.NewGuid(),
-                    UserId = user.UserId,
-                    Balance = 0,
-                    UpdatedAt = DateTime.UtcNow
-                });
-
                 await _unitOfWork.SaveChangesAsync();
             }
             else
             {
+                if (!user.IsActive || user.DeletedAt.HasValue) return null;
+
                 var changed = false;
 
                 if (string.IsNullOrWhiteSpace(user.FullName) && !string.IsNullOrWhiteSpace(payload.Name))

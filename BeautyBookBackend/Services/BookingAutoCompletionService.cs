@@ -23,12 +23,23 @@ namespace BeautyBookBackend.Services
                     var bookingService = scope.ServiceProvider.GetRequiredService<IBookingService>();
                     await bookingService.AutoCompleteOverdueAsync();
                 }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    break;
+                }
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Failed to auto-complete overdue bookings.");
                 }
 
-                await Task.Delay(TimeSpan.FromMinutes(5), stoppingToken);
+                try
+                {
+                    await Task.Delay(TimeSpan.FromMinutes(5), stoppingToken);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    break;
+                }
             }
         }
     }

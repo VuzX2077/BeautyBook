@@ -111,6 +111,23 @@ namespace BeautyBookBackend.Controllers
         }
 
         [Authorize]
+        [HttpPost("portfolio/{portfolioId:guid}/comments/{commentId:guid}/replies")]
+        public async Task<IActionResult> ReplyToPortfolioComment(Guid portfolioId, Guid commentId, [FromBody] ContentRequest request)
+        {
+            if (string.IsNullOrWhiteSpace(request.Content)) return BadRequest(new { Message = "Nội dung không được để trống." });
+            var reply = await _muaService.ReplyToPortfolioCommentAsync(CurrentUserId, portfolioId, commentId, request.Content.Trim());
+            return reply == null ? NotFound() : Ok(reply);
+        }
+
+        [Authorize]
+        [HttpGet("portfolio/favorites")]
+        public async Task<IActionResult> GetFavoritePortfolio([FromQuery] string type = "saved")
+        {
+            if (type != "saved" && type != "liked") return BadRequest(new { Message = "type phải là saved hoặc liked." });
+            return Ok(await _muaService.GetFavoritePortfolioAsync(CurrentUserId, type));
+        }
+
+        [Authorize]
         [HttpPost("portfolio")]
         public async Task<IActionResult> AddPortfolioImage([FromBody] PortfolioCreateRequest request)
         {

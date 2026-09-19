@@ -25,5 +25,6 @@ namespace BeautyBookBackend.DTOs
         public bool IsSaved { get; set; }
         
         public bool IsNewMuaBoost { get; set; } = false;
+        public ServiceDto? Service { get; set; }
     }
 }

@@ -17,15 +17,24 @@ namespace BeautyBookBackend.Services
             _receivables = receivables;
         }
 
-        public async Task<Refund> EnsureFullRefundAsync(
+        public async Task<Refund> EnsureRefundAsync(
             Booking booking,
             BookingPayment payment,
+            decimal amount,
             RefundReasonCode reasonCode,
             string reason,
             Guid? requestedBy)
         {
+            if (amount <= 0 || amount > payment.Amount)
+                throw new BookingRuleException("INVALID_REFUND_AMOUNT", "Số tiền hoàn phải lớn hơn 0 và không vượt quá số tiền đã thanh toán.");
+
             var existing = await _context.Refunds.FirstOrDefaultAsync(x => x.BookingPaymentId == payment.PaymentId);
-            if (existing != null) return existing;
+            if (existing != null)
+            {
+                if (existing.Amount != amount)
+                    throw new BookingRuleException("REFUND_IDEMPOTENCY_CONFLICT", "Khoản thanh toán đã có yêu cầu hoàn tiền với số tiền khác.", 409);
+                return existing;
+            }
 
             var now = DateTime.UtcNow;
             var refund = new Refund
@@ -33,7 +42,7 @@ namespace BeautyBookBackend.Services
                 RefundId = Guid.NewGuid(),
                 BookingId = booking.BookingId,
                 BookingPaymentId = payment.PaymentId,
-                Amount = payment.Amount,
+                Amount = amount,
                 Status = RefundStatus.Pending,
                 ReasonCode = reasonCode,
                 Reason = reason,
@@ -148,18 +157,17 @@ namespace BeautyBookBackend.Services
             else if (target == RefundStatus.Completed)
             {
                 refund.CompletedAt = now;
-                payment.Status = BookingPaymentStatus.Refunded;
                 payment.RefundedAt = now;
                 payment.UpdatedAt = now;
-                booking.PaymentStatus = PaymentStatus.Refunded;
+                var isFullRefund = refund.Amount >= payment.Amount;
+                payment.Status = isFullRefund ? BookingPaymentStatus.Refunded : BookingPaymentStatus.PartiallyRefunded;
+                booking.PaymentStatus = isFullRefund ? PaymentStatus.Refunded : PaymentStatus.PartiallyRefunded;
                 booking.UpdatedAt = now;
                 await _receivables.ReverseAsync(booking.BookingId);
             }
             else if (target == RefundStatus.Failed)
             {
-                refund.FailedAt = now;
-                refund.FailureCode = failureCode;
-                refund.FailureMessage = failureMessage;
+                RefundLifecycle.MarkFailed(refund, now, failureCode, failureMessage);
             }
             else if (target == RefundStatus.ManualActionRequired)
             {

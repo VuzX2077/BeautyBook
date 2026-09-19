@@ -31,10 +31,12 @@ namespace BeautyBookBackend.Services
         private readonly ApplicationDbContext _context;
         private readonly IPayOsService _payOsService;
         private readonly IRefundService _refundService;
+        private readonly IBookingRefundPolicyService _refundPolicyService;
         private readonly IMuaReceivableService _receivableService;
         private readonly IConfiguration _configuration;
         private readonly IMuaEligibilityService _eligibilityService;
         private readonly IMuaScheduleService _scheduleService;
+        private readonly BookingTimeService _bookingTime;
 
         public BookingService(
             IBookingRepository bookingRepository,
@@ -45,10 +47,12 @@ namespace BeautyBookBackend.Services
             ApplicationDbContext context,
             IPayOsService payOsService,
             IRefundService refundService,
+            IBookingRefundPolicyService refundPolicyService,
             IMuaReceivableService receivableService,
             IConfiguration configuration,
             IMuaEligibilityService eligibilityService,
-            IMuaScheduleService scheduleService)
+            IMuaScheduleService scheduleService,
+            BookingTimeService bookingTime)
         {
             _bookingRepository = bookingRepository;
             _muaRepository = muaRepository;
@@ -58,10 +62,12 @@ namespace BeautyBookBackend.Services
             _context = context;
             _payOsService = payOsService;
             _refundService = refundService;
+            _refundPolicyService = refundPolicyService;
             _receivableService = receivableService;
             _configuration = configuration;
             _eligibilityService = eligibilityService;
             _scheduleService = scheduleService;
+            _bookingTime = bookingTime;
         }
 
         public async Task<BookingDto?> CreateBookingAsync(Guid customerId, BookingCreateDto createDto)
@@ -161,7 +167,8 @@ namespace BeautyBookBackend.Services
             if (totalAmount <= 0 || totalDuration <= 0 || createDto.BookingDate == default || createDto.StartTime < TimeSpan.Zero)
                 throw new BookingRuleException("INVALID_BOOKING_TIME", "Thời gian hoặc tổng giá trị booking không hợp lệ.");
             var endTime = createDto.StartTime.Add(TimeSpan.FromMinutes(totalDuration));
-            if (endTime > TimeSpan.FromDays(1) || createDto.BookingDate.Date.Add(createDto.StartTime) <= DateTime.Now)
+            if (endTime > TimeSpan.FromDays(1)
+                || _bookingTime.ToUtc(createDto.BookingDate, createDto.StartTime) <= DateTime.UtcNow)
                 throw new BookingRuleException("INVALID_BOOKING_TIME", "Không thể đặt lịch ở thời điểm đã qua hoặc vượt quá một ngày.");
             var scheduleLockKey = $"mua-schedule:{createDto.MUAId:N}";
             await _context.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({scheduleLockKey}, 0))");
@@ -341,18 +348,25 @@ namespace BeautyBookBackend.Services
 
             if (payment.Status == BookingPaymentStatus.RefundPending)
             {
-                await _refundService.EnsureFullRefundAsync(
-                    booking,
-                    payment,
-                    RefundReasonCode.LatePayment,
-                    "Thanh toán thành công sau khi booking không còn giữ slot hợp lệ.",
-                    null);
+                var existingRefund = await _refundService.GetByBookingAsync(booking.BookingId);
+                if (existingRefund == null)
+                {
+                    await _refundService.EnsureRefundAsync(
+                        booking,
+                        payment,
+                        payment.Amount,
+                        RefundReasonCode.LatePayment,
+                        "Thanh toán thành công sau khi booking không còn giữ slot hợp lệ.",
+                        null);
+                }
                 await _unitOfWork.SaveChangesAsync();
                 await transaction.CommitAsync();
                 return true;
             }
             if (payment.Status == BookingPaymentStatus.Paid
-                || payment.Status == BookingPaymentStatus.Refunded)
+                || payment.Status == BookingPaymentStatus.Refunded
+                || payment.Status == BookingPaymentStatus.PartiallyRefunded
+                || payment.Status == BookingPaymentStatus.Forfeited)
             {
                 await transaction.CommitAsync();
                 return true;
@@ -396,11 +410,23 @@ namespace BeautyBookBackend.Services
                 payment.RefundRequestedAt ??= now;
                 booking.PaymentStatus = PaymentStatus.RefundPending;
                 booking.UpdatedAt = now;
-                await _refundService.EnsureFullRefundAsync(
+                var refundReason = booking.CancellationActor == BookingCancellationActor.Customer
+                    ? RefundReasonCode.CustomerCancelled
+                    : RefundReasonCode.LatePayment;
+                var refundDescription = booking.CancellationActor == BookingCancellationActor.Customer
+                    ? "Thanh toán được xác nhận sau khi customer đã hủy booking; áp dụng hoàn 100% trước khi MUA xác nhận."
+                    : "Thanh toán thành công sau khi booking không còn giữ slot hợp lệ.";
+                if (booking.CancellationActor == BookingCancellationActor.Customer
+                    && booking.CancellationRefundPercentage == 100m)
+                {
+                    booking.CancellationRefundAmount = Math.Min(booking.DepositAmount, payment.Amount);
+                }
+                await _refundService.EnsureRefundAsync(
                     booking,
                     payment,
-                    RefundReasonCode.LatePayment,
-                    "Thanh toán thành công sau khi booking không còn giữ slot hợp lệ.",
+                    payment.Amount,
+                    refundReason,
+                    refundDescription,
                     null);
                 await _unitOfWork.SaveChangesAsync();
                 await transaction.CommitAsync();
@@ -469,19 +495,50 @@ namespace BeautyBookBackend.Services
             }
             else if (newStatus == BookingStatus.Cancelled || newStatus == BookingStatus.Rejected)
             {
-                var isPaid = booking.PaymentStatus != PaymentStatus.Unpaid && booking.PaymentStatus != PaymentStatus.Failed;
-                if (isPaid && userId == booking.CustomerId)
-                    throw new InvalidOperationException("Chính sách hoàn tiền khi khách hàng hủy chưa được cấu hình. Vui lòng liên hệ hỗ trợ.");
+                var now = DateTime.UtcNow;
+                var actor = userId == booking.CustomerId
+                    ? BookingCancellationActor.Customer
+                    : BookingCancellationActor.Mua;
+                var paymentId = await _context.BookingPayments.AsNoTracking()
+                    .Where(x => x.BookingId == booking.BookingId && x.Status == BookingPaymentStatus.Paid)
+                    .OrderByDescending(x => x.PaidAt)
+                    .Select(x => (Guid?)x.PaymentId)
+                    .FirstOrDefaultAsync();
+                var payment = paymentId.HasValue ? await GetPaymentForUpdateAsync(paymentId.Value) : null;
+                var decision = _refundPolicyService.Calculate(
+                    booking,
+                    newStatus,
+                    actor,
+                    now,
+                    payment?.Amount ?? 0m);
 
-                var refundReason = newStatus == BookingStatus.Rejected
-                    ? RefundReasonCode.MuaRejected
-                    : RefundReasonCode.MuaCancelled;
-                var refundDescription = newStatus == BookingStatus.Rejected
-                    ? "MUA từ chối booking đã thanh toán cọc."
-                    : "MUA hủy booking trước khi dịch vụ hoàn thành.";
-                if (!await RefundBookingAsync(booking, refundReason, refundDescription, userId)) return null;
-                if (newStatus == BookingStatus.Rejected) booking.RejectedAt = DateTime.UtcNow;
-                else booking.CancelledAt = DateTime.UtcNow;
+                booking.CancelledBy = userId;
+                booking.CancellationActor = actor;
+                booking.CancellationReason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
+                booking.CancellationPolicyRule = decision.PolicyRule;
+                booking.CancellationRefundPercentage = decision.RefundPercentage;
+                booking.CancellationRefundAmount = decision.RefundAmount;
+                booking.CancellationAppointmentAtUtc = decision.AppointmentAtUtc;
+
+                if (decision.RefundAmount > 0m)
+                {
+                    if (payment == null || !await RefundBookingAsync(
+                        booking,
+                        payment,
+                        decision.RefundAmount,
+                        decision.ReasonCode,
+                        $"{decision.PolicyRule}: hoàn {decision.RefundPercentage:0.##}% tiền cọc.",
+                        userId)) return null;
+                }
+                else if (payment != null)
+                {
+                    payment.Status = BookingPaymentStatus.Forfeited;
+                    payment.UpdatedAt = now;
+                    booking.PaymentStatus = PaymentStatus.Forfeited;
+                }
+
+                if (newStatus == BookingStatus.Rejected) booking.RejectedAt = now;
+                else booking.CancelledAt = now;
             }
             else if (newStatus == BookingStatus.Approved)
             {
@@ -522,8 +579,16 @@ namespace BeautyBookBackend.Services
                 return null;
             if (refundCustomer)
             {
+                var paymentId = await _context.BookingPayments.AsNoTracking()
+                    .Where(x => x.BookingId == booking.BookingId && x.Status == BookingPaymentStatus.Paid)
+                    .OrderByDescending(x => x.PaidAt)
+                    .Select(x => (Guid?)x.PaymentId)
+                    .FirstOrDefaultAsync();
+                var payment = paymentId.HasValue ? await GetPaymentForUpdateAsync(paymentId.Value) : null;
                 if (!await RefundBookingAsync(
                     booking,
+                    payment ?? throw new BookingRuleException("PAID_PAYMENT_NOT_FOUND", "Không tìm thấy khoản thanh toán có thể hoàn.", 409),
+                    payment.Amount,
                     RefundReasonCode.DisputeResolvedForCustomer,
                     "Admin giải quyết tranh chấp theo hướng hoàn tiền cho khách hàng.",
                     null)) return null;
@@ -707,6 +772,8 @@ namespace BeautyBookBackend.Services
 
         private async Task<bool> RefundBookingAsync(
             Booking booking,
+            BookingPayment payment,
+            decimal refundAmount,
             RefundReasonCode reasonCode,
             string reason,
             Guid? requestedBy)
@@ -717,7 +784,7 @@ namespace BeautyBookBackend.Services
                     || x.MuaReceivable.Status == MuaReceivableStatus.PaidOut)))
                 throw new InvalidOperationException("Booking đang thuộc payout chưa đối soát. Cần xử lý payout trước khi hoàn tiền.");
 
-            if (booking.PaymentStatus == PaymentStatus.Refunded)
+            if (booking.PaymentStatus is PaymentStatus.Refunded or PaymentStatus.PartiallyRefunded)
             {
                 return false;
             }
@@ -727,11 +794,8 @@ namespace BeautyBookBackend.Services
                 return true;
             }
 
-            var payment = await _context.BookingPayments
-                .Where(x => x.BookingId == booking.BookingId && x.Status == BookingPaymentStatus.Paid)
-                .OrderByDescending(x => x.PaidAt)
-                .FirstOrDefaultAsync();
-            if (payment == null) return false;
+            if (payment.BookingId != booking.BookingId || payment.Status != BookingPaymentStatus.Paid
+                || refundAmount <= 0m || refundAmount > payment.Amount) return false;
 
             // A real refund/payout operation must be reconciled with the payment provider.
             // Never create spendable customer balance before money has actually been returned.
@@ -739,7 +803,7 @@ namespace BeautyBookBackend.Services
             payment.RefundRequestedAt = DateTime.UtcNow;
             payment.UpdatedAt = DateTime.UtcNow;
             booking.PaymentStatus = PaymentStatus.RefundPending;
-            await _refundService.EnsureFullRefundAsync(booking, payment, reasonCode, reason, requestedBy);
+            await _refundService.EnsureRefundAsync(booking, payment, refundAmount, reasonCode, reason, requestedBy);
             return true;
         }
 
@@ -783,6 +847,13 @@ namespace BeautyBookBackend.Services
                 CompletedAt = booking.CompletedAt,
                 RejectedAt = booking.RejectedAt,
                 CancelledAt = booking.CancelledAt,
+                CancelledBy = booking.CancelledBy,
+                CancellationActor = booking.CancellationActor,
+                CancellationReason = booking.CancellationReason,
+                CancellationPolicyRule = booking.CancellationPolicyRule,
+                CancellationRefundPercentage = booking.CancellationRefundPercentage,
+                CancellationRefundAmount = booking.CancellationRefundAmount,
+                CancellationAppointmentAtUtc = booking.CancellationAppointmentAtUtc,
                 DisputedAt = booking.DisputedAt,
                 DisputeReason = booking.DisputeReason,
                 PaymentExpiresAt = booking.PaymentExpiresAt,
@@ -815,7 +886,8 @@ namespace BeautyBookBackend.Services
             var bookings = await _bookingRepository.GetBookingsByDateAsync(muaId, date);
             var starts = await _scheduleService.GetAvailableStartsAsync(muaId, date, totalDurationMinutes);
             var requiredDuration = TimeSpan.FromMinutes(totalDurationMinutes);
-            return starts.Where(slot => date.Date.Add(slot) > DateTime.Now
+            var utcNow = DateTime.UtcNow;
+            return starts.Where(slot => _bookingTime.ToUtc(date, slot) > utcNow
                 && !bookings.Any(b => slot < b.EndTime && slot.Add(requiredDuration) > b.StartTime)).ToList();
         }
 

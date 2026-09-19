@@ -139,6 +139,10 @@ namespace BeautyBookBackend.Controllers
                     return BadRequest(new { Message = "Chuyển trạng thái không hợp lệ hoặc không đúng quyền." });
                 return Ok(updated);
             }
+            catch (BookingRuleException ex)
+            {
+                return StatusCode(ex.StatusCode, new { ex.Code, Message = ex.Message });
+            }
             catch (InvalidOperationException ex)
             {
                 return BadRequest(new { Message = ex.Message });

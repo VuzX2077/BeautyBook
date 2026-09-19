@@ -46,10 +46,11 @@ public class PushNotificationWorker : BackgroundService
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var bookingTime = scope.ServiceProvider.GetRequiredService<BookingTimeService>();
         var now = DateTime.UtcNow;
 
         var starting = await db.Bookings.Where(b => b.Status == BookingStatus.Approved && b.BookingDate <= now.AddDays(1)).ToListAsync(ct);
-        foreach (var booking in starting.Where(b => BookingNotificationService.ToUtc(b.BookingDate, b.StartTime) <= now))
+        foreach (var booking in starting.Where(b => bookingTime.ToUtc(b.BookingDate, b.StartTime) <= now))
         { booking.Status = BookingStatus.InProgress; booking.StartedAt = now; booking.UpdatedAt = now; }
 
         var pending = await db.AppNotifications.Where(n => n.Status == "Pending" && n.ScheduledAt <= now).OrderBy(n => n.ScheduledAt).Take(100).ToListAsync(ct);

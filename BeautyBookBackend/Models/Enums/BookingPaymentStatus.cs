@@ -8,6 +8,8 @@ namespace BeautyBookBackend.Models.Enums
         Failed = 3,
         Expired = 4,
         RefundPending = 5,
-        Refunded = 6
+        Refunded = 6,
+        PartiallyRefunded = 7,
+        Forfeited = 8
     }
 }

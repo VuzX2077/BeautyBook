@@ -901,6 +901,17 @@ namespace BeautyBookBackend.Services
         private string BuildPaymentCallbackUrl(string configKey, Guid bookingId, string fallbackBase)
         {
             var configured = _configuration[configKey];
+            if (string.IsNullOrWhiteSpace(configured))
+            {
+                // Keep compatibility with the existing Render variables while
+                // using booking-specific keys for new deployments.
+                var legacyKey = configKey.EndsWith("BookingReturnUrl", StringComparison.Ordinal)
+                    ? "PayOS:ReturnUrl"
+                    : configKey.EndsWith("BookingCancelUrl", StringComparison.Ordinal)
+                        ? "PayOS:CancelUrl"
+                        : null;
+                if (legacyKey != null) configured = _configuration[legacyKey];
+            }
             var baseUrl = string.IsNullOrWhiteSpace(configured) ? fallbackBase : configured.Trim();
             if (baseUrl.Contains("{bookingId}", StringComparison.OrdinalIgnoreCase))
                 return baseUrl.Replace("{bookingId}", bookingId.ToString(), StringComparison.OrdinalIgnoreCase);

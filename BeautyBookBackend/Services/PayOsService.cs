@@ -69,17 +69,19 @@ namespace BeautyBookBackend.Services
             var fields = new SortedDictionary<string, string>
             {
                 ["amount"] = data.Amount.ToString(CultureInfo.InvariantCulture),
-                ["orderCode"] = data.OrderCode.ToString(CultureInfo.InvariantCulture)
+                ["orderCode"] = data.OrderCode.ToString(CultureInfo.InvariantCulture),
+                // payOS signs present null/undefined values as an empty string.
+                // Omitting these keys makes a valid real-payment webhook fail
+                // verification even though the registration sample succeeds.
+                ["accountNumber"] = data.AccountNumber ?? string.Empty,
+                ["code"] = data.Code ?? string.Empty,
+                ["currency"] = data.Currency ?? string.Empty,
+                ["desc"] = data.Desc ?? string.Empty,
+                ["description"] = data.Description ?? string.Empty,
+                ["paymentLinkId"] = data.PaymentLinkId ?? string.Empty,
+                ["reference"] = data.Reference ?? string.Empty,
+                ["transactionDateTime"] = data.TransactionDateTime ?? string.Empty
             };
-
-            AddIfPresent(fields, "accountNumber", data.AccountNumber);
-            AddIfPresent(fields, "code", data.Code);
-            AddIfPresent(fields, "currency", data.Currency);
-            AddIfPresent(fields, "desc", data.Desc);
-            AddIfPresent(fields, "description", data.Description);
-            AddIfPresent(fields, "paymentLinkId", data.PaymentLinkId);
-            AddIfPresent(fields, "reference", data.Reference);
-            AddIfPresent(fields, "transactionDateTime", data.TransactionDateTime);
 
             if (data.ExtraData != null)
             {
@@ -120,14 +122,6 @@ namespace BeautyBookBackend.Services
         {
             return _configuration[key]
                 ?? throw new InvalidOperationException($"{key} chưa được cấu hình.");
-        }
-
-        private static void AddIfPresent(IDictionary<string, string> fields, string key, string? value)
-        {
-            if (!string.IsNullOrEmpty(value))
-            {
-                fields[key] = value;
-            }
         }
 
         private static string HmacSha256(string data, string checksumKey)

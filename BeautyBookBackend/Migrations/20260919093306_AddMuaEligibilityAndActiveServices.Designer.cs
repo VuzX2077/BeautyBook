@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using BeautyBookBackend.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace BeautyBookBackend.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260919093306_AddMuaEligibilityAndActiveServices")]
+    partial class AddMuaEligibilityAndActiveServices
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -136,10 +139,6 @@ namespace BeautyBookBackend.Migrations
                     b.Property<TimeSpan>("EndTime")
                         .HasColumnType("interval");
 
-                    b.Property<string>("IdempotencyKey")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
                     b.Property<Guid>("MUAId")
                         .HasColumnType("uuid");
 
@@ -191,11 +190,9 @@ namespace BeautyBookBackend.Migrations
 
                     b.HasKey("BookingId");
 
-                    b.HasIndex("MUAId");
+                    b.HasIndex("CustomerId");
 
-                    b.HasIndex("CustomerId", "IdempotencyKey")
-                        .IsUnique()
-                        .HasFilter("\"IdempotencyKey\" IS NOT NULL");
+                    b.HasIndex("MUAId");
 
                     b.ToTable("Bookings");
                 });
@@ -643,70 +640,6 @@ namespace BeautyBookBackend.Migrations
                     b.HasIndex("MuaId", "Status");
 
                     b.ToTable("MuaReceivables");
-                });
-
-            modelBuilder.Entity("BeautyBookBackend.Models.MuaTimeOff", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime>("EndAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("MUAId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Reason")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<DateTime>("StartAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("MUAId", "StartAt", "EndAt");
-
-                    b.ToTable("MuaTimeOffs", t =>
-                        {
-                            t.HasCheckConstraint("CK_MuaTimeOffs_ValidRange", "\"StartAt\" < \"EndAt\"");
-                        });
-                });
-
-            modelBuilder.Entity("BeautyBookBackend.Models.MuaWorkingSchedule", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<int>("DayOfWeek")
-                        .HasColumnType("integer");
-
-                    b.Property<TimeSpan>("EndTime")
-                        .HasColumnType("interval");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
-                    b.Property<Guid>("MUAId")
-                        .HasColumnType("uuid");
-
-                    b.Property<TimeSpan>("StartTime")
-                        .HasColumnType("interval");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("MUAId", "DayOfWeek", "StartTime", "EndTime")
-                        .IsUnique();
-
-                    b.ToTable("MuaWorkingSchedules", t =>
-                        {
-                            t.HasCheckConstraint("CK_MuaWorkingSchedules_ValidRange", "\"StartTime\" >= INTERVAL '0' AND \"EndTime\" <= INTERVAL '1 day' AND \"StartTime\" < \"EndTime\"");
-                        });
                 });
 
             modelBuilder.Entity("BeautyBookBackend.Models.Payout", b =>
@@ -1567,28 +1500,6 @@ namespace BeautyBookBackend.Migrations
                     b.Navigation("Mua");
                 });
 
-            modelBuilder.Entity("BeautyBookBackend.Models.MuaTimeOff", b =>
-                {
-                    b.HasOne("BeautyBookBackend.Models.MakeupArtistProfile", "MakeupArtistProfile")
-                        .WithMany("TimeOffs")
-                        .HasForeignKey("MUAId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("MakeupArtistProfile");
-                });
-
-            modelBuilder.Entity("BeautyBookBackend.Models.MuaWorkingSchedule", b =>
-                {
-                    b.HasOne("BeautyBookBackend.Models.MakeupArtistProfile", "MakeupArtistProfile")
-                        .WithMany("WorkingSchedules")
-                        .HasForeignKey("MUAId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("MakeupArtistProfile");
-                });
-
             modelBuilder.Entity("BeautyBookBackend.Models.Payout", b =>
                 {
                     b.HasOne("BeautyBookBackend.Models.User", "LastHandledByUser")
@@ -1833,10 +1744,6 @@ namespace BeautyBookBackend.Migrations
                     b.Navigation("Portfolios");
 
                     b.Navigation("Services");
-
-                    b.Navigation("TimeOffs");
-
-                    b.Navigation("WorkingSchedules");
                 });
 
             modelBuilder.Entity("BeautyBookBackend.Models.Message", b =>

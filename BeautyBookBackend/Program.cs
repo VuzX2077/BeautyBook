@@ -9,6 +9,7 @@ using Microsoft.OpenApi.Models;
 using BeautyBookBackend.Services;
 using BeautyBookBackend.Repositories;
 using BeautyBookBackend.Hubs;
+using Microsoft.AspNetCore.Mvc;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -51,6 +52,16 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 
 // Add services to the container.
 builder.Services.AddControllers();
+builder.Services.Configure<ApiBehaviorOptions>(options =>
+{
+    options.InvalidModelStateResponseFactory = context => new BadRequestObjectResult(new
+    {
+        Code = "VALIDATION_ERROR",
+        Message = "Dữ liệu yêu cầu không hợp lệ.",
+        Errors = context.ModelState.Where(x => x.Value?.Errors.Count > 0)
+            .ToDictionary(x => x.Key, x => x.Value!.Errors.Select(e => e.ErrorMessage).ToArray())
+    });
+});
 
 // Configure CORS to allow frontend connections
 builder.Services.AddCors(options =>
@@ -140,6 +151,8 @@ builder.Services.AddAuthentication(options =>
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IMuaService, MuaService>();
+builder.Services.AddScoped<IMuaEligibilityService, MuaEligibilityService>();
+builder.Services.AddScoped<IMuaScheduleService, MuaScheduleService>();
 builder.Services.AddScoped<IBookingService, BookingService>();
 builder.Services.AddScoped<IBookingNotificationService, BookingNotificationService>();
 builder.Services.AddScoped<IRefundService, RefundService>();

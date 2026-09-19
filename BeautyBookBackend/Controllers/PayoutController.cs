@@ -18,7 +18,7 @@ namespace BeautyBookBackend.Controllers
         [HttpPost("bank-accounts")]public async Task<IActionResult> AddBank(UpsertMuaBankAccountRequest r){try{return Ok(await _service.AddBankAccountAsync(CurrentUserId,r));}catch(InvalidOperationException e){return BadRequest(new{Message=e.Message});}}
         [HttpPut("bank-accounts/{id:guid}")]public async Task<IActionResult> UpdateBank(Guid id,UpsertMuaBankAccountRequest r){try{var x=await _service.UpdateBankAccountAsync(CurrentUserId,id,r);return x==null?NotFound():Ok(x);}catch(InvalidOperationException e){return BadRequest(new{Message=e.Message});}}
         [HttpDelete("bank-accounts/{id:guid}")]public async Task<IActionResult> DeleteBank(Guid id)=>await _service.DeactivateBankAccountAsync(CurrentUserId,id)?NoContent():NotFound();
-        [HttpPost("payouts")]public async Task<IActionResult> Create(CreatePayoutRequest r){try{return Ok(await _service.CreateAsync(CurrentUserId,r));}catch(InvalidOperationException e){return Conflict(new{Message=e.Message});}}
+        [HttpPost("payouts")]public async Task<IActionResult> Create(CreatePayoutRequest r){try{return Ok(await _service.CreateAsync(CurrentUserId,r));}catch(InvalidOperationException e){return Conflict(new{Code="PAYOUT_NOT_ALLOWED",Message=e.Message});}}
         [HttpGet("payouts")]public async Task<IActionResult> Mine()=>Ok(await _service.GetOwnAsync(CurrentUserId));
     }
 

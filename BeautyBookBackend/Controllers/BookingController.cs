@@ -38,18 +38,17 @@ namespace BeautyBookBackend.Controllers
             {
                 if (!ModelState.IsValid) return BadRequest(ModelState);
 
-                if (CurrentUserId == createDto.MUAId)
-                {
-                    return BadRequest(new { Message = "Không thể tự đặt lịch cho chính mình." });
-                }
-
                 var booking = await _bookingService.CreateBookingAsync(CurrentUserId, createDto);
                 if (booking == null)
                 {
-                    return BadRequest(new { Message = "Đặt lịch thất bại. Gói dịch vụ không tồn tại hoặc không thuộc Makeup Artist đã chọn." });
+                    return BadRequest(new { Code = "BOOKING_CREATION_FAILED", Message = "Không thể tạo booking." });
                 }
 
                 return Ok(new { Message = "Đã tạo booking. Vui lòng thanh toán tiền cọc 30%.", Booking = booking });
+            }
+            catch (BookingRuleException ex)
+            {
+                return StatusCode(ex.StatusCode, new { ex.Code, Message = ex.Message });
             }
             catch (InsufficientBalanceException ex)
             {
@@ -64,15 +63,15 @@ namespace BeautyBookBackend.Controllers
             }
             catch (InvalidOperationException ex)
             {
-                return BadRequest(new { Message = ex.Message });
+                return BadRequest(new { Code = "INVALID_BOOKING_OPERATION", Message = ex.Message });
             }
             catch (BookingConcurrencyException ex)
             {
-                return Conflict(new { Message = ex.Message });
+                return Conflict(new { Code = "BOOKING_CONFLICT", Message = ex.Message });
             }
             catch (Exception)
             {
-                return StatusCode(500, new { Message = "Không thể tạo booking lúc này. Vui lòng thử lại." });
+                return StatusCode(500, new { Code = "INTERNAL_ERROR", Message = "Không thể tạo booking lúc này. Vui lòng thử lại." });
             }
         }
 

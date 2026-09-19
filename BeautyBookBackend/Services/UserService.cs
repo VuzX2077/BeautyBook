@@ -58,7 +58,7 @@ namespace BeautyBookBackend.Services
 
             if (hasMuaProfile)
             {
-                profileDto.MuaProfile = await _muaService.GetMuaByIdAsync(user.UserId);
+                profileDto.MuaProfile = await _muaService.GetMuaByIdAsync(user.UserId, user.UserId);
             }
 
             return profileDto;
@@ -71,10 +71,15 @@ namespace BeautyBookBackend.Services
 
             if (!string.IsNullOrEmpty(updateDto.FullName)) user.FullName = updateDto.FullName;
             if (!string.IsNullOrEmpty(updateDto.AvatarUrl)) user.AvatarUrl = updateDto.AvatarUrl;
-            if (!string.IsNullOrEmpty(updateDto.PhoneNumber)) user.PhoneNumber = updateDto.PhoneNumber;
+            if (!string.IsNullOrEmpty(updateDto.PhoneNumber) && !string.Equals(user.PhoneNumber, updateDto.PhoneNumber, StringComparison.Ordinal))
+            {
+                user.PhoneNumber = updateDto.PhoneNumber;
+                user.PhoneVerified = false;
+            }
 
             await _unitOfWork.SaveChangesAsync();
             bool hasMuaProfile = await _muaRepository.ProfileExistsAsync(user.UserId);
+            if (hasMuaProfile) await _muaService.RecalculateProfileStateAsync(user.UserId);
             return ToDto(user, hasMuaProfile);
         }
 

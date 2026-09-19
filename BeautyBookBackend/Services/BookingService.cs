@@ -22,8 +22,6 @@ namespace BeautyBookBackend.Services
     {
         private const decimal DepositRate = 0.30m;
         private const decimal PlatformFeeRate = 0.08m;
-        private static readonly TimeSpan WorkingHoursStart = TimeSpan.FromHours(8);
-        private static readonly TimeSpan WorkingHoursEnd = TimeSpan.FromHours(20);
 
         private readonly IBookingRepository _bookingRepository;
         private readonly IMuaRepository _muaRepository;
@@ -35,6 +33,8 @@ namespace BeautyBookBackend.Services
         private readonly IRefundService _refundService;
         private readonly IMuaReceivableService _receivableService;
         private readonly IConfiguration _configuration;
+        private readonly IMuaEligibilityService _eligibilityService;
+        private readonly IMuaScheduleService _scheduleService;
 
         public BookingService(
             IBookingRepository bookingRepository,
@@ -46,7 +46,9 @@ namespace BeautyBookBackend.Services
             IPayOsService payOsService,
             IRefundService refundService,
             IMuaReceivableService receivableService,
-            IConfiguration configuration)
+            IConfiguration configuration,
+            IMuaEligibilityService eligibilityService,
+            IMuaScheduleService scheduleService)
         {
             _bookingRepository = bookingRepository;
             _muaRepository = muaRepository;
@@ -58,97 +60,116 @@ namespace BeautyBookBackend.Services
             _refundService = refundService;
             _receivableService = receivableService;
             _configuration = configuration;
+            _eligibilityService = eligibilityService;
+            _scheduleService = scheduleService;
         }
 
         public async Task<BookingDto?> CreateBookingAsync(Guid customerId, BookingCreateDto createDto)
         {
-            if (createDto.Services == null || !createDto.Services.Any()) return null;
-            if (createDto.MUAId == Guid.Empty || createDto.BookingDate == default) return null;
+            if (string.IsNullOrWhiteSpace(createDto.IdempotencyKey))
+                throw new BookingRuleException("INVALID_IDEMPOTENCY_KEY", "IdempotencyKey là bắt buộc.");
+            if (createDto.Services == null || createDto.Services.Count == 0 || createDto.MUAId == Guid.Empty)
+                throw new BookingRuleException("VALIDATION_ERROR", "Thông tin booking không hợp lệ.");
+            if (createDto.Services.Select(x => x.ServiceId).Distinct().Count() != createDto.Services.Count)
+                throw new BookingRuleException("DUPLICATE_SERVICE", "Một dịch vụ không được xuất hiện nhiều lần trong cùng booking.");
+            if (customerId == createDto.MUAId)
+                throw new BookingRuleException("SELF_BOOKING_NOT_ALLOWED", "Không thể tự đặt lịch cho chính mình.");
+
+            var idempotencyKey = createDto.IdempotencyKey.Trim();
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+            var idempotencyLockKey = $"booking-create:{customerId:N}:{idempotencyKey}";
+            await _context.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({idempotencyLockKey}, 0))");
+
+            var existingId = await _context.Bookings.AsNoTracking()
+                .Where(x => x.CustomerId == customerId && x.IdempotencyKey == idempotencyKey)
+                .Select(x => (Guid?)x.BookingId).FirstOrDefaultAsync();
+            if (existingId.HasValue)
+            {
+                await transaction.CommitAsync();
+                var existing = await _bookingRepository.GetByIdWithDetailsForUserAsync(existingId.Value, customerId);
+                if (existing == null) return null;
+                var requestedServices = createDto.Services.OrderBy(x => x.ServiceId)
+                    .Select(x => (x.ServiceId, x.ParticipantsCount)).ToList();
+                var existingServices = existing.BookingServices.OrderBy(x => x.ServiceId)
+                    .Select(x => (x.ServiceId, x.ParticipantsCount)).ToList();
+                if (existing.MUAId != createDto.MUAId || existing.BookingDate.Date != createDto.BookingDate.Date
+                    || existing.StartTime != createDto.StartTime || !requestedServices.SequenceEqual(existingServices))
+                    throw new BookingRuleException("IDEMPOTENCY_KEY_REUSED", "IdempotencyKey đã được dùng cho một booking khác.", 409);
+                return await ToBookingDtoAsync(existing);
+            }
+
+            var customer = await _context.Users
+                .FromSqlInterpolated($"SELECT * FROM \"Users\" WHERE \"UserId\" = {customerId} FOR SHARE")
+                .FirstOrDefaultAsync();
+            if (customer == null || !customer.IsActive || customer.DeletedAt.HasValue)
+                throw new BookingRuleException("CUSTOMER_NOT_ELIGIBLE", "Tài khoản khách hàng không hợp lệ.", 403);
+
+            var muaProfile = await _context.MakeupArtistProfiles
+                .FromSqlInterpolated($"SELECT * FROM \"MakeupArtistProfiles\" WHERE \"MUAId\" = {createDto.MUAId} FOR SHARE")
+                .FirstOrDefaultAsync();
+            var muaUser = await _context.Users
+                .FromSqlInterpolated($"SELECT * FROM \"Users\" WHERE \"UserId\" = {createDto.MUAId} FOR SHARE")
+                .FirstOrDefaultAsync();
+            if (muaProfile == null || muaUser == null || !muaUser.IsActive || muaUser.DeletedAt.HasValue
+                || muaProfile.Status != MuaStatus.Listed || muaProfile.Status == MuaStatus.Suspended)
+                throw new BookingRuleException("MUA_NOT_ACCEPTING_BOOKINGS", "Makeup Artist hiện chưa thể nhận booking.");
+
+            var eligibility = await _eligibilityService.EvaluateAsync(createDto.MUAId);
+            if (eligibility?.CanReceiveBookings != true)
+                throw new BookingRuleException("MUA_NOT_ACCEPTING_BOOKINGS", "Makeup Artist hiện chưa thể nhận booking.");
 
             decimal totalAmount = 0;
-            int totalDuration = 0;
-            var bookingServices = new List<Models.BookingService>();
-            
+            var totalDuration = 0;
             var bookingId = Guid.NewGuid();
-
-            foreach (var s in createDto.Services)
+            var bookingServices = new List<Models.BookingService>();
+            foreach (var requested in createDto.Services)
             {
-                if (s.ParticipantsCount <= 0) return null;
-
-                var service = await _muaRepository.GetServiceByIdForMuaAsync(s.ServiceId, createDto.MUAId);
-                if (service == null) return null;
-                
-                var price = service.Price * s.ParticipantsCount;
-                var duration = service.DurationMinutes * s.ParticipantsCount;
-                
-                totalAmount += price;
-                totalDuration += duration;
-                
+                if (requested.ParticipantsCount <= 0)
+                    throw new BookingRuleException("VALIDATION_ERROR", "Số người sử dụng dịch vụ phải lớn hơn 0.");
+                var service = await _context.Services
+                    .FromSqlInterpolated($"SELECT * FROM \"Services\" WHERE \"ServiceId\" = {requested.ServiceId} AND \"MUAId\" = {createDto.MUAId} FOR SHARE")
+                    .FirstOrDefaultAsync();
+                if (service == null || !service.IsActive)
+                    throw new BookingRuleException("SERVICE_NOT_AVAILABLE", "Dịch vụ không tồn tại, không thuộc MUA hoặc đã ngừng hoạt động.");
+                totalAmount += service.Price * requested.ParticipantsCount;
+                totalDuration += service.DurationMinutes * requested.ParticipantsCount;
                 bookingServices.Add(new Models.BookingService
                 {
-                    Id = Guid.NewGuid(),
-                    BookingId = bookingId,
-                    ServiceId = service.ServiceId,
-                    ServiceName = service.ServiceName ?? "",
-                    PriceSnapshot = service.Price,
-                    DurationMinutesSnapshot = service.DurationMinutes,
-                    ParticipantsCount = s.ParticipantsCount
+                    Id = Guid.NewGuid(), BookingId = bookingId, ServiceId = service.ServiceId,
+                    ServiceName = service.ServiceName ?? string.Empty, PriceSnapshot = service.Price,
+                    DurationMinutesSnapshot = service.DurationMinutes, ParticipantsCount = requested.ParticipantsCount
                 });
             }
 
+            if (totalAmount <= 0 || totalDuration <= 0 || createDto.BookingDate == default || createDto.StartTime < TimeSpan.Zero)
+                throw new BookingRuleException("INVALID_BOOKING_TIME", "Thời gian hoặc tổng giá trị booking không hợp lệ.");
             var endTime = createDto.StartTime.Add(TimeSpan.FromMinutes(totalDuration));
-            if (totalAmount <= 0 || totalDuration <= 0)
-            {
-                return null;
-            }
+            if (endTime > TimeSpan.FromDays(1) || createDto.BookingDate.Date.Add(createDto.StartTime) <= DateTime.Now)
+                throw new BookingRuleException("INVALID_BOOKING_TIME", "Không thể đặt lịch ở thời điểm đã qua hoặc vượt quá một ngày.");
+            var scheduleLockKey = $"mua-schedule:{createDto.MUAId:N}";
+            await _context.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({scheduleLockKey}, 0))");
+            if (!await _scheduleService.IsAvailableAsync(createDto.MUAId, createDto.BookingDate, createDto.StartTime, endTime))
+                throw new BookingRuleException("MUA_NOT_AVAILABLE_AT_TIME", "Makeup Artist không làm việc hoặc đang nghỉ trong khung giờ này.");
 
-            if (createDto.StartTime < WorkingHoursStart || endTime > WorkingHoursEnd)
-            {
-                throw new InvalidOperationException("Khung giờ đặt lịch phải nằm trong giờ làm việc 08:00 - 20:00.");
-            }
-
-            var bookingLocalTime = createDto.BookingDate.Date.Add(createDto.StartTime);
-            if (bookingLocalTime <= DateTime.Now)
-            {
-                throw new InvalidOperationException("Không thể đặt lịch ở thời điểm trong quá khứ.");
-            }
+            var slotLockKey = $"booking-slot:{createDto.MUAId:N}:{createDto.BookingDate:yyyyMMdd}";
+            await _context.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({slotLockKey}, 0))");
+            if (await _bookingRepository.HasOverlappingBookingAsync(createDto.MUAId, createDto.BookingDate, createDto.StartTime, endTime))
+                throw new BookingRuleException("SLOT_UNAVAILABLE", "Khung giờ này vừa được khách hàng khác giữ.", 409);
 
             var depositAmount = decimal.Round(totalAmount * DepositRate, 0, MidpointRounding.AwayFromZero);
             var platformFeeAmount = decimal.Round(depositAmount * PlatformFeeRate, 0, MidpointRounding.AwayFromZero);
-
+            var now = DateTime.UtcNow;
             var booking = new Booking
             {
-                BookingId = bookingId,
-                CustomerId = customerId,
-                MUAId = createDto.MUAId,
-                TotalAmount = totalAmount,
-                TotalDurationMinutes = totalDuration,
-                BookingDate = DateTime.SpecifyKind(createDto.BookingDate.Date, DateTimeKind.Utc),
-                StartTime = createDto.StartTime,
-                EndTime = endTime,
-                Address = createDto.Address,
-                Notes = createDto.Notes,
-                DepositRate = DepositRate,
-                DepositAmount = depositAmount,
-                RemainingAmount = totalAmount - depositAmount,
-                PlatformFeeAmount = platformFeeAmount,
-                MuaPayoutAmount = depositAmount - platformFeeAmount,
-                Status = BookingStatus.PendingPayment,
-                PaymentStatus = PaymentStatus.Unpaid,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow,
-                PaymentExpiresAt = DateTime.UtcNow.AddMinutes(15),
-                BookingServices = bookingServices
+                BookingId = bookingId, CustomerId = customerId, MUAId = createDto.MUAId, IdempotencyKey = idempotencyKey,
+                TotalAmount = totalAmount, TotalDurationMinutes = totalDuration,
+                BookingDate = DateTime.SpecifyKind(createDto.BookingDate.Date, DateTimeKind.Utc), StartTime = createDto.StartTime, EndTime = endTime,
+                Address = createDto.Address?.Trim(), Notes = createDto.Notes?.Trim(), DepositRate = DepositRate,
+                DepositAmount = depositAmount, RemainingAmount = totalAmount - depositAmount,
+                PlatformFeeAmount = platformFeeAmount, MuaPayoutAmount = depositAmount - platformFeeAmount,
+                Status = BookingStatus.PendingPayment, PaymentStatus = PaymentStatus.Unpaid,
+                CreatedAt = now, UpdatedAt = now, PaymentExpiresAt = now.AddMinutes(15), BookingServices = bookingServices
             };
-
-            await using var transaction = await _context.Database.BeginTransactionAsync();
-            var slotLockKey = $"booking-slot:{createDto.MUAId:N}:{createDto.BookingDate:yyyyMMdd}";
-            await _context.Database.ExecuteSqlInterpolatedAsync(
-                $"SELECT pg_advisory_xact_lock(hashtextextended({slotLockKey}, 0))");
-
-            if (await _bookingRepository.HasOverlappingBookingAsync(createDto.MUAId, createDto.BookingDate, createDto.StartTime, endTime))
-                throw new BookingConcurrencyException("Khung giờ này vừa được khách hàng khác giữ. Vui lòng chọn giờ khác.");
-
             await _bookingRepository.AddAsync(booking);
             await _unitOfWork.SaveChangesAsync();
             await transaction.CommitAsync();
@@ -752,31 +773,13 @@ namespace BeautyBookBackend.Services
 
         public async Task<List<TimeSpan>> GetAvailableSlotsAsync(Guid muaId, DateTime date, int totalDurationMinutes)
         {
+            var eligibility = await _eligibilityService.EvaluateAsync(muaId);
+            if (eligibility?.CanReceiveBookings != true || totalDurationMinutes <= 0) return new List<TimeSpan>();
             var bookings = await _bookingRepository.GetBookingsByDateAsync(muaId, date);
-            
-            var slotInterval = TimeSpan.FromMinutes(30);
-
-            var availableSlots = new List<TimeSpan>();
+            var starts = await _scheduleService.GetAvailableStartsAsync(muaId, date, totalDurationMinutes);
             var requiredDuration = TimeSpan.FromMinutes(totalDurationMinutes);
-
-            for (var slot = WorkingHoursStart; slot.Add(requiredDuration) <= WorkingHoursEnd; slot = slot.Add(slotInterval))
-            {
-                var slotEnd = slot.Add(requiredDuration);
-                
-                // Check if this slot overlaps with any existing booking
-                var isOverlapping = bookings.Any(b => 
-                    (slot >= b.StartTime && slot < b.EndTime) || 
-                    (slotEnd > b.StartTime && slotEnd <= b.EndTime) ||
-                    (slot <= b.StartTime && slotEnd >= b.EndTime)
-                );
-
-                if (!isOverlapping)
-                {
-                    availableSlots.Add(slot);
-                }
-            }
-
-            return availableSlots;
+            return starts.Where(slot => date.Date.Add(slot) > DateTime.Now
+                && !bookings.Any(b => slot < b.EndTime && slot.Add(requiredDuration) > b.StartTime)).ToList();
         }
 
         private static bool IsValidStatusTransition(BookingStatus currentStatus, BookingStatus newStatus, Guid userId, Guid muaId, Guid customerId)

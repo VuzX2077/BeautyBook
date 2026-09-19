@@ -22,8 +22,6 @@ namespace BeautyBookBackend.DTOs
         [MaxLength(20)]
         public string? PhoneNumber { get; set; }
 
-        [Required]
-        public UserRole Role { get; set; }
     }
 
     public class LoginDto

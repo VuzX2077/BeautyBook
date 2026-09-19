@@ -10,6 +10,7 @@ namespace BeautyBookBackend.Models
         public Guid BookingId { get; set; }
         public Guid CustomerId { get; set; }
         public Guid MUAId { get; set; }
+        public string? IdempotencyKey { get; set; }
         
         public decimal TotalAmount { get; set; }
         public decimal DepositRate { get; set; }

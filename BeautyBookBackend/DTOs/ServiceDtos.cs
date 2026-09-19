@@ -12,6 +12,7 @@ namespace BeautyBookBackend.DTOs
         public int DurationMinutes { get; set; }
         public string? ImageUrl { get; set; }
         public List<string> Tags { get; set; } = new();
+        public bool IsActive { get; set; }
     }
 
     public class ServiceCreateDto
@@ -33,5 +34,11 @@ namespace BeautyBookBackend.DTOs
 
         public string? ImageUrl { get; set; }
         public List<string> Tags { get; set; } = new();
+        public bool IsActive { get; set; } = true;
+    }
+
+    public sealed class SetServiceActiveRequest
+    {
+        public bool IsActive { get; set; }
     }
 }

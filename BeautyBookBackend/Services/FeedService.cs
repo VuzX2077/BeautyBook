@@ -30,7 +30,12 @@ namespace BeautyBookBackend.Services
                 .Include(p => p.Saves)
                 .Include(p => p.Comments)
                 .Include(p => p.Service)
-                .Where(p => p.MakeupArtistProfile != null && p.MakeupArtistProfile.Status != MuaStatus.Suspended)
+                .Where(p => p.MakeupArtistProfile != null
+                    && p.MakeupArtistProfile.Status == MuaStatus.Listed
+                    && p.MakeupArtistProfile.User != null
+                    && p.MakeupArtistProfile.User.IsActive
+                    && p.MakeupArtistProfile.User.DeletedAt == null
+                    && !p.IsHidden)
                 .OrderByDescending(p => p.MakeupArtistProfile.ProfileQualityScore)
                 .ThenByDescending(p => p.CreatedAt)
                 .Take(100)
@@ -43,6 +48,8 @@ namespace BeautyBookBackend.Services
 
             foreach (var post in candidates)
             {
+                post.ImageUrls = post.ImageUrls.Where(MuaEligibilityService.IsValidPublicUrl).ToList();
+                if (post.ImageUrls.Count == 0) continue;
                 var muaId = post.MUAId;
                 if (!muaAppearanceCount.ContainsKey(muaId))
                     muaAppearanceCount[muaId] = 0;
@@ -125,7 +132,8 @@ namespace BeautyBookBackend.Services
                     Price = p.Service.Price,
                     DurationMinutes = p.Service.DurationMinutes,
                     ImageUrl = p.Service.ImageUrl,
-                    Tags = p.Service.Tags ?? new List<string>()
+                    Tags = p.Service.Tags ?? new List<string>(),
+                    IsActive = p.Service.IsActive
                 }
             };
         }

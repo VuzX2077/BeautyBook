@@ -30,6 +30,14 @@ namespace BeautyBookBackend.Controllers
         }
 
         [Authorize]
+        [HttpGet("service/me")]
+        public async Task<IActionResult> GetOwnServices()
+        {
+            if (!await _muaService.HasMuaProfileAsync(CurrentUserId)) return Forbid();
+            return Ok(await _muaService.GetMuaServicesAsync(CurrentUserId, CurrentUserId));
+        }
+
+        [Authorize]
         [HttpPost("{muaId}/service")]
         public async Task<IActionResult> AddService(string muaId, [FromBody] ServiceCreateDto serviceDto)
         {
@@ -63,6 +71,16 @@ namespace BeautyBookBackend.Controllers
             }
 
             return Ok(new { Message = "Cáº­p nháº­t dá»‹ch vá»¥ thÃ nh cÃ´ng!" });
+        }
+
+        [Authorize]
+        [HttpPatch("service/{id:guid}/active")]
+        public async Task<IActionResult> SetServiceActive(Guid id, [FromBody] SetServiceActiveRequest request)
+        {
+            if (!await _muaService.HasMuaProfileAsync(CurrentUserId)) return Forbid();
+            return await _muaService.SetMuaServiceActiveAsync(CurrentUserId, id, request.IsActive)
+                ? Ok(new { request.IsActive })
+                : NotFound();
         }
 
         [Authorize]

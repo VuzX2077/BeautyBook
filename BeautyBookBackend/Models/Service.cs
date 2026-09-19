@@ -13,6 +13,7 @@ namespace BeautyBookBackend.Models
         public int DurationMinutes { get; set; }
         public string? ImageUrl { get; set; }
         public List<string> Tags { get; set; } = new();
+        public bool IsActive { get; set; } = true;
 
         public MakeupArtistProfile? MakeupArtistProfile { get; set; }
     }

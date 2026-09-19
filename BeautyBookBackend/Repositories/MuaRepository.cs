@@ -33,7 +33,7 @@ namespace BeautyBookBackend.Repositories
         {
             return await _context.MakeupArtistProfiles
                 .Include(m => m.User)
-                .Where(m => m.Status == Models.Enums.MuaStatus.Listed)
+                .Where(m => m.Status == Models.Enums.MuaStatus.Listed && m.User != null && m.User.IsActive && m.User.DeletedAt == null)
                 .OrderByDescending(m => m.RankScore)
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
@@ -76,7 +76,7 @@ namespace BeautyBookBackend.Repositories
         public Task<decimal?> GetMinPriceByMuaIdAsync(Guid muaId)
         {
             return _context.Services
-                .Where(s => s.MUAId == muaId)
+                .Where(s => s.MUAId == muaId && s.IsActive)
                 .Select(s => (decimal?)s.Price)
                 .MinAsync();
         }

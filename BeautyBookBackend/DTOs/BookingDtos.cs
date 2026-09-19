@@ -86,6 +86,10 @@ namespace BeautyBookBackend.DTOs
     public class BookingCreateDto
     {
         [Required]
+        [MaxLength(100)]
+        public string IdempotencyKey { get; set; } = null!;
+
+        [Required]
         public Guid MUAId { get; set; }
 
         [Required]

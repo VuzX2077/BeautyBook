@@ -16,6 +16,8 @@ namespace BeautyBookBackend.Data
         public DbSet<MUAStyle> MUAStyles { get; set; } = null!;
         public DbSet<Portfolio> Portfolios { get; set; } = null!;
         public DbSet<Service> Services { get; set; } = null!;
+        public DbSet<MuaWorkingSchedule> MuaWorkingSchedules { get; set; } = null!;
+        public DbSet<MuaTimeOff> MuaTimeOffs { get; set; } = null!;
         public DbSet<Booking> Bookings { get; set; } = null!;
         public DbSet<BookingService> BookingServices { get; set; } = null!;
         public DbSet<BookingPayment> BookingPayments { get; set; } = null!;
@@ -140,6 +142,7 @@ namespace BeautyBookBackend.Data
             modelBuilder.Entity<Service>(b =>
             {
                 b.HasKey(s => s.ServiceId);
+                b.Property(s => s.IsActive).HasDefaultValue(true);
                 b.Property(s => s.ServiceName).HasMaxLength(100);
                 b.Property(s => s.Description).HasMaxLength(500);
                 b.Property(s => s.Price).HasPrecision(18, 2);
@@ -150,9 +153,31 @@ namespace BeautyBookBackend.Data
                     .OnDelete(DeleteBehavior.Cascade);
             });
 
+            modelBuilder.Entity<MuaWorkingSchedule>(b =>
+            {
+                b.HasKey(x => x.Id);
+                b.ToTable(t => t.HasCheckConstraint("CK_MuaWorkingSchedules_ValidRange", "\"StartTime\" >= INTERVAL '0' AND \"EndTime\" <= INTERVAL '1 day' AND \"StartTime\" < \"EndTime\""));
+                b.HasIndex(x => new { x.MUAId, x.DayOfWeek, x.StartTime, x.EndTime }).IsUnique();
+                b.HasOne(x => x.MakeupArtistProfile).WithMany(x => x.WorkingSchedules)
+                    .HasForeignKey(x => x.MUAId).OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<MuaTimeOff>(b =>
+            {
+                b.HasKey(x => x.Id);
+                b.ToTable(t => t.HasCheckConstraint("CK_MuaTimeOffs_ValidRange", "\"StartAt\" < \"EndAt\""));
+                b.Property(x => x.Reason).HasMaxLength(500);
+                b.HasIndex(x => new { x.MUAId, x.StartAt, x.EndAt });
+                b.HasOne(x => x.MakeupArtistProfile).WithMany(x => x.TimeOffs)
+                    .HasForeignKey(x => x.MUAId).OnDelete(DeleteBehavior.Cascade);
+            });
+
             modelBuilder.Entity<Booking>(b =>
             {
                 b.HasKey(x => x.BookingId);
+                b.Property(x => x.IdempotencyKey).HasMaxLength(100);
+                b.HasIndex(x => new { x.CustomerId, x.IdempotencyKey }).IsUnique()
+                    .HasFilter("\"IdempotencyKey\" IS NOT NULL");
 
                 // Explicitly configure foreign keys and disable cascading deletes that could cause multiple cascade paths
                 b.HasOne(x => x.Customer)

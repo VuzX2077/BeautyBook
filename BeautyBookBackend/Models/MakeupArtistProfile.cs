@@ -25,5 +25,7 @@ namespace BeautyBookBackend.Models
         public User? User { get; set; }
         public System.Collections.Generic.ICollection<Portfolio> Portfolios { get; set; } = new System.Collections.Generic.List<Portfolio>();
         public System.Collections.Generic.ICollection<Service> Services { get; set; } = new System.Collections.Generic.List<Service>();
+        public System.Collections.Generic.ICollection<MuaWorkingSchedule> WorkingSchedules { get; set; } = new System.Collections.Generic.List<MuaWorkingSchedule>();
+        public System.Collections.Generic.ICollection<MuaTimeOff> TimeOffs { get; set; } = new System.Collections.Generic.List<MuaTimeOff>();
     }
 }

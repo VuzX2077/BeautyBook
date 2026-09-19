@@ -16,13 +16,15 @@ namespace BeautyBookBackend.Services
         private readonly IUserRepository _userRepository;
         private readonly IUnitOfWork _unitOfWork;
         private readonly BeautyBookBackend.Data.ApplicationDbContext _dbContext;
+        private readonly IMuaEligibilityService _eligibilityService;
 
-        public MuaService(IMuaRepository muaRepository, IUserRepository userRepository, IUnitOfWork unitOfWork, BeautyBookBackend.Data.ApplicationDbContext dbContext)
+        public MuaService(IMuaRepository muaRepository, IUserRepository userRepository, IUnitOfWork unitOfWork, BeautyBookBackend.Data.ApplicationDbContext dbContext, IMuaEligibilityService eligibilityService)
         {
             _muaRepository = muaRepository;
             _userRepository = userRepository;
             _unitOfWork = unitOfWork;
             _dbContext = dbContext;
+            _eligibilityService = eligibilityService;
         }
 
         public async Task<List<MuaProfileDto>> GetMuasAsync(int page)
@@ -46,7 +48,11 @@ namespace BeautyBookBackend.Services
             if (user == null) return null;
 
             user.FullName = request.DisplayName;
-            user.PhoneNumber = request.PhoneNumber;
+            if (!string.Equals(user.PhoneNumber, request.PhoneNumber, StringComparison.Ordinal))
+            {
+                user.PhoneNumber = request.PhoneNumber;
+                user.PhoneVerified = false;
+            }
             
             var profile = await _muaRepository.GetProfileWithFullDetailsAsync(muaId);
             
@@ -75,24 +81,31 @@ namespace BeautyBookBackend.Services
                 profile.SocialLinks = request.SocialLinks;
             }
 
-            var success = await _unitOfWork.SaveChangesAsync() > 0;
-            if (success)
-            {
-                await RecalculateProfileStateAsync(muaId);
-            }
+            await _unitOfWork.SaveChangesAsync();
+            await _eligibilityService.EvaluateAsync(muaId);
 
             var styles = await _muaRepository.GetStyleNamesByMuaIdAsync(muaId);
             return ToMuaProfileDto(profile, styles);
         }
 
-        public async Task<MuaDetailDto?> GetMuaByIdAsync(Guid muaId)
+        public async Task<MuaDetailDto?> GetMuaByIdAsync(Guid muaId, Guid? currentUserId = null)
         {
             var profile = await _muaRepository.GetProfileWithFullDetailsAsync(muaId);
             if (profile == null) return null;
+            var isOwner = currentUserId == muaId;
+            if (!isOwner && (profile.Status != Models.Enums.MuaStatus.Listed || profile.User?.IsActive != true || profile.User.DeletedAt.HasValue)) return null;
 
             var styles = await _muaRepository.GetStyleNamesByMuaIdAsync(muaId);
             var services = await _muaRepository.GetServicesByMuaIdAsync(muaId);
             var portfolio = await _muaRepository.GetPortfolioByMuaIdAsync(muaId);
+            if (!isOwner)
+            {
+                services = services.Where(x => x.IsActive).ToList();
+                portfolio = portfolio.Where(x => !x.IsHidden).ToList();
+                foreach (var item in portfolio)
+                    item.ImageUrls = item.ImageUrls.Where(MuaEligibilityService.IsValidPublicUrl).ToList();
+                portfolio = portfolio.Where(x => x.ImageUrls.Count > 0).ToList();
+            }
             return ToMuaDetailDto(profile, styles, services, portfolio);
         }
 
@@ -112,9 +125,11 @@ namespace BeautyBookBackend.Services
             {
                 if (updateDto.PhoneNumber != null)
                 {
-                    profile.User.PhoneNumber = updateDto.PhoneNumber;
-                    // For MVP testing, if phone number is provided we assume it is verified
-                    profile.User.PhoneVerified = true; 
+                    if (!string.Equals(profile.User.PhoneNumber, updateDto.PhoneNumber, StringComparison.Ordinal))
+                    {
+                        profile.User.PhoneNumber = updateDto.PhoneNumber;
+                        profile.User.PhoneVerified = false;
+                    }
                 }
                 if (updateDto.AvatarUrl != null)
                 {
@@ -126,12 +141,9 @@ namespace BeautyBookBackend.Services
                 }
             }
 
-            var success = await _unitOfWork.SaveChangesAsync() > 0;
-            if (success)
-            {
-                await RecalculateProfileStateAsync(muaId);
-            }
-            return success;
+            await _unitOfWork.SaveChangesAsync();
+            await _eligibilityService.EvaluateAsync(muaId);
+            return true;
         }
 
         public async Task<bool> HasMuaProfileAsync(Guid muaId)
@@ -139,9 +151,16 @@ namespace BeautyBookBackend.Services
             return await _muaRepository.ProfileExistsAsync(muaId);
         }
 
-        public async Task<List<ServiceDto>> GetMuaServicesAsync(Guid muaId)
+        public async Task<List<ServiceDto>> GetMuaServicesAsync(Guid muaId, Guid? currentUserId = null)
         {
             var services = await _muaRepository.GetServicesByMuaIdAsync(muaId);
+            if (currentUserId != muaId)
+            {
+                var isPublic = await _dbContext.MakeupArtistProfiles.AnyAsync(x => x.MUAId == muaId
+                    && x.Status == Models.Enums.MuaStatus.Listed && x.User != null && x.User.IsActive && x.User.DeletedAt == null);
+                if (!isPublic) return new List<ServiceDto>();
+                services = services.Where(x => x.IsActive).ToList();
+            }
             return services.Select(ToServiceDto).ToList();
         }
 
@@ -158,12 +177,13 @@ namespace BeautyBookBackend.Services
                 Price = serviceDto.Price,
                 DurationMinutes = serviceDto.DurationMinutes,
                 ImageUrl = serviceDto.ImageUrl,
-                Tags = serviceDto.Tags ?? new List<string>()
+                Tags = serviceDto.Tags ?? new List<string>(),
+                IsActive = serviceDto.IsActive
             };
 
             await _muaRepository.AddServiceAsync(service);
             var success = await _unitOfWork.SaveChangesAsync() > 0;
-            if (success) await RecalculateProfileStateAsync(muaId);
+            if (success) await _eligibilityService.EvaluateAsync(muaId);
             return ToServiceDto(service);
         }
 
@@ -178,10 +198,11 @@ namespace BeautyBookBackend.Services
             service.DurationMinutes = serviceDto.DurationMinutes;
             service.ImageUrl = serviceDto.ImageUrl;
             service.Tags = serviceDto.Tags ?? new List<string>();
+            service.IsActive = serviceDto.IsActive;
 
-            var success = await _unitOfWork.SaveChangesAsync() > 0;
-            if (success) await RecalculateProfileStateAsync(muaId);
-            return success;
+            await _unitOfWork.SaveChangesAsync();
+            await _eligibilityService.EvaluateAsync(muaId);
+            return true;
         }
 
         public async Task<bool> DeleteMuaServiceAsync(Guid muaId, Guid serviceId)
@@ -190,9 +211,19 @@ namespace BeautyBookBackend.Services
             if (service == null) return false;
 
             _muaRepository.RemoveService(service);
-            var success = await _unitOfWork.SaveChangesAsync() > 0;
-            if (success) await RecalculateProfileStateAsync(muaId);
-            return success;
+            await _unitOfWork.SaveChangesAsync();
+            await _eligibilityService.EvaluateAsync(muaId);
+            return true;
+        }
+
+        public async Task<bool> SetMuaServiceActiveAsync(Guid muaId, Guid serviceId, bool isActive)
+        {
+            var service = await _muaRepository.GetServiceByIdForMuaAsync(serviceId, muaId);
+            if (service == null) return false;
+            service.IsActive = isActive;
+            await _unitOfWork.SaveChangesAsync();
+            await _eligibilityService.EvaluateAsync(muaId);
+            return true;
         }
 
         public async Task<List<PortfolioDto>> GetMuaPortfolioAsync(Guid muaId, Guid? currentUserId = null)
@@ -208,12 +239,20 @@ namespace BeautyBookBackend.Services
                 .OrderByDescending(p => p.CreatedAt)
                 .ToListAsync();
 
+            var isOwner = currentUserId == muaId;
+            if (!isOwner)
+            {
+                portfolios = portfolios
+                    .Where(p => !p.IsHidden && p.MakeupArtistProfile?.Status == Models.Enums.MuaStatus.Listed && p.MakeupArtistProfile.User?.IsActive == true && !p.MakeupArtistProfile.User.DeletedAt.HasValue)
+                    .ToList();
+            }
+
             return portfolios.Select(p => new PortfolioDto
             {
                 PortfolioId = p.PortfolioId,
                 MUAId = p.MUAId,
                 Title = p.Title,
-                ImageUrls = p.ImageUrls,
+                ImageUrls = isOwner ? p.ImageUrls : p.ImageUrls.Where(MuaEligibilityService.IsValidPublicUrl).ToList(),
                 Description = p.Description,
                 Tags = p.Tags,
                 IsHidden = p.IsHidden,
@@ -227,7 +266,7 @@ namespace BeautyBookBackend.Services
                 AuthorName = p.MakeupArtistProfile?.User?.FullName,
                 AuthorAvatarUrl = p.MakeupArtistProfile?.User?.AvatarUrl
                 ,Service = p.Service == null ? null : ToServiceDto(p.Service)
-            }).ToList();
+            }).Where(p => isOwner || p.ImageUrls.Count > 0).ToList();
         }
 
         public async Task<bool> AddPortfolioImageAsync(Guid muaId, PortfolioCreateRequest request)
@@ -249,9 +288,9 @@ namespace BeautyBookBackend.Services
                 ,ServiceId = request.ServiceId
             });
 
-            var success = await _unitOfWork.SaveChangesAsync() > 0;
-            if (success) await RecalculateProfileStateAsync(muaId);
-            return success;
+            await _unitOfWork.SaveChangesAsync();
+            await _eligibilityService.EvaluateAsync(muaId);
+            return true;
         }
 
         public async Task<bool> UpdatePortfolioImageAsync(Guid muaId, Guid portfolioId, PortfolioCreateRequest request)
@@ -266,18 +305,20 @@ namespace BeautyBookBackend.Services
             portfolio.Tags = request.Tags ?? new List<string>();
             portfolio.ServiceId = request.ServiceId;
 
-            var success = await _unitOfWork.SaveChangesAsync() > 0;
-            if (success) await RecalculateProfileStateAsync(muaId);
-            return success;
+            await _unitOfWork.SaveChangesAsync();
+            await _eligibilityService.EvaluateAsync(muaId);
+            return true;
         }
 
-        public async Task<bool> TogglePortfolioVisibilityAsync(Guid muaId, Guid portfolioId)
+        public async Task<bool> SetPortfolioVisibilityAsync(Guid muaId, Guid portfolioId, bool isHidden)
         {
             var portfolio = await _muaRepository.GetPortfolioByIdForMuaAsync(portfolioId, muaId);
             if (portfolio == null) return false;
 
-            portfolio.IsHidden = !portfolio.IsHidden;
-            return await _unitOfWork.SaveChangesAsync() > 0;
+            portfolio.IsHidden = isHidden;
+            await _unitOfWork.SaveChangesAsync();
+            await _eligibilityService.EvaluateAsync(muaId);
+            return true;
         }
 
         public async Task<bool> TogglePortfolioPinAsync(Guid muaId, Guid portfolioId)
@@ -296,7 +337,7 @@ namespace BeautyBookBackend.Services
 
             _muaRepository.RemovePortfolio(portfolio);
             var success = await _unitOfWork.SaveChangesAsync() > 0;
-            if (success) await RecalculateProfileStateAsync(muaId);
+            if (success) await _eligibilityService.EvaluateAsync(muaId);
             return success;
         }
 
@@ -423,9 +464,15 @@ namespace BeautyBookBackend.Services
                 .Include(p => p.Likes).Include(p => p.Saves).Include(p => p.Comments)
                 .Include(p => p.MakeupArtistProfile).ThenInclude(m => m.User)
                 .Include(p => p.Service).AsQueryable();
+            query = query.Where(p => !p.IsHidden
+                && p.MakeupArtistProfile != null
+                && p.MakeupArtistProfile.Status == Models.Enums.MuaStatus.Listed
+                && p.MakeupArtistProfile.User != null
+                && p.MakeupArtistProfile.User.IsActive
+                && p.MakeupArtistProfile.User.DeletedAt == null);
             query = type == "liked" ? query.Where(p => p.Likes.Any(x => x.UserId == userId)) : query.Where(p => p.Saves.Any(x => x.UserId == userId));
             var posts = await query.OrderByDescending(p => type == "liked" ? p.Likes.First(x => x.UserId == userId).CreatedAt : p.Saves.First(x => x.UserId == userId).CreatedAt).ToListAsync();
-            return posts.Select(p => new PortfolioDto { PortfolioId = p.PortfolioId, MUAId = p.MUAId, Title = p.Title, ImageUrls = p.ImageUrls, Description = p.Description, Tags = p.Tags, CreatedAt = p.CreatedAt, LikesCount = p.Likes.Count, CommentsCount = p.Comments.Count, SavesCount = p.Saves.Count, IsLiked = p.Likes.Any(x => x.UserId == userId), IsSaved = p.Saves.Any(x => x.UserId == userId), AuthorName = p.MakeupArtistProfile?.User?.FullName, AuthorAvatarUrl = p.MakeupArtistProfile?.User?.AvatarUrl, Service = p.Service == null ? null : ToServiceDto(p.Service) }).ToList();
+            return posts.Select(p => new PortfolioDto { PortfolioId = p.PortfolioId, MUAId = p.MUAId, Title = p.Title, ImageUrls = p.ImageUrls.Where(MuaEligibilityService.IsValidPublicUrl).ToList(), Description = p.Description, Tags = p.Tags, CreatedAt = p.CreatedAt, LikesCount = p.Likes.Count, CommentsCount = p.Comments.Count, SavesCount = p.Saves.Count, IsLiked = p.Likes.Any(x => x.UserId == userId), IsSaved = p.Saves.Any(x => x.UserId == userId), AuthorName = p.MakeupArtistProfile?.User?.FullName, AuthorAvatarUrl = p.MakeupArtistProfile?.User?.AvatarUrl, Service = p.Service == null ? null : ToServiceDto(p.Service) }).Where(p => p.ImageUrls.Count > 0).ToList();
         }
 
         public async Task<bool> UpdateStylesAsync(Guid muaId, List<int> styleIds)
@@ -447,7 +494,9 @@ namespace BeautyBookBackend.Services
                 }
             }
 
-            return await _unitOfWork.SaveChangesAsync() > 0;
+            await _unitOfWork.SaveChangesAsync();
+            await _eligibilityService.EvaluateAsync(muaId);
+            return true;
         }
 
         public async Task<List<MakeupStyleDto>> GetAllStylesAsync()
@@ -478,7 +527,8 @@ namespace BeautyBookBackend.Services
                 Status = profile.Status.ToString(),
                 RankScore = profile.RankScore,
                 ListedAt = profile.ListedAt,
-                LastActiveAt = profile.LastActiveAt
+                LastActiveAt = profile.LastActiveAt,
+                VerificationStatus = "NOT_SUBMITTED"
             };
         }
 
@@ -517,6 +567,7 @@ namespace BeautyBookBackend.Services
                 RankScore = profile.RankScore,
                 ListedAt = profile.ListedAt,
                 LastActiveAt = profile.LastActiveAt,
+                VerificationStatus = "NOT_SUBMITTED",
                 Services = services.Select(ToServiceDto).ToList(),
                 Portfolio = portfolio.Select(ToPortfolioDto).ToList()
             };
@@ -535,7 +586,8 @@ namespace BeautyBookBackend.Services
                 Price = service.Price,
                 DurationMinutes = service.DurationMinutes,
                 ImageUrl = service.ImageUrl,
-                Tags = service.Tags ?? new List<string>()
+                Tags = service.Tags ?? new List<string>(),
+                IsActive = service.IsActive
             };
         }
 
@@ -567,32 +619,7 @@ namespace BeautyBookBackend.Services
 
         public async Task RecalculateProfileStateAsync(Guid muaId)
         {
-            var profile = await _muaRepository.GetProfileWithFullDetailsAsync(muaId);
-            if (profile == null || profile.Status == Models.Enums.MuaStatus.Suspended)
-            {
-                return;
-            }
-
-            bool isListed = !string.IsNullOrEmpty(profile.User?.PhoneNumber) 
-                            && !string.IsNullOrEmpty(profile.Bio)
-                            && profile.Services.Count >= 1
-                            && profile.Portfolios.Count >= 3;
-
-            if (isListed && profile.Status == Models.Enums.MuaStatus.Draft)
-            {
-                profile.Status = Models.Enums.MuaStatus.Listed;
-                profile.ListedAt = DateTime.UtcNow;
-            }
-            else if (!isListed && profile.Status == Models.Enums.MuaStatus.Listed)
-            {
-                profile.Status = Models.Enums.MuaStatus.Draft;
-            }
-
-            profile.RankScore = (profile.Portfolios.Count * 2) 
-                              + (int)(profile.AverageRating * 10) 
-                              + (profile.TotalBookings * 3);
-
-            await RecalculateProfileQualityScoreAsync(muaId);
+            await _eligibilityService.EvaluateAsync(muaId);
         }
 
         public async Task RecalculateProfileQualityScoreAsync(Guid muaId)
@@ -605,37 +632,7 @@ namespace BeautyBookBackend.Services
 
             if (profile == null) return;
 
-            int score = 0;
-
-            // Avatar +10
-            if (!string.IsNullOrEmpty(profile.User?.AvatarUrl))
-            {
-                score += 10;
-            }
-
-            // Bio length > 50 +10
-            if (!string.IsNullOrEmpty(profile.Bio) && profile.Bio.Length > 50)
-            {
-                score += 10;
-            }
-
-            // Verified (Assume placeholder +20 for now since we don't have phone verification yet)
-            score += 20;
-
-            // Has >= 2 Services +30
-            if (profile.Services != null && profile.Services.Count >= 2)
-            {
-                score += 30;
-            }
-
-            // Has >= 3 Portfolios +30
-            if (profile.Portfolios != null && profile.Portfolios.Count >= 3)
-            {
-                score += 30;
-            }
-
-            profile.ProfileQualityScore = score;
-            await _dbContext.SaveChangesAsync();
+            await _eligibilityService.EvaluateAsync(muaId);
         }
     }
 }

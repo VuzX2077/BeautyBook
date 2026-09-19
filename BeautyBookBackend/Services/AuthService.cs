@@ -8,6 +8,8 @@ using BeautyBookBackend.DTOs;
 using BeautyBookBackend.Models;
 using BeautyBookBackend.Models.Enums;
 using BeautyBookBackend.Repositories;
+using BeautyBookBackend.Data;
+using Microsoft.EntityFrameworkCore;
 using Google.Apis.Auth;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
@@ -20,17 +22,20 @@ namespace BeautyBookBackend.Services
         private readonly IMuaRepository _muaRepository;
         private readonly IUnitOfWork _unitOfWork;
         private readonly IConfiguration _configuration;
+        private readonly ApplicationDbContext _dbContext;
 
         public AuthService(
             IUserRepository userRepository,
             IMuaRepository muaRepository,
             IUnitOfWork unitOfWork,
-            IConfiguration configuration)
+            IConfiguration configuration,
+            ApplicationDbContext dbContext)
         {
             _userRepository = userRepository;
             _muaRepository = muaRepository;
             _unitOfWork = unitOfWork;
             _configuration = configuration;
+            _dbContext = dbContext;
         }
 
         public async Task<UserDto?> RegisterAsync(RegisterDto registerDto)
@@ -47,29 +52,16 @@ namespace BeautyBookBackend.Services
                 Email = registerDto.Email,
                 PasswordHash = HashPassword(registerDto.Password),
                 PhoneNumber = registerDto.PhoneNumber,
-                Role = registerDto.Role,
+                Role = UserRole.Customer,
                 CreatedAt = DateTime.UtcNow,
                 IsActive = true
             };
 
             await _userRepository.AddAsync(user);
 
-            if (registerDto.Role == UserRole.MUA)
-            {
-                await _muaRepository.AddProfileAsync(new MakeupArtistProfile
-                {
-                    MUAId = user.UserId,
-                    Bio = "Hay viet vai dong gioi thieu ban than...",
-                    ExperienceYears = 0,
-                    AverageRating = 5.0m,
-                    TotalBookings = 0,
-                    PortfolioCoverUrl = null
-                });
-            }
-
             await _unitOfWork.SaveChangesAsync();
 
-            return ToUserDto(user, registerDto.Role == UserRole.MUA);
+            return ToUserDto(user, false);
         }
 
         public async Task<TokenDto?> LoginAsync(LoginDto loginDto)
@@ -86,27 +78,32 @@ namespace BeautyBookBackend.Services
         public async Task<TokenDto?> BecomeMuaAsync(Guid userId)
         {
             var user = await _userRepository.GetByIdAsync(userId);
-            if (user == null || !user.IsActive)
+            if (user == null || !user.IsActive || (user.Role != UserRole.Customer && user.Role != UserRole.MUA))
             {
                 return null;
             }
 
-            user.Role = UserRole.MUA;
+            await using var transaction = await _dbContext.Database.BeginTransactionAsync();
+            var lockKey = $"mua-onboarding:{user.UserId:N}";
+            await _dbContext.Database.ExecuteSqlInterpolatedAsync(
+                $"SELECT pg_advisory_xact_lock(hashtextextended({lockKey}, 0))");
 
-            if (!await _muaRepository.ProfileExistsAsync(user.UserId))
+            var profile = await _dbContext.MakeupArtistProfiles.FirstOrDefaultAsync(x => x.MUAId == user.UserId);
+            if (profile == null)
             {
                 await _muaRepository.AddProfileAsync(new MakeupArtistProfile
                 {
                     MUAId = user.UserId,
-                    Bio = "Hay viet vai dong gioi thieu ban than...",
                     ExperienceYears = 0,
-                    AverageRating = 5.0m,
+                    AverageRating = 0,
                     TotalBookings = 0,
-                    PortfolioCoverUrl = null
+                    Status = MuaStatus.Draft
                 });
             }
 
+            user.Role = UserRole.MUA;
             await _unitOfWork.SaveChangesAsync();
+            await transaction.CommitAsync();
 
             return await GenerateJwtTokenAsync(user);
         }

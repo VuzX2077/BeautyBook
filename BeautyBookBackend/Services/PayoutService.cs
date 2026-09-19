@@ -10,7 +10,8 @@ namespace BeautyBookBackend.Services
     public class PayoutService : IPayoutService
     {
         private readonly ApplicationDbContext _context;
-        public PayoutService(ApplicationDbContext context) => _context=context;
+        private readonly IMuaEligibilityService _eligibility;
+        public PayoutService(ApplicationDbContext context, IMuaEligibilityService eligibility) { _context=context; _eligibility=eligibility; }
 
         public async Task<IReadOnlyList<MuaBankAccountDto>> GetBankAccountsAsync(Guid muaId) =>
             (await _context.MuaBankAccounts.AsNoTracking().Where(x=>x.MuaId==muaId&&x.IsActive).OrderByDescending(x=>x.IsDefault).ThenBy(x=>x.CreatedAt).ToListAsync()).Select(ToBankDto).ToList();
@@ -42,6 +43,8 @@ namespace BeautyBookBackend.Services
 
         public async Task<PayoutDto> CreateAsync(Guid muaId,CreatePayoutRequest request)
         {
+            var eligibility = await _eligibility.EvaluateAsync(muaId);
+            if (eligibility?.CanWithdraw != true) throw new InvalidOperationException("Hồ sơ hiện không đủ điều kiện rút tiền.");
             if(string.IsNullOrWhiteSpace(request.IdempotencyKey))throw new InvalidOperationException("IdempotencyKey là bắt buộc.");
             var key=request.IdempotencyKey.Trim();
             await using var tx=await _context.Database.BeginTransactionAsync();

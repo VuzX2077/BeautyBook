@@ -16,11 +16,13 @@ namespace BeautyBookBackend.Controllers
     {
         private readonly IMuaService _muaService;
         private readonly IBookingService _bookingService;
+        private readonly IMuaEligibilityService _eligibilityService;
 
-        public MuaController(IMuaService muaService, IBookingService bookingService)
+        public MuaController(IMuaService muaService, IBookingService bookingService, IMuaEligibilityService eligibilityService)
         {
             _muaService = muaService;
             _bookingService = bookingService;
+            _eligibilityService = eligibilityService;
         }
 
         private Guid CurrentUserId => Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString());
@@ -54,6 +56,14 @@ namespace BeautyBookBackend.Controllers
         }
 
         [Authorize]
+        [HttpGet("eligibility")]
+        public async Task<IActionResult> GetEligibility()
+        {
+            var result = await _eligibilityService.EvaluateAsync(CurrentUserId);
+            return result == null ? NotFound(new { Message = "Chưa có hồ sơ Makeup Artist." }) : Ok(result);
+        }
+
+        [Authorize]
         [HttpPut("profile")]
         public async Task<IActionResult> UpdateProfile([FromBody] MuaUpdateDto updateDto)
         {
@@ -76,9 +86,16 @@ namespace BeautyBookBackend.Controllers
         [HttpGet("{id}/portfolio")]
         public async Task<IActionResult> GetPortfolio(Guid id)
         {
-            Guid? currentUserId = User.Identity?.IsAuthenticated == true ? CurrentUserId : null;
-            var portfolio = await _muaService.GetMuaPortfolioAsync(id, currentUserId);
+            var portfolio = await _muaService.GetMuaPortfolioAsync(id);
             return Ok(portfolio);
+        }
+
+        [Authorize]
+        [HttpGet("portfolio/me")]
+        public async Task<IActionResult> GetOwnPortfolio()
+        {
+            if (!await _muaService.HasMuaProfileAsync(CurrentUserId)) return Forbid();
+            return Ok(await _muaService.GetMuaPortfolioAsync(CurrentUserId, CurrentUserId));
         }
 
         [Authorize]
@@ -164,6 +181,14 @@ namespace BeautyBookBackend.Controllers
             if (!success) return BadRequest(new { Message = "Không thể xóa tác phẩm này." });
 
             return Ok(new { Message = "Đã xóa ảnh tác phẩm khỏi Portfolio." });
+        }
+
+        [Authorize]
+        [HttpPatch("portfolio/{portfolioId:guid}/visibility")]
+        public async Task<IActionResult> SetPortfolioVisibility(Guid portfolioId, [FromBody] SetPortfolioVisibilityRequest request)
+        {
+            var success = await _muaService.SetPortfolioVisibilityAsync(CurrentUserId, portfolioId, request.IsHidden);
+            return success ? Ok(new { request.IsHidden }) : NotFound();
         }
 
         // ================= STYLES =================

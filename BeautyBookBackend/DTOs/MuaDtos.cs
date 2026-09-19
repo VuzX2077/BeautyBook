@@ -15,6 +15,7 @@ namespace BeautyBookBackend.DTOs
         public int RankScore { get; set; }
         public DateTime? ListedAt { get; set; }
         public DateTime? LastActiveAt { get; set; }
+        public string VerificationStatus { get; set; } = "NOT_SUBMITTED";
 
         // Từ bảng User liên kết
         public string? FullName { get; set; }

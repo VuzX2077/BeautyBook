@@ -8,7 +8,7 @@ namespace BeautyBookBackend.Services
     public interface IMuaService
     {
         Task<List<MuaProfileDto>> GetMuasAsync(int page);
-        Task<MuaDetailDto?> GetMuaByIdAsync(Guid muaId);
+        Task<MuaDetailDto?> GetMuaByIdAsync(Guid muaId, Guid? currentUserId = null);
         Task<MuaProfileDto?> ApplyMuaAsync(Guid muaId, MuaApplicationRequestDto request);
         Task<bool> UpdateMuaProfileAsync(Guid muaId, MuaUpdateDto updateDto);
         Task RecalculateProfileStateAsync(Guid muaId);
@@ -16,9 +16,10 @@ namespace BeautyBookBackend.Services
         Task<bool> HasMuaProfileAsync(Guid muaId);
         
         // Services
-        Task<List<ServiceDto>> GetMuaServicesAsync(Guid muaId);
+        Task<List<ServiceDto>> GetMuaServicesAsync(Guid muaId, Guid? currentUserId = null);
         Task<ServiceDto?> AddMuaServiceAsync(Guid muaId, ServiceCreateDto serviceDto);
         Task<bool> UpdateMuaServiceAsync(Guid muaId, Guid serviceId, ServiceCreateDto serviceDto);
+        Task<bool> SetMuaServiceActiveAsync(Guid muaId, Guid serviceId, bool isActive);
         Task<bool> DeleteMuaServiceAsync(Guid muaId, Guid serviceId);
 
         // Portfolio
@@ -26,7 +27,7 @@ namespace BeautyBookBackend.Services
         Task<bool> AddPortfolioImageAsync(Guid muaId, PortfolioCreateRequest request);
         Task<bool> UpdatePortfolioImageAsync(Guid muaId, Guid portfolioId, PortfolioCreateRequest request);
         Task<bool> DeletePortfolioAsync(Guid muaId, Guid portfolioId);
-        Task<bool> TogglePortfolioVisibilityAsync(Guid muaId, Guid portfolioId);
+        Task<bool> SetPortfolioVisibilityAsync(Guid muaId, Guid portfolioId, bool isHidden);
         Task<bool> TogglePortfolioPinAsync(Guid muaId, Guid portfolioId);
 
         // Portfolio Interactions

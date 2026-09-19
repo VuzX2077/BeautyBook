@@ -65,6 +65,23 @@ namespace BeautyBookBackend.Services
             if (createDto.Services == null || !createDto.Services.Any()) return null;
             if (createDto.MUAId == Guid.Empty || createDto.BookingDate == default) return null;
 
+            // ServiceAddress is the canonical booking snapshot. Address remains an
+            // accepted alias so existing mobile clients keep working during rollout.
+            var serviceAddress = (createDto.ServiceAddress ?? createDto.Address)?.Trim();
+            if (string.IsNullOrWhiteSpace(serviceAddress))
+                throw new InvalidOperationException("Địa điểm thực hiện không hợp lệ.");
+            if (serviceAddress.Length > 500)
+                throw new InvalidOperationException("Địa điểm thực hiện không được vượt quá 500 ký tự.");
+
+            var hasLatitude = createDto.ServiceLatitude.HasValue;
+            var hasLongitude = createDto.ServiceLongitude.HasValue;
+            if (hasLatitude != hasLongitude
+                || (hasLatitude && (createDto.ServiceLatitude < -90 || createDto.ServiceLatitude > 90))
+                || (hasLongitude && (createDto.ServiceLongitude < -180 || createDto.ServiceLongitude > 180)))
+            {
+                throw new InvalidOperationException("Địa điểm thực hiện không hợp lệ.");
+            }
+
             decimal totalAmount = 0;
             int totalDuration = 0;
             var bookingServices = new List<Models.BookingService>();
@@ -126,7 +143,10 @@ namespace BeautyBookBackend.Services
                 BookingDate = DateTime.SpecifyKind(createDto.BookingDate.Date, DateTimeKind.Utc),
                 StartTime = createDto.StartTime,
                 EndTime = endTime,
-                Address = createDto.Address,
+                Address = serviceAddress,
+                ServiceAddress = serviceAddress,
+                ServiceLatitude = createDto.ServiceLatitude,
+                ServiceLongitude = createDto.ServiceLongitude,
                 Notes = createDto.Notes,
                 DepositRate = DepositRate,
                 DepositAmount = depositAmount,
@@ -710,7 +730,10 @@ namespace BeautyBookBackend.Services
                 BookingDate = booking.BookingDate,
                 StartTime = booking.StartTime,
                 EndTime = booking.EndTime,
-                Address = booking.Address,
+                Address = booking.ServiceAddress ?? booking.Address,
+                ServiceAddress = booking.ServiceAddress ?? booking.Address,
+                ServiceLatitude = booking.ServiceLatitude,
+                ServiceLongitude = booking.ServiceLongitude,
                 Notes = booking.Notes,
                 Status = booking.Status,
                 PaymentStatus = booking.PaymentStatus,

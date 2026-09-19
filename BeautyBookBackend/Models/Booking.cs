@@ -23,6 +23,9 @@ namespace BeautyBookBackend.Models
         public TimeSpan EndTime { get; set; }
         
         public string? Address { get; set; }
+        public string? ServiceAddress { get; set; }
+        public decimal? ServiceLatitude { get; set; }
+        public decimal? ServiceLongitude { get; set; }
         public string? Notes { get; set; }
 
         public BookingStatus Status { get; set; }

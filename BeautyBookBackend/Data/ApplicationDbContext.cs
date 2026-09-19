@@ -200,6 +200,11 @@ namespace BeautyBookBackend.Data
                 b.Property(x => x.ServiceLatitude).HasPrecision(9, 6);
                 b.Property(x => x.ServiceLongitude).HasPrecision(9, 6);
                 b.Property(x => x.DisputeReason).HasMaxLength(1000);
+                b.Property(x => x.CancellationReason).HasMaxLength(1000);
+                b.Property(x => x.CancellationPolicyRule).HasMaxLength(100);
+                b.Property(x => x.CancellationRefundPercentage).HasPrecision(5, 2);
+                b.Property(x => x.CancellationRefundAmount).HasPrecision(18, 2);
+                b.HasOne<User>().WithMany().HasForeignKey(x => x.CancelledBy).OnDelete(DeleteBehavior.SetNull);
             });
 
             modelBuilder.Entity<BookingService>(b =>
@@ -272,6 +277,7 @@ namespace BeautyBookBackend.Data
                 b.Property(x => x.ProviderReference).HasMaxLength(255);
                 b.Property(x => x.FailureCode).HasMaxLength(100);
                 b.Property(x => x.FailureMessage).HasMaxLength(1000);
+                b.ToTable(t => t.HasCheckConstraint("CK_Refunds_PositiveAmount", "\"Amount\" > 0"));
                 b.HasIndex(x => x.BookingPaymentId).IsUnique();
                 b.HasIndex(x => new { x.BookingId, x.Status });
 

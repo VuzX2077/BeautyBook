@@ -7,6 +7,7 @@ namespace BeautyBookBackend.Models.Enums
         LatePayment = 2,
         MuaConfirmationTimeout = 3,
         DisputeResolvedForCustomer = 4,
-        LegacyReconciliation = 5
+        LegacyReconciliation = 5,
+        CustomerCancelled = 6
     }
 }

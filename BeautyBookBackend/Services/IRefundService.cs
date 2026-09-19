@@ -6,7 +6,7 @@ namespace BeautyBookBackend.Services
 {
     public interface IRefundService
     {
-        Task<Refund> EnsureFullRefundAsync(Booking booking, BookingPayment payment, RefundReasonCode reasonCode, string reason, Guid? requestedBy);
+        Task<Refund> EnsureRefundAsync(Booking booking, BookingPayment payment, decimal amount, RefundReasonCode reasonCode, string reason, Guid? requestedBy);
         Task<RefundSummaryDto?> GetByBookingAsync(Guid bookingId);
         Task<RefundSummaryDto?> StartProcessingAsync(Guid refundId, Guid adminId, string? reference);
         Task<RefundSummaryDto?> CompleteAsync(Guid refundId, Guid adminId, string reference);

@@ -58,6 +58,13 @@ namespace BeautyBookBackend.DTOs
         public DateTime? CompletedAt { get; set; }
         public DateTime? RejectedAt { get; set; }
         public DateTime? CancelledAt { get; set; }
+        public Guid? CancelledBy { get; set; }
+        public BookingCancellationActor? CancellationActor { get; set; }
+        public string? CancellationReason { get; set; }
+        public string? CancellationPolicyRule { get; set; }
+        public decimal? CancellationRefundPercentage { get; set; }
+        public decimal? CancellationRefundAmount { get; set; }
+        public DateTime? CancellationAppointmentAtUtc { get; set; }
         public DateTime? DisputedAt { get; set; }
         public string? DisputeReason { get; set; }
         public DateTime? PaymentExpiresAt { get; set; }

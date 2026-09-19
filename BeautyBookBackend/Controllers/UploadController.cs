@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using BeautyBookBackend.Infrastructure;
 
 namespace BeautyBookBackend.Controllers
 {
@@ -10,9 +11,10 @@ namespace BeautyBookBackend.Controllers
     {
         private static readonly HashSet<string> AllowedTypes = new(StringComparer.OrdinalIgnoreCase)
         { "image/jpeg", "image/png", "image/webp", "image/heic" };
-        private readonly IWebHostEnvironment _environment;
+        private readonly string _storagePath;
 
-        public UploadController(IWebHostEnvironment environment) => _environment = environment;
+        public UploadController(IConfiguration configuration, IWebHostEnvironment environment) =>
+            _storagePath = UploadStorage.ResolvePath(configuration, environment);
 
         [HttpPost("image")]
         [RequestSizeLimit(10 * 1024 * 1024)]
@@ -23,12 +25,11 @@ namespace BeautyBookBackend.Controllers
 
             var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
             if (string.IsNullOrWhiteSpace(extension)) extension = ".jpg";
-            var folder = Path.Combine(_environment.ContentRootPath, "wwwroot", "uploads");
-            Directory.CreateDirectory(folder);
+            Directory.CreateDirectory(_storagePath);
             var fileName = $"{Guid.NewGuid():N}{extension}";
-            await using var stream = System.IO.File.Create(Path.Combine(folder, fileName));
+            await using var stream = System.IO.File.Create(Path.Combine(_storagePath, fileName));
             await file.CopyToAsync(stream);
-            var url = $"{Request.Scheme}://{Request.Host}/uploads/{fileName}";
+            var url = $"{Request.Scheme}://{Request.Host}{UploadStorage.RequestPath}/{fileName}";
             return Ok(new { Url = url });
         }
     }

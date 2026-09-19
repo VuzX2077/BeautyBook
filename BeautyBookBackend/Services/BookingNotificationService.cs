@@ -9,7 +9,12 @@ namespace BeautyBookBackend.Services;
 public class BookingNotificationService : IBookingNotificationService
 {
     private readonly ApplicationDbContext _db;
-    public BookingNotificationService(ApplicationDbContext db) => _db = db;
+    private readonly BookingTimeService _bookingTime;
+    public BookingNotificationService(ApplicationDbContext db, BookingTimeService bookingTime)
+    {
+        _db = db;
+        _bookingTime = bookingTime;
+    }
 
     public async Task RegisterDeviceAsync(Guid userId, string token, string platform, string? deviceName)
     {
@@ -42,7 +47,7 @@ public class BookingNotificationService : IBookingNotificationService
 
     public async Task ScheduleRemindersAsync(Booking booking)
     {
-        var startUtc = ToUtc(booking.BookingDate, booking.StartTime);
+        var startUtc = _bookingTime.ToUtc(booking.BookingDate, booking.StartTime);
         foreach (var (suffix, offset) in new[] { ("24H", TimeSpan.FromHours(24)), ("2H", TimeSpan.FromHours(2)), ("30M", TimeSpan.FromMinutes(30)) })
         foreach (var userId in new[] { booking.CustomerId, booking.MUAId })
             await AddUniqueAsync(booking, userId, $"BOOKING_REMINDER_{suffix}", "Bạn có lịch makeup sắp tới", ReminderBody(startUtc, offset), startUtc - offset);
@@ -75,12 +80,4 @@ public class BookingNotificationService : IBookingNotificationService
         ? $"Lịch hẹn bắt đầu sau {(int)offset.TotalHours} giờ. Nhấn để xem chi tiết."
         : $"Lịch hẹn bắt đầu sau {(int)offset.TotalMinutes} phút. Nhấn để xem chi tiết.";
 
-    public static DateTime ToUtc(DateTime date, TimeSpan time)
-    {
-        var local = DateTime.SpecifyKind(date.Date.Add(time), DateTimeKind.Unspecified);
-        TimeZoneInfo zone;
-        try { zone = TimeZoneInfo.FindSystemTimeZoneById("Asia/Ho_Chi_Minh"); }
-        catch { zone = TimeZoneInfo.FindSystemTimeZoneById("SE Asia Standard Time"); }
-        return TimeZoneInfo.ConvertTimeToUtc(local, zone);
-    }
 }

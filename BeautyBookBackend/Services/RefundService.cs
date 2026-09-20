@@ -99,6 +99,11 @@ namespace BeautyBookBackend.Services
             };
             _context.CustomerBankAccounts.Add(entity);
             await _context.SaveChangesAsync();
+            if (entity.IsDefault)
+            {
+                await AttachAwaitingRefundsAsync(customerId, entity, now);
+                await _context.SaveChangesAsync();
+            }
             await transaction.CommitAsync();
             return ToBankDto(entity);
         }
@@ -117,8 +122,14 @@ namespace BeautyBookBackend.Services
             entity.AccountNumber = request.AccountNumber.Trim();
             entity.AccountHolderName = request.AccountHolderName.Trim().ToUpperInvariant();
             entity.IsDefault = request.IsDefault;
-            entity.UpdatedAt = DateTime.UtcNow;
+            var now = DateTime.UtcNow;
+            entity.UpdatedAt = now;
             await _context.SaveChangesAsync();
+            if (entity.IsDefault)
+            {
+                await AttachAwaitingRefundsAsync(customerId, entity, now);
+                await _context.SaveChangesAsync();
+            }
             await transaction.CommitAsync();
             return ToBankDto(entity);
         }
@@ -423,6 +434,21 @@ namespace BeautyBookBackend.Services
         private Task ClearDefaultsAsync(Guid customerId) => _context.CustomerBankAccounts
             .Where(x => x.CustomerId == customerId && x.IsDefault)
             .ExecuteUpdateAsync(x => x.SetProperty(y => y.IsDefault, false));
+
+        private async Task AttachAwaitingRefundsAsync(Guid customerId, CustomerBankAccount bank, DateTime now)
+        {
+            var refunds = await _context.Refunds
+                .Where(x => x.Status == RefundStatus.AwaitingDestination
+                    && _context.Bookings.Any(b => b.BookingId == x.BookingId && b.CustomerId == customerId))
+                .ToListAsync();
+
+            foreach (var refund in refunds)
+            {
+                CaptureDestination(refund, bank, now);
+                refund.Status = RefundStatus.Pending;
+                refund.UpdatedAt = now;
+            }
+        }
 
         private static void CaptureDestination(Refund refund, CustomerBankAccount bank, DateTime now)
         {

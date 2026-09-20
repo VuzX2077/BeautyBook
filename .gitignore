@@ -207,6 +207,10 @@ PublishScripts/
 !**/[Pp]ackages/build/
 # Uncomment if necessary however generally it will be regenerated when needed
 #!**/[Pp]ackages/repositories.config
+
+# Runtime uploads are stored outside Git. Keep the directory placeholder only.
+BeautyBookBackend/wwwroot/uploads/*
+!BeautyBookBackend/wwwroot/uploads/.gitkeep
 # NuGet v3's project.json files produces more ignorable files
 *.nuget.props
 *.nuget.targets

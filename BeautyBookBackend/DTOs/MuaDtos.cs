@@ -9,6 +9,7 @@ namespace BeautyBookBackend.DTOs
         public string? Bio { get; set; }
         public int ExperienceYears { get; set; }
         public decimal AverageRating { get; set; }
+        public int ReviewCount { get; set; }
         public int TotalBookings { get; set; }
         public string? PortfolioCoverUrl { get; set; }
         

@@ -31,15 +31,38 @@ namespace BeautyBookBackend.Services
         {
             var pageSize = 20; // Hardcoded MVP page size
             var profiles = await _muaRepository.GetProfilesAsync(page, pageSize);
-            var result = new List<MuaProfileDto>();
+            var muaIds = profiles.Select(profile => profile.MUAId).ToList();
+            if (muaIds.Count == 0) return new List<MuaProfileDto>();
 
-            foreach (var profile in profiles)
+            var styleRows = await _dbContext.MUAStyles
+                .Where(link => muaIds.Contains(link.MUAId) && link.MakeupStyle != null && link.MakeupStyle.Name != null)
+                .Select(link => new { link.MUAId, Name = link.MakeupStyle!.Name! })
+                .ToListAsync();
+            var stylesByMua = styleRows
+                .GroupBy(row => row.MUAId)
+                .ToDictionary(group => group.Key, group => group.Select(row => row.Name).ToList());
+
+            var minPrices = await _dbContext.Services
+                .Where(service => muaIds.Contains(service.MUAId) && service.IsActive)
+                .GroupBy(service => service.MUAId)
+                .Select(group => new { MuaId = group.Key, MinPrice = group.Min(service => service.Price) })
+                .ToDictionaryAsync(row => row.MuaId, row => (decimal?)row.MinPrice);
+
+            var reviewCounts = await _dbContext.Reviews
+                .Where(review => muaIds.Contains(review.MUAId))
+                .GroupBy(review => review.MUAId)
+                .Select(group => new { MuaId = group.Key, Count = group.Count() })
+                .ToDictionaryAsync(row => row.MuaId, row => row.Count);
+
+            return profiles.Select(profile =>
             {
-                var styles = await _muaRepository.GetStyleNamesByMuaIdAsync(profile.MUAId);
-                result.Add(await ToMuaProfileDtoWithPriceAsync(profile, styles));
-            }
-
-            return result;
+                var dto = ToMuaProfileDto(
+                    profile,
+                    stylesByMua.GetValueOrDefault(profile.MUAId) ?? new List<string>());
+                dto.MinPrice = minPrices.GetValueOrDefault(profile.MUAId);
+                dto.ReviewCount = reviewCounts.GetValueOrDefault(profile.MUAId);
+                return dto;
+            }).ToList();
         }
 
         public async Task<MuaProfileDto?> ApplyMuaAsync(Guid muaId, MuaApplicationRequestDto request)
@@ -106,7 +129,9 @@ namespace BeautyBookBackend.Services
                     item.ImageUrls = item.ImageUrls.Where(MuaEligibilityService.IsValidPublicUrl).ToList();
                 portfolio = portfolio.Where(x => x.ImageUrls.Count > 0).ToList();
             }
-            return ToMuaDetailDto(profile, styles, services, portfolio);
+            var dto = ToMuaDetailDto(profile, styles, services, portfolio);
+            dto.ReviewCount = await _dbContext.Reviews.CountAsync(review => review.MUAId == muaId);
+            return dto;
         }
 
         public async Task<bool> UpdateMuaProfileAsync(Guid muaId, MuaUpdateDto updateDto)
@@ -530,13 +555,6 @@ namespace BeautyBookBackend.Services
                 LastActiveAt = profile.LastActiveAt,
                 VerificationStatus = "NOT_SUBMITTED"
             };
-        }
-
-        private async Task<MuaProfileDto> ToMuaProfileDtoWithPriceAsync(MakeupArtistProfile profile, List<string> styles)
-        {
-            var dto = ToMuaProfileDto(profile, styles);
-            dto.MinPrice = await _muaRepository.GetMinPriceByMuaIdAsync(profile.MUAId);
-            return dto;
         }
 
         private static MuaDetailDto ToMuaDetailDto(

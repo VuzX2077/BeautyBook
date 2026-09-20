@@ -167,6 +167,7 @@ builder.Services.AddScoped<IMuaScheduleService, MuaScheduleService>();
 builder.Services.AddSingleton<BookingTimeService>();
 builder.Services.AddScoped<IBookingService, BookingService>();
 builder.Services.AddScoped<IBookingNotificationService, BookingNotificationService>();
+builder.Services.AddScoped<IAdminNotificationService, AdminNotificationService>();
 builder.Services.AddScoped<IRefundService, RefundService>();
 builder.Services.AddScoped<IRefundPayoutProvider, PayOsRefundPayoutProvider>();
 builder.Services.AddScoped<IBookingRefundPolicyService, BookingRefundPolicyService>();

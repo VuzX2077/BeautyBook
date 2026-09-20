@@ -52,14 +52,16 @@ public class PushNotificationWorker : BackgroundService
         var starting = await db.Bookings.Where(b => b.Status == BookingStatus.Approved && b.BookingDate <= now.AddDays(1)).ToListAsync(ct);
         foreach (var booking in starting.Where(b => bookingTime.ToUtc(b.BookingDate, b.StartTime) <= now))
         { booking.Status = BookingStatus.InProgress; booking.StartedAt = now; booking.UpdatedAt = now; }
+        if (db.ChangeTracker.HasChanges()) await db.SaveChangesAsync(ct);
 
         var pending = await db.AppNotifications.Where(n => n.Status == "Pending" && n.ScheduledAt <= now).OrderBy(n => n.ScheduledAt).Take(100).ToListAsync(ct);
         foreach (var notification in pending)
         {
             var tokens = await db.DevicePushTokens.Where(x => x.UserId == notification.UserId && x.IsActive).Select(x => x.ExpoPushToken).ToListAsync(ct);
-            if (tokens.Count == 0) continue;
+            if (tokens.Count == 0) { notification.Status = "Skipped"; notification.LastError = "No active push token"; continue; }
             var data = string.IsNullOrWhiteSpace(notification.DataJson) ? new { } : JsonSerializer.Deserialize<object>(notification.DataJson)!;
-            var messages = tokens.Select(token => new { to = token, sound = "default", channelId = "booking-reminders", title = notification.Title, body = notification.Body, data }).ToArray();
+            var channelId = notification.Type == "ADMIN_ANNOUNCEMENT" ? "default" : "booking-reminders";
+            var messages = tokens.Select(token => new { to = token, sound = "default", channelId, title = notification.Title, body = notification.Body, data }).ToArray();
             try
             {
                 var response = await _httpClientFactory.CreateClient("ExpoPush").PostAsJsonAsync("--/api/v2/push/send", messages, ct);

@@ -41,6 +41,7 @@ namespace BeautyBookBackend.Data
         public DbSet<PortfolioComment> PortfolioComments { get; set; } = null!;
         public DbSet<DevicePushToken> DevicePushTokens { get; set; } = null!;
         public DbSet<AppNotification> AppNotifications { get; set; } = null!;
+        public DbSet<NotificationCampaign> NotificationCampaigns { get; set; } = null!;
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -371,6 +372,20 @@ namespace BeautyBookBackend.Data
                 b.HasIndex(x => new { x.Status, x.ScheduledAt });
                 b.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
                 b.HasOne(x => x.Booking).WithMany().HasForeignKey(x => x.BookingId).OnDelete(DeleteBehavior.Cascade);
+                b.HasOne(x => x.Campaign).WithMany(x => x.Notifications).HasForeignKey(x => x.CampaignId).OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<NotificationCampaign>(b =>
+            {
+                b.HasKey(x => x.Id);
+                b.Property(x => x.Title).HasMaxLength(200).IsRequired();
+                b.Property(x => x.Body).HasMaxLength(1000).IsRequired();
+                b.Property(x => x.Audience).HasMaxLength(30).IsRequired();
+                b.Property(x => x.Url).HasMaxLength(500);
+                b.Property(x => x.Status).HasMaxLength(20).IsRequired();
+                b.HasIndex(x => x.IdempotencyKey).IsUnique();
+                b.HasIndex(x => x.CreatedAt);
+                b.HasOne(x => x.CreatedByAdmin).WithMany().HasForeignKey(x => x.CreatedByAdminId).OnDelete(DeleteBehavior.Restrict);
             });
 
             modelBuilder.Entity<MessageReaction>(b =>

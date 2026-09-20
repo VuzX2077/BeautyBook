@@ -1,10 +1,13 @@
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using BeautyBookBackend.Data;
 
 #nullable disable
 
 namespace BeautyBookBackend.Migrations;
 
 [Migration("20260920153000_AddNotificationReadState")]
+[DbContext(typeof(ApplicationDbContext))]
 public partial class AddNotificationReadState : Migration
 {
     protected override void Up(MigrationBuilder migrationBuilder)

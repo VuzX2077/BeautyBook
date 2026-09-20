@@ -366,6 +366,7 @@ namespace BeautyBookBackend.Data
                 b.Property(x => x.Title).HasMaxLength(200).IsRequired();
                 b.Property(x => x.Body).HasMaxLength(1000).IsRequired();
                 b.Property(x => x.Status).HasMaxLength(20).IsRequired();
+                b.HasIndex(x => new { x.UserId, x.ReadAt, x.CreatedAt });
                 b.HasIndex(x => new { x.BookingId, x.UserId, x.Type }).IsUnique();
                 b.HasIndex(x => new { x.Status, x.ScheduledAt });
                 b.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);

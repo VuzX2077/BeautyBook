@@ -37,6 +37,35 @@ public class NotificationController : ControllerBase
         return NoContent();
     }
 
+    [HttpGet]
+    public async Task<IActionResult> GetInbox([FromQuery] int take = 50)
+    {
+        if (!TryGetCurrentUserId(out var userId)) return Unauthorized();
+        return Ok(await _service.GetInboxAsync(userId, take));
+    }
+
+    [HttpGet("unread-count")]
+    public async Task<IActionResult> GetUnreadCount()
+    {
+        if (!TryGetCurrentUserId(out var userId)) return Unauthorized();
+        return Ok(new { Count = await _service.GetUnreadCountAsync(userId) });
+    }
+
+    [HttpPut("{id:guid}/read")]
+    public async Task<IActionResult> MarkRead(Guid id)
+    {
+        if (!TryGetCurrentUserId(out var userId)) return Unauthorized();
+        return await _service.MarkReadAsync(userId, id) ? NoContent() : NotFound();
+    }
+
+    [HttpPut("read-all")]
+    public async Task<IActionResult> MarkAllRead()
+    {
+        if (!TryGetCurrentUserId(out var userId)) return Unauthorized();
+        await _service.MarkAllReadAsync(userId);
+        return NoContent();
+    }
+
     private static bool IsExpoPushToken(string token) =>
         !string.IsNullOrWhiteSpace(token)
         && (token.StartsWith("ExponentPushToken[", StringComparison.Ordinal)

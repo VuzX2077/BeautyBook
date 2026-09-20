@@ -12,6 +12,7 @@ using BeautyBookBackend.Hubs;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.FileProviders;
 using BeautyBookBackend.Infrastructure;
+using Microsoft.AspNetCore.HttpOverrides;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -54,6 +55,14 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 
 // Add services to the container.
 builder.Services.AddControllers();
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    // Render's proxy addresses are dynamic. Only the standard forwarded headers
+    // are accepted, and image URLs are generated from trusted configuration.
+    options.KnownNetworks.Clear();
+    options.KnownProxies.Clear();
+});
 builder.Services.Configure<ApiBehaviorOptions>(options =>
 {
     options.InvalidModelStateResponseFactory = context => new BadRequestObjectResult(new
@@ -170,6 +179,7 @@ builder.Services.AddHostedService<MuaReceivableReconciliationService>();
 builder.Services.AddHostedService<PayoutReconciliationService>();
 builder.Services.AddHostedService<PushNotificationWorker>();
 builder.Services.AddScoped<IWalletService, WalletService>();
+builder.Services.AddHttpClient<IImageStorage, SupabaseImageStorage>();
 builder.Services.AddScoped<IFeedService, FeedService>();
 builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddHttpClient<IPayOsService, PayOsService>(client =>
@@ -200,6 +210,7 @@ if (builder.Configuration.GetValue<bool>("ApplyMigrations"))
 }
 
 // Configure the HTTP request pipeline.
+app.UseForwardedHeaders();
 app.UseSwagger();
 app.UseSwaggerUI();
 

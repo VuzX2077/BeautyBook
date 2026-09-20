@@ -14,6 +14,17 @@ namespace BeautyBookBackend.Models
         public Guid? RequestedBy { get; set; }
         public Guid? LastHandledBy { get; set; }
         public string? ProviderReference { get; set; }
+        public string? ProviderPayoutId { get; set; }
+        public string? ProviderReferenceId { get; set; }
+        public string? LastProviderState { get; set; }
+        public string? DestinationBankBin { get; set; }
+        public string? DestinationBankName { get; set; }
+        public string? DestinationAccountNumber { get; set; }
+        public string? DestinationAccountName { get; set; }
+        public DateTime? DestinationCapturedAt { get; set; }
+        public int AttemptCount { get; set; }
+        public DateTime? LastAttemptAt { get; set; }
+        public DateTime? NextRetryAt { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime? ProcessingAt { get; set; }
         public DateTime? CompletedAt { get; set; }

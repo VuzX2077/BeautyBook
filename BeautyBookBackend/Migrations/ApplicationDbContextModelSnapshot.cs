@@ -40,6 +40,9 @@ namespace BeautyBookBackend.Migrations
                     b.Property<Guid?>("BookingId")
                         .HasColumnType("uuid");
 
+                    b.Property<Guid?>("CampaignId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -80,6 +83,8 @@ namespace BeautyBookBackend.Migrations
 
                     b.HasIndex("UserId");
 
+                    b.HasIndex("CampaignId");
+
                     b.HasIndex("UserId", "ReadAt", "CreatedAt");
 
                     b.HasIndex("Status", "ScheduledAt");
@@ -88,6 +93,25 @@ namespace BeautyBookBackend.Migrations
                         .IsUnique();
 
                     b.ToTable("AppNotifications");
+                });
+
+            modelBuilder.Entity("BeautyBookBackend.Models.NotificationCampaign", b =>
+                {
+                    b.Property<Guid>("Id").ValueGeneratedOnAdd().HasColumnType("uuid");
+                    b.Property<string>("Audience").IsRequired().HasMaxLength(30).HasColumnType("character varying(30)");
+                    b.Property<string>("Body").IsRequired().HasMaxLength(1000).HasColumnType("character varying(1000)");
+                    b.Property<DateTime>("CreatedAt").HasColumnType("timestamp with time zone");
+                    b.Property<Guid>("CreatedByAdminId").HasColumnType("uuid");
+                    b.Property<Guid>("IdempotencyKey").HasColumnType("uuid");
+                    b.Property<int>("RecipientCount").HasColumnType("integer");
+                    b.Property<string>("Status").IsRequired().HasMaxLength(20).HasColumnType("character varying(20)");
+                    b.Property<string>("Title").IsRequired().HasMaxLength(200).HasColumnType("character varying(200)");
+                    b.Property<string>("Url").HasMaxLength(500).HasColumnType("character varying(500)");
+                    b.HasKey("Id");
+                    b.HasIndex("CreatedAt");
+                    b.HasIndex("CreatedByAdminId");
+                    b.HasIndex("IdempotencyKey").IsUnique();
+                    b.ToTable("NotificationCampaigns");
                 });
 
             modelBuilder.Entity("BeautyBookBackend.Models.Booking", b =>
@@ -1517,6 +1541,11 @@ namespace BeautyBookBackend.Migrations
                         .HasForeignKey("BookingId")
                         .OnDelete(DeleteBehavior.Cascade);
 
+                    b.HasOne("BeautyBookBackend.Models.NotificationCampaign", "Campaign")
+                        .WithMany("Notifications")
+                        .HasForeignKey("CampaignId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
                     b.HasOne("BeautyBookBackend.Models.User", "User")
                         .WithMany()
                         .HasForeignKey("UserId")
@@ -1525,7 +1554,20 @@ namespace BeautyBookBackend.Migrations
 
                     b.Navigation("Booking");
 
+                    b.Navigation("Campaign");
+
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("BeautyBookBackend.Models.NotificationCampaign", b =>
+                {
+                    b.HasOne("BeautyBookBackend.Models.User", "CreatedByAdmin")
+                        .WithMany()
+                        .HasForeignKey("CreatedByAdminId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("CreatedByAdmin");
                 });
 
             modelBuilder.Entity("BeautyBookBackend.Models.Booking", b =>

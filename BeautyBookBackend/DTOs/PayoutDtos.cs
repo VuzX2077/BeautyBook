@@ -5,7 +5,7 @@ namespace BeautyBookBackend.DTOs
 {
     public class UpsertMuaBankAccountRequest
     {
-        [Required, StringLength(20, MinimumLength=3)] public string BankCode { get; set; } = string.Empty;
+        [Required, StringLength(20, MinimumLength=2)] public string BankCode { get; set; } = string.Empty;
         [StringLength(100)] public string? BankName { get; set; }
         [Required, StringLength(30, MinimumLength=5)] public string AccountNumber { get; set; } = string.Empty;
         [Required, StringLength(150, MinimumLength=2)] public string AccountHolderName { get; set; } = string.Empty;

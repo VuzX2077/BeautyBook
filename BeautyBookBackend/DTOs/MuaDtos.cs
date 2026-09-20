@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 
 namespace BeautyBookBackend.DTOs
 {
@@ -99,6 +100,7 @@ namespace BeautyBookBackend.DTOs
     {
         public string? Title { get; set; }
         public List<string> ImageUrls { get; set; } = new();
+        [MaxLength(2000, ErrorMessage = "Mô tả portfolio không được vượt quá 2000 ký tự.")]
         public string? Description { get; set; }
         public List<string> Tags { get; set; } = new();
         public Guid? ServiceId { get; set; }

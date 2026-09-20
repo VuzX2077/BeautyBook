@@ -94,7 +94,7 @@ namespace BeautyBookBackend.Data
             modelBuilder.Entity<Portfolio>(b =>
             {
                 b.HasKey(p => p.PortfolioId);
-                b.Property(p => p.Description).HasMaxLength(500);
+                b.Property(p => p.Description).HasMaxLength(2000);
                 b.HasOne(p => p.MakeupArtistProfile)
                  .WithMany(m => m.Portfolios)
                  .HasForeignKey(p => p.MUAId)

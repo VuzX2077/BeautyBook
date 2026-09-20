@@ -49,6 +49,9 @@ namespace BeautyBookBackend.Migrations
                     b.Property<string>("LastError")
                         .HasColumnType("text");
 
+                    b.Property<DateTime?>("ReadAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTime>("ScheduledAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -76,6 +79,8 @@ namespace BeautyBookBackend.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("UserId");
+
+                    b.HasIndex("UserId", "ReadAt", "CreatedAt");
 
                     b.HasIndex("Status", "ScheduledAt");
 

@@ -3,6 +3,7 @@ using BeautyBookBackend.Data;
 using BeautyBookBackend.Models;
 using BeautyBookBackend.Models.Enums;
 using Microsoft.EntityFrameworkCore;
+using BeautyBookBackend.DTOs;
 
 namespace BeautyBookBackend.Services;
 
@@ -44,6 +45,46 @@ public class BookingNotificationService : IBookingNotificationService
     public Task CancelPendingAsync(Guid bookingId) => _db.AppNotifications
         .Where(x => x.BookingId == bookingId && x.Status == "Pending")
         .ExecuteUpdateAsync(x => x.SetProperty(n => n.Status, "Cancelled"));
+
+    public async Task<IReadOnlyList<AppNotificationDto>> GetInboxAsync(Guid userId, int take)
+    {
+        var now = DateTime.UtcNow;
+        var items = await _db.AppNotifications.AsNoTracking()
+            .Where(x => x.UserId == userId && x.ScheduledAt <= now && x.Status != "Cancelled")
+            .OrderByDescending(x => x.CreatedAt)
+            .Take(Math.Clamp(take, 1, 100))
+            .ToListAsync();
+
+        return items.Select(x => new AppNotificationDto(
+            x.Id, x.Type, x.Title, x.Body, ReadUrl(x.DataJson), x.CreatedAt, x.ReadAt)).ToList();
+    }
+
+    public Task<int> GetUnreadCountAsync(Guid userId) => _db.AppNotifications
+        .CountAsync(x => x.UserId == userId && x.ScheduledAt <= DateTime.UtcNow
+            && x.Status != "Cancelled" && x.ReadAt == null);
+
+    public async Task<bool> MarkReadAsync(Guid userId, Guid notificationId)
+    {
+        var changed = await _db.AppNotifications
+            .Where(x => x.Id == notificationId && x.UserId == userId && x.ReadAt == null)
+            .ExecuteUpdateAsync(x => x.SetProperty(n => n.ReadAt, DateTime.UtcNow));
+        return changed > 0 || await _db.AppNotifications.AnyAsync(x => x.Id == notificationId && x.UserId == userId);
+    }
+
+    public Task MarkAllReadAsync(Guid userId) => _db.AppNotifications
+        .Where(x => x.UserId == userId && x.ScheduledAt <= DateTime.UtcNow && x.ReadAt == null)
+        .ExecuteUpdateAsync(x => x.SetProperty(n => n.ReadAt, DateTime.UtcNow));
+
+    private static string? ReadUrl(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            return document.RootElement.TryGetProperty("url", out var url) ? url.GetString() : null;
+        }
+        catch (JsonException) { return null; }
+    }
 
     public async Task ScheduleRemindersAsync(Booking booking)
     {

@@ -17,3 +17,12 @@ public class UnregisterPushTokenRequest
     [Required, MaxLength(255)]
     public string ExpoPushToken { get; set; } = string.Empty;
 }
+
+public record AppNotificationDto(
+    Guid Id,
+    string Type,
+    string Title,
+    string Body,
+    string? Url,
+    DateTime CreatedAt,
+    DateTime? ReadAt);

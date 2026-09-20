@@ -11,6 +11,7 @@ public class AppNotification
     public string? DataJson { get; set; }
     public DateTime ScheduledAt { get; set; }
     public DateTime? SentAt { get; set; }
+    public DateTime? ReadAt { get; set; }
     public int AttemptCount { get; set; }
     public string Status { get; set; } = "Pending";
     public string? LastError { get; set; }

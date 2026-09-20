@@ -3,6 +3,7 @@ using BeautyBookBackend.DTOs;
 using BeautyBookBackend.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using BeautyBookBackend.Models.Enums;
 
 namespace BeautyBookBackend.Controllers
 {
@@ -15,6 +16,17 @@ namespace BeautyBookBackend.Controllers
         public RefundController(IRefundService refundService) => _refundService = refundService;
 
         private Guid CurrentUserId => Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString());
+
+        [HttpGet]
+        public async Task<IActionResult> GetQueue([FromQuery] RefundStatus? status = null) =>
+            Ok(await _refundService.GetAdminQueueAsync(status));
+
+        [HttpGet("{id:guid}")]
+        public async Task<IActionResult> GetById(Guid id)
+        {
+            var result = await _refundService.GetAdminByIdAsync(id);
+            return result == null ? NotFound() : Ok(result);
+        }
 
         [HttpPost("{id:guid}/start-processing")]
         public async Task<IActionResult> StartProcessing(Guid id, [FromBody] RefundProcessingRequest request)

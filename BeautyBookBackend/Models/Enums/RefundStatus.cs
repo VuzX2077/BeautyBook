@@ -6,6 +6,7 @@ namespace BeautyBookBackend.Models.Enums
         ManualActionRequired = 1,
         Processing = 2,
         Completed = 3,
-        Failed = 4
+        Failed = 4,
+        AwaitingDestination = 5
     }
 }

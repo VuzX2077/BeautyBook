@@ -11,12 +11,53 @@ namespace BeautyBookBackend.DTOs
         public RefundReasonCode ReasonCode { get; set; }
         public string Reason { get; set; } = string.Empty;
         public string? ProviderReference { get; set; }
+        public string? MaskedDestinationAccountNumber { get; set; }
+        public string? DestinationBankName { get; set; }
+        public string? DestinationAccountName { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime? ProcessingAt { get; set; }
         public DateTime? CompletedAt { get; set; }
         public DateTime? FailedAt { get; set; }
         public string? FailureCode { get; set; }
         public string? FailureMessage { get; set; }
+    }
+
+    public class CustomerBankAccountDto
+    {
+        public Guid Id { get; set; }
+        public string BankBin { get; set; } = string.Empty;
+        public string? BankName { get; set; }
+        public string MaskedAccountNumber { get; set; } = string.Empty;
+        public string AccountHolderName { get; set; } = string.Empty;
+        public bool IsDefault { get; set; }
+    }
+
+    public class UpsertCustomerBankAccountRequest
+    {
+        [Required, RegularExpression("^[0-9]{6}$")]
+        public string BankBin { get; set; } = string.Empty;
+        [MaxLength(100)] public string? BankName { get; set; }
+        [Required, RegularExpression("^[A-Za-z0-9]{5,30}$")]
+        public string AccountNumber { get; set; } = string.Empty;
+        [Required, MaxLength(150)] public string AccountHolderName { get; set; } = string.Empty;
+        public bool IsDefault { get; set; }
+    }
+
+    public class RefundDestinationRequest
+    {
+        [Required] public Guid BankAccountId { get; set; }
+    }
+
+    public class AdminRefundDto : RefundSummaryDto
+    {
+        public Guid BookingId { get; set; }
+        public Guid CustomerId { get; set; }
+        public string? CustomerName { get; set; }
+        public string? DestinationBankBin { get; set; }
+        public string? DestinationAccountNumber { get; set; }
+        public int AttemptCount { get; set; }
+        public string? ProviderPayoutId { get; set; }
+        public string? LastProviderState { get; set; }
     }
 
     public class RefundProcessingRequest

@@ -22,6 +22,7 @@ namespace BeautyBookBackend.Data
         public DbSet<BookingService> BookingServices { get; set; } = null!;
         public DbSet<BookingPayment> BookingPayments { get; set; } = null!;
         public DbSet<Refund> Refunds { get; set; } = null!;
+        public DbSet<CustomerBankAccount> CustomerBankAccounts { get; set; } = null!;
         public DbSet<MuaReceivable> MuaReceivables { get; set; } = null!;
         public DbSet<MuaBankAccount> MuaBankAccounts { get; set; } = null!;
         public DbSet<Payout> Payouts { get; set; } = null!;
@@ -269,17 +270,38 @@ namespace BeautyBookBackend.Data
                     .OnDelete(DeleteBehavior.Restrict);
             });
 
+            modelBuilder.Entity<CustomerBankAccount>(b =>
+            {
+                b.HasKey(x => x.Id);
+                b.Property(x => x.BankBin).HasMaxLength(20).IsRequired();
+                b.Property(x => x.BankName).HasMaxLength(100);
+                b.Property(x => x.AccountNumber).HasMaxLength(30).IsRequired();
+                b.Property(x => x.AccountHolderName).HasMaxLength(150).IsRequired();
+                b.HasIndex(x => new { x.CustomerId, x.IsActive });
+                b.HasIndex(x => x.CustomerId).HasDatabaseName("UX_CustomerBankAccounts_Default")
+                    .IsUnique().HasFilter("\"IsDefault\" = TRUE AND \"IsActive\" = TRUE");
+                b.HasOne(x => x.Customer).WithMany().HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.Restrict);
+            });
+
             modelBuilder.Entity<Refund>(b =>
             {
                 b.HasKey(x => x.RefundId);
                 b.Property(x => x.Amount).HasPrecision(18, 2);
                 b.Property(x => x.Reason).HasMaxLength(1000).IsRequired();
                 b.Property(x => x.ProviderReference).HasMaxLength(255);
+                b.Property(x => x.ProviderPayoutId).HasMaxLength(255);
+                b.Property(x => x.ProviderReferenceId).HasMaxLength(100);
+                b.Property(x => x.LastProviderState).HasMaxLength(50);
+                b.Property(x => x.DestinationBankBin).HasMaxLength(20);
+                b.Property(x => x.DestinationBankName).HasMaxLength(100);
+                b.Property(x => x.DestinationAccountNumber).HasMaxLength(30);
+                b.Property(x => x.DestinationAccountName).HasMaxLength(150);
                 b.Property(x => x.FailureCode).HasMaxLength(100);
                 b.Property(x => x.FailureMessage).HasMaxLength(1000);
                 b.ToTable(t => t.HasCheckConstraint("CK_Refunds_PositiveAmount", "\"Amount\" > 0"));
                 b.HasIndex(x => x.BookingPaymentId).IsUnique();
                 b.HasIndex(x => new { x.BookingId, x.Status });
+                b.HasIndex(x => x.ProviderReferenceId).IsUnique().HasFilter("\"ProviderReferenceId\" IS NOT NULL");
 
                 b.HasOne(x => x.Booking)
                     .WithMany()

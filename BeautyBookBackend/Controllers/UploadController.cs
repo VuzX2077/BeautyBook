@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using BeautyBookBackend.Infrastructure;
+using BeautyBookBackend.Services;
 
 namespace BeautyBookBackend.Controllers
 {
@@ -11,10 +11,17 @@ namespace BeautyBookBackend.Controllers
     {
         private static readonly HashSet<string> AllowedTypes = new(StringComparer.OrdinalIgnoreCase)
         { "image/jpeg", "image/png", "image/webp", "image/heic" };
-        private readonly string _storagePath;
+        private static readonly IReadOnlyDictionary<string, string> ExtensionsByContentType =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["image/jpeg"] = ".jpg",
+                ["image/png"] = ".png",
+                ["image/webp"] = ".webp",
+                ["image/heic"] = ".heic"
+            };
+        private readonly IImageStorage _imageStorage;
 
-        public UploadController(IConfiguration configuration, IWebHostEnvironment environment) =>
-            _storagePath = UploadStorage.ResolvePath(configuration, environment);
+        public UploadController(IImageStorage imageStorage) => _imageStorage = imageStorage;
 
         [HttpPost("image")]
         [RequestSizeLimit(10 * 1024 * 1024)]
@@ -23,13 +30,13 @@ namespace BeautyBookBackend.Controllers
             if (file.Length == 0 || file.Length > 10 * 1024 * 1024 || !AllowedTypes.Contains(file.ContentType))
                 return BadRequest(new { Message = "Ảnh không hợp lệ hoặc vượt quá 10MB." });
 
-            var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
-            if (string.IsNullOrWhiteSpace(extension)) extension = ".jpg";
-            Directory.CreateDirectory(_storagePath);
-            var fileName = $"{Guid.NewGuid():N}{extension}";
-            await using var stream = System.IO.File.Create(Path.Combine(_storagePath, fileName));
-            await file.CopyToAsync(stream);
-            var url = $"{Request.Scheme}://{Request.Host}{UploadStorage.RequestPath}/{fileName}";
+            var extension = ExtensionsByContentType[file.ContentType];
+            await using var stream = file.OpenReadStream();
+            var url = await _imageStorage.UploadPublicImageAsync(
+                stream,
+                file.ContentType,
+                extension,
+                HttpContext.RequestAborted);
             return Ok(new { Url = url });
         }
     }

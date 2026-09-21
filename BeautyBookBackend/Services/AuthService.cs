@@ -75,7 +75,7 @@ namespace BeautyBookBackend.Services
             return await GenerateJwtTokenAsync(user);
         }
 
-        public async Task<TokenDto?> BecomeMuaAsync(Guid userId)
+        public async Task<TokenDto?> BecomeMuaAsync(Guid userId, MuaApplicationRequestDto request)
         {
             var user = await _userRepository.GetByIdAsync(userId);
             if (user == null || !user.IsActive || (user.Role != UserRole.Customer && user.Role != UserRole.MUA))
@@ -88,18 +88,47 @@ namespace BeautyBookBackend.Services
             await _dbContext.Database.ExecuteSqlInterpolatedAsync(
                 $"SELECT pg_advisory_xact_lock(hashtextextended({lockKey}, 0))");
 
+            var styleIds = request.StyleIds.Distinct().ToList();
+            var validStyleIds = await _dbContext.MakeupStyles
+                .Where(style => styleIds.Contains(style.StyleId) && style.IsActive)
+                .Select(style => style.StyleId)
+                .ToListAsync();
+            if (styleIds.Count == 0 || validStyleIds.Count != styleIds.Count)
+            {
+                await transaction.RollbackAsync();
+                return null;
+            }
+
             var profile = await _dbContext.MakeupArtistProfiles.FirstOrDefaultAsync(x => x.MUAId == user.UserId);
             if (profile == null)
             {
-                await _muaRepository.AddProfileAsync(new MakeupArtistProfile
+                profile = new MakeupArtistProfile
                 {
                     MUAId = user.UserId,
-                    ExperienceYears = 0,
                     AverageRating = 0,
                     TotalBookings = 0,
                     Status = MuaStatus.Draft
-                });
+                };
+                await _muaRepository.AddProfileAsync(profile);
             }
+
+            user.FullName = request.DisplayName.Trim();
+            if (!string.Equals(user.PhoneNumber, request.PhoneNumber.Trim(), StringComparison.Ordinal))
+            {
+                user.PhoneNumber = request.PhoneNumber.Trim();
+                user.PhoneVerified = false;
+            }
+            user.AvatarUrl = request.AvatarUrl.Trim();
+            profile.City = request.City.Trim();
+            profile.Bio = request.Bio.Trim();
+            profile.ExperienceYears = request.ExperienceYears ?? 0;
+            profile.Specialization = request.Specialization?.Trim();
+            profile.SocialLinks = request.SocialLinks?.Trim();
+
+            var oldStyles = await _muaRepository.GetStyleLinksByMuaIdAsync(userId);
+            _muaRepository.RemoveStyleLinks(oldStyles);
+            foreach (var styleId in validStyleIds)
+                await _muaRepository.AddMuaStyleAsync(new MUAStyle { MUAId = userId, StyleId = styleId });
 
             user.Role = UserRole.MUA;
             await _unitOfWork.SaveChangesAsync();

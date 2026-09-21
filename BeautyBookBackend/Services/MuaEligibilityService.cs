@@ -37,6 +37,7 @@ namespace BeautyBookBackend.Services
             {
                 Requirement("accountActive", "Tài khoản đang hoạt động", profile.User.IsActive && !profile.User.DeletedAt.HasValue),
                 Requirement("basicInformation", "Thông tin cơ bản hợp lệ", HasValidBasicInformation(profile.User.FullName, profile.User.Email)),
+                Requirement("avatar", "Có ảnh đại diện", IsValidPublicUrl(profile.User.AvatarUrl)),
                 Requirement("phoneNumber", "Có số điện thoại", !string.IsNullOrWhiteSpace(profile.User.PhoneNumber)),
                 Requirement("city", "Có thành phố/khu vực", !string.IsNullOrWhiteSpace(profile.City)),
                 Requirement("bio", "Có phần giới thiệu", !string.IsNullOrWhiteSpace(profile.Bio)),

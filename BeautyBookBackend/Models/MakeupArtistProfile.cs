@@ -14,6 +14,8 @@ namespace BeautyBookBackend.Models
         public string? City { get; set; }
         public string? Specialization { get; set; }
         public string? SocialLinks { get; set; }
+        public string? InstagramUrl { get; set; }
+        public string? FacebookUrl { get; set; }
 
         public Models.Enums.MuaStatus Status { get; set; } = Models.Enums.MuaStatus.Draft;
         public int RankScore { get; set; } = 0;

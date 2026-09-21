@@ -131,7 +131,7 @@ namespace BeautyBookBackend.Repositories
 
         public Task<bool> StyleExistsAsync(int styleId)
         {
-            return _context.MakeupStyles.AnyAsync(s => s.StyleId == styleId);
+            return _context.MakeupStyles.AnyAsync(s => s.StyleId == styleId && s.IsActive);
         }
 
         public Task AddMuaStyleAsync(MUAStyle style)
@@ -141,7 +141,7 @@ namespace BeautyBookBackend.Repositories
 
         public Task<List<MakeupStyle>> GetAllStylesAsync()
         {
-            return _context.MakeupStyles.ToListAsync();
+            return _context.MakeupStyles.Where(style => style.IsActive).OrderBy(style => style.Name).ToListAsync();
         }
     }
 }

@@ -69,6 +69,8 @@ namespace BeautyBookBackend.Data
                 b.Property(m => m.City).HasMaxLength(100);
                 b.Property(m => m.Specialization).HasMaxLength(255);
                 b.Property(m => m.SocialLinks).HasMaxLength(1000);
+                b.Property(m => m.InstagramUrl).HasMaxLength(500);
+                b.Property(m => m.FacebookUrl).HasMaxLength(500);
             });
 
             modelBuilder.Entity<MakeupStyle>(b =>
@@ -76,6 +78,8 @@ namespace BeautyBookBackend.Data
                 b.HasKey(s => s.StyleId);
                 b.Property(s => s.Name).HasMaxLength(100);
                 b.Property(s => s.Description).HasMaxLength(255);
+                b.Property(s => s.IsActive).HasDefaultValue(true);
+                b.HasIndex(s => s.Name).IsUnique();
             });
 
             modelBuilder.Entity<MUAStyle>(b =>

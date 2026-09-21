@@ -72,7 +72,7 @@ namespace BeautyBookBackend.Controllers
 
         [Authorize]
         [HttpPost("become-mua")]
-        public async Task<IActionResult> BecomeMua()
+        public async Task<IActionResult> BecomeMua([FromBody] MuaApplicationRequestDto request)
         {
             var userIdValue = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             if (!Guid.TryParse(userIdValue, out var userId))
@@ -80,10 +80,10 @@ namespace BeautyBookBackend.Controllers
                 return Unauthorized(new { Message = "Token khong hop le." });
             }
 
-            var token = await _authService.BecomeMuaAsync(userId);
+            var token = await _authService.BecomeMuaAsync(userId, request);
             if (token == null)
             {
-                return NotFound(new { Message = "Khong tim thay nguoi dung." });
+                return BadRequest(new { Code = "MUA_ONBOARDING_FAILED", Message = "Không thể tạo hồ sơ MUA. Vui lòng kiểm tra chuyên môn đã chọn." });
             }
 
             return Ok(token);

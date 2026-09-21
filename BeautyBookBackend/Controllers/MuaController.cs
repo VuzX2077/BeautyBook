@@ -199,6 +199,16 @@ namespace BeautyBookBackend.Controllers
             return Ok(styles);
         }
 
+        [Authorize(Roles = nameof(UserRole.Admin))]
+        [HttpPost("styles")]
+        public async Task<IActionResult> CreateStyle([FromBody] CreateMakeupStyleRequest request)
+        {
+            var style = await _muaService.CreateStyleAsync(request);
+            return style == null
+                ? Conflict(new { Message = "Chuyên môn đã tồn tại hoặc không hợp lệ." })
+                : CreatedAtAction(nameof(GetStyles), style);
+        }
+
         [Authorize]
         [HttpPut("styles")]
         public async Task<IActionResult> UpdateStyles([FromBody] List<int> styleIds)

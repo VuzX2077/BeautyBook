@@ -9,7 +9,6 @@ namespace BeautyBookBackend.Services
     {
         Task<List<MuaProfileDto>> GetMuasAsync(int page);
         Task<MuaDetailDto?> GetMuaByIdAsync(Guid muaId, Guid? currentUserId = null);
-        Task<MuaProfileDto?> ApplyMuaAsync(Guid muaId, MuaApplicationRequestDto request);
         Task<bool> UpdateMuaProfileAsync(Guid muaId, MuaUpdateDto updateDto);
         Task RecalculateProfileStateAsync(Guid muaId);
         Task RecalculateProfileQualityScoreAsync(Guid muaId);
@@ -41,5 +40,6 @@ namespace BeautyBookBackend.Services
         // Styles
         Task<bool> UpdateStylesAsync(Guid muaId, List<int> styleIds);
         Task<List<MakeupStyleDto>> GetAllStylesAsync();
+        Task<MakeupStyleDto?> CreateStyleAsync(CreateMakeupStyleRequest request);
     }
 }

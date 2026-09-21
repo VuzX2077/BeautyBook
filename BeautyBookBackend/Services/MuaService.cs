@@ -65,52 +65,6 @@ namespace BeautyBookBackend.Services
             }).ToList();
         }
 
-        public async Task<MuaProfileDto?> ApplyMuaAsync(Guid muaId, MuaApplicationRequestDto request)
-        {
-            var user = await _userRepository.GetByIdAsync(muaId);
-            if (user == null) return null;
-
-            user.FullName = request.DisplayName;
-            if (!string.Equals(user.PhoneNumber, request.PhoneNumber, StringComparison.Ordinal))
-            {
-                user.PhoneNumber = request.PhoneNumber;
-                user.PhoneVerified = false;
-            }
-            
-            var profile = await _muaRepository.GetProfileWithFullDetailsAsync(muaId);
-            
-            if (profile == null)
-            {
-                profile = new MakeupArtistProfile
-                {
-                    MUAId = muaId,
-                    Bio = request.Bio,
-                    ExperienceYears = request.ExperienceYears ?? 0,
-                    City = request.City,
-                    Specialization = request.Specialization,
-                    SocialLinks = request.SocialLinks,
-                    AverageRating = 0,
-                    TotalBookings = 0,
-                    Status = Models.Enums.MuaStatus.Draft
-                };
-                await _muaRepository.AddProfileAsync(profile);
-            }
-            else
-            {
-                profile.Bio = request.Bio;
-                profile.ExperienceYears = request.ExperienceYears ?? profile.ExperienceYears;
-                profile.City = request.City;
-                profile.Specialization = request.Specialization;
-                profile.SocialLinks = request.SocialLinks;
-            }
-
-            await _unitOfWork.SaveChangesAsync();
-            await _eligibilityService.EvaluateAsync(muaId);
-
-            var styles = await _muaRepository.GetStyleNamesByMuaIdAsync(muaId);
-            return ToMuaProfileDto(profile, styles);
-        }
-
         public async Task<MuaDetailDto?> GetMuaByIdAsync(Guid muaId, Guid? currentUserId = null)
         {
             var profile = await _muaRepository.GetProfileWithFullDetailsAsync(muaId);
@@ -145,6 +99,23 @@ namespace BeautyBookBackend.Services
             if (updateDto.City != null) profile.City = updateDto.City;
             if (updateDto.Specialization != null) profile.Specialization = updateDto.Specialization;
             if (updateDto.SocialLinks != null) profile.SocialLinks = updateDto.SocialLinks;
+            if (updateDto.InstagramUrl != null) profile.InstagramUrl = updateDto.InstagramUrl;
+            if (updateDto.FacebookUrl != null) profile.FacebookUrl = updateDto.FacebookUrl;
+
+            if (updateDto.StyleIds != null)
+            {
+                var styleIds = updateDto.StyleIds.Distinct().ToList();
+                var validStyleIds = await _dbContext.MakeupStyles
+                    .Where(style => styleIds.Contains(style.StyleId) && style.IsActive)
+                    .Select(style => style.StyleId)
+                    .ToListAsync();
+                if (validStyleIds.Count != styleIds.Count) return false;
+
+                var oldStyles = await _muaRepository.GetStyleLinksByMuaIdAsync(muaId);
+                _muaRepository.RemoveStyleLinks(oldStyles);
+                foreach (var styleId in validStyleIds)
+                    await _muaRepository.AddMuaStyleAsync(new MUAStyle { MUAId = muaId, StyleId = styleId });
+            }
 
             if (profile.User != null)
             {
@@ -504,19 +475,23 @@ namespace BeautyBookBackend.Services
         {
             if (!await _muaRepository.ProfileExistsAsync(muaId)) return false;
 
+            var distinctStyleIds = styleIds.Distinct().ToList();
+            var validStyleIds = await _dbContext.MakeupStyles
+                .Where(style => distinctStyleIds.Contains(style.StyleId) && style.IsActive)
+                .Select(style => style.StyleId)
+                .ToListAsync();
+            if (validStyleIds.Count != distinctStyleIds.Count) return false;
+
             var oldStyles = await _muaRepository.GetStyleLinksByMuaIdAsync(muaId);
             _muaRepository.RemoveStyleLinks(oldStyles);
 
-            foreach (var styleId in styleIds)
+            foreach (var styleId in validStyleIds)
             {
-                if (await _muaRepository.StyleExistsAsync(styleId))
+                await _muaRepository.AddMuaStyleAsync(new MUAStyle
                 {
-                    await _muaRepository.AddMuaStyleAsync(new MUAStyle
-                    {
-                        MUAId = muaId,
-                        StyleId = styleId
-                    });
-                }
+                    MUAId = muaId,
+                    StyleId = styleId
+                });
             }
 
             await _unitOfWork.SaveChangesAsync();
@@ -530,7 +505,25 @@ namespace BeautyBookBackend.Services
             return styles.Select(ToMakeupStyleDto).ToList();
         }
 
-        private static MuaProfileDto ToMuaProfileDto(MakeupArtistProfile profile, List<string> styles)
+        public async Task<MakeupStyleDto?> CreateStyleAsync(CreateMakeupStyleRequest request)
+        {
+            var name = request.Name.Trim();
+            if (name.Length == 0 || name.Length > 100) return null;
+            if (await _dbContext.MakeupStyles.AnyAsync(style => style.Name != null && style.Name.ToLower() == name.ToLower())) return null;
+
+            var style = new MakeupStyle
+            {
+                Name = name,
+                Description = request.Description?.Trim(),
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow
+            };
+            _dbContext.MakeupStyles.Add(style);
+            await _unitOfWork.SaveChangesAsync();
+            return ToMakeupStyleDto(style);
+        }
+
+        private MuaProfileDto ToMuaProfileDto(MakeupArtistProfile profile, List<string> styles)
         {
             return new MuaProfileDto
             {
@@ -548,7 +541,10 @@ namespace BeautyBookBackend.Services
                 City = profile.City,
                 Specialization = profile.Specialization,
                 SocialLinks = profile.SocialLinks,
+                InstagramUrl = profile.InstagramUrl,
+                FacebookUrl = profile.FacebookUrl,
                 Styles = styles,
+                Specialties = GetSpecialtyDtos(profile.MUAId),
                 Status = profile.Status.ToString(),
                 RankScore = profile.RankScore,
                 ListedAt = profile.ListedAt,
@@ -557,7 +553,7 @@ namespace BeautyBookBackend.Services
             };
         }
 
-        private static MuaDetailDto ToMuaDetailDto(
+        private MuaDetailDto ToMuaDetailDto(
             MakeupArtistProfile profile,
             List<string> styles,
             List<MakeupService> services,
@@ -579,7 +575,10 @@ namespace BeautyBookBackend.Services
                 City = profile.City,
                 Specialization = profile.Specialization,
                 SocialLinks = profile.SocialLinks,
+                InstagramUrl = profile.InstagramUrl,
+                FacebookUrl = profile.FacebookUrl,
                 Styles = styles,
+                Specialties = GetSpecialtyDtos(profile.MUAId),
                 MinPrice = services.Any() ? services.Min(s => s.Price) : null,
                 Status = profile.Status.ToString(),
                 RankScore = profile.RankScore,
@@ -632,7 +631,23 @@ namespace BeautyBookBackend.Services
                 StyleId = style.StyleId,
                 Name = style.Name,
                 Description = style.Description
+                ,IsActive = style.IsActive
             };
+        }
+
+        private List<MakeupStyleDto> GetSpecialtyDtos(Guid muaId)
+        {
+            return _dbContext.MUAStyles
+                .Where(link => link.MUAId == muaId && link.MakeupStyle != null)
+                .Select(link => new MakeupStyleDto
+                {
+                    StyleId = link.StyleId,
+                    Name = link.MakeupStyle!.Name,
+                    Description = link.MakeupStyle.Description,
+                    IsActive = link.MakeupStyle.IsActive
+                })
+                .OrderBy(style => style.Name)
+                .ToList();
         }
 
         public async Task RecalculateProfileStateAsync(Guid muaId)

@@ -30,6 +30,9 @@ namespace BeautyBookBackend.DTOs
         public string? Specialization { get; set; }
         public string? SocialLinks { get; set; }
         public List<string> Styles { get; set; } = new();
+        public List<MakeupStyleDto> Specialties { get; set; } = new();
+        public string? InstagramUrl { get; set; }
+        public string? FacebookUrl { get; set; }
         public decimal? MinPrice { get; set; }
     }
 
@@ -69,6 +72,15 @@ namespace BeautyBookBackend.DTOs
         public int StyleId { get; set; }
         public string? Name { get; set; }
         public string? Description { get; set; }
+        public bool IsActive { get; set; }
+    }
+
+    public sealed class CreateMakeupStyleRequest
+    {
+        [Required, MaxLength(100)]
+        public string Name { get; set; } = string.Empty;
+        [MaxLength(255)]
+        public string? Description { get; set; }
     }
 
     public class MuaUpdateDto
@@ -85,6 +97,9 @@ namespace BeautyBookBackend.DTOs
         public string? City { get; set; }
         public string? Specialization { get; set; }
         public string? SocialLinks { get; set; }
+        public string? InstagramUrl { get; set; }
+        public string? FacebookUrl { get; set; }
+        public List<int>? StyleIds { get; set; }
         public string? DisplayName { get; set; }
     }
 

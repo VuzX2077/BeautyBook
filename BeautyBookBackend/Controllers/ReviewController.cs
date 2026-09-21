@@ -57,9 +57,9 @@ namespace BeautyBookBackend.Controllers
 
         private async Task<IActionResult> AddReviewForBooking(Guid bookingId, ReviewCreateDto reviewDto)
         {
-            if (CurrentUserRole != UserRole.Customer)
+            if (CurrentUserRole == UserRole.Admin)
             {
-                return BadRequest(new { Message = "Chỉ tài khoản khách hàng mới có thể gửi đánh giá dịch vụ." });
+                return BadRequest(new { Message = "Tài khoản quản trị không thể gửi đánh giá dịch vụ." });
             }
 
             var success = await _bookingService.AddReviewAsync(bookingId, CurrentUserId, reviewDto);

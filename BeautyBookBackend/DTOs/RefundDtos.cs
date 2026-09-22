@@ -30,22 +30,34 @@ namespace BeautyBookBackend.DTOs
         public string MaskedAccountNumber { get; set; } = string.Empty;
         public string AccountHolderName { get; set; } = string.Empty;
         public bool IsDefault { get; set; }
+        public string Method { get; set; } = "BANK";
+        public string? QrCodeUrl { get; set; }
+        public DateTime ActivatedAt { get; set; }
+        public bool IsCoolingDown { get; set; }
     }
 
     public class UpsertCustomerBankAccountRequest
     {
-        [Required, RegularExpression("^[0-9]{6}$")]
+        [Required, RegularExpression("^([0-9]{6}|MOMO)$")]
         public string BankBin { get; set; } = string.Empty;
         [MaxLength(100)] public string? BankName { get; set; }
         [Required, RegularExpression("^[A-Za-z0-9]{5,30}$")]
         public string AccountNumber { get; set; } = string.Empty;
         [Required, MaxLength(150)] public string AccountHolderName { get; set; } = string.Empty;
         public bool IsDefault { get; set; }
+        [Required] public string CurrentPassword { get; set; } = string.Empty;
+        public string Method { get; set; } = "BANK";
+        [Url, MaxLength(1000)] public string? QrCodeUrl { get; set; }
     }
 
     public class RefundDestinationRequest
     {
         [Required] public Guid BankAccountId { get; set; }
+    }
+
+    public class SensitiveActionRequest
+    {
+        [Required] public string CurrentPassword { get; set; } = string.Empty;
     }
 
     public class AdminRefundDto : RefundSummaryDto
@@ -55,6 +67,7 @@ namespace BeautyBookBackend.DTOs
         public string? CustomerName { get; set; }
         public string? DestinationBankBin { get; set; }
         public string? DestinationAccountNumber { get; set; }
+        public string? DestinationQrCodeUrl { get; set; }
         public int AttemptCount { get; set; }
         public string? ProviderPayoutId { get; set; }
         public string? LastProviderState { get; set; }

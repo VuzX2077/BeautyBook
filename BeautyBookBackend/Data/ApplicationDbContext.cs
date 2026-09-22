@@ -205,6 +205,7 @@ namespace BeautyBookBackend.Data
                 b.Property(x => x.RemainingAmount).HasPrecision(18, 2);
                 b.Property(x => x.PlatformFeeAmount).HasPrecision(18, 2);
                 b.Property(x => x.MuaPayoutAmount).HasPrecision(18, 2);
+                b.Property(x => x.FinancialPolicyVersion).HasMaxLength(30).HasDefaultValue("V1_DEPOSIT_FEE");
                 b.Property(x => x.ServiceAddress).HasMaxLength(500);
                 b.Property(x => x.ServiceLatitude).HasPrecision(9, 6);
                 b.Property(x => x.ServiceLongitude).HasPrecision(9, 6);
@@ -285,6 +286,8 @@ namespace BeautyBookBackend.Data
                 b.Property(x => x.BankName).HasMaxLength(100);
                 b.Property(x => x.AccountNumber).HasMaxLength(30).IsRequired();
                 b.Property(x => x.AccountHolderName).HasMaxLength(150).IsRequired();
+                b.Property(x => x.Method).HasMaxLength(20).HasDefaultValue("BANK");
+                b.Property(x => x.QrCodeUrl).HasMaxLength(1000);
                 b.HasIndex(x => new { x.CustomerId, x.IsActive });
                 b.HasIndex(x => x.CustomerId).HasDatabaseName("UX_CustomerBankAccounts_Default")
                     .IsUnique().HasFilter("\"IsDefault\" = TRUE AND \"IsActive\" = TRUE");
@@ -304,6 +307,7 @@ namespace BeautyBookBackend.Data
                 b.Property(x => x.DestinationBankName).HasMaxLength(100);
                 b.Property(x => x.DestinationAccountNumber).HasMaxLength(30);
                 b.Property(x => x.DestinationAccountName).HasMaxLength(150);
+                b.Property(x => x.DestinationQrCodeUrl).HasMaxLength(1000);
                 b.Property(x => x.FailureCode).HasMaxLength(100);
                 b.Property(x => x.FailureMessage).HasMaxLength(1000);
                 b.ToTable(t => t.HasCheckConstraint("CK_Refunds_PositiveAmount", "\"Amount\" > 0"));
@@ -343,13 +347,13 @@ namespace BeautyBookBackend.Data
 
             modelBuilder.Entity<MuaBankAccount>(b =>
             {
-                b.HasKey(x=>x.Id);b.Property(x=>x.BankCode).HasMaxLength(20).IsRequired();b.Property(x=>x.BankName).HasMaxLength(100);b.Property(x=>x.AccountNumber).HasMaxLength(30).IsRequired();b.Property(x=>x.AccountHolderName).HasMaxLength(150).IsRequired();
+                b.HasKey(x=>x.Id);b.Property(x=>x.BankCode).HasMaxLength(20).IsRequired();b.Property(x=>x.BankName).HasMaxLength(100);b.Property(x=>x.AccountNumber).HasMaxLength(30).IsRequired();b.Property(x=>x.AccountHolderName).HasMaxLength(150).IsRequired();b.Property(x=>x.Method).HasMaxLength(20).HasDefaultValue("BANK");b.Property(x=>x.QrCodeUrl).HasMaxLength(1000);
                 b.HasIndex(x=>new{x.MuaId,x.IsActive});b.HasIndex(x=>x.MuaId).HasDatabaseName("UX_MuaBankAccounts_Default").IsUnique().HasFilter("\"IsDefault\" = TRUE AND \"IsActive\" = TRUE");
                 b.HasOne(x=>x.Mua).WithMany().HasForeignKey(x=>x.MuaId).OnDelete(DeleteBehavior.Restrict);
             });
             modelBuilder.Entity<Payout>(b =>
             {
-                b.HasKey(x=>x.Id);b.Property(x=>x.Amount).HasPrecision(18,2);b.Property(x=>x.BankCodeSnapshot).HasMaxLength(20).IsRequired();b.Property(x=>x.BankNameSnapshot).HasMaxLength(100);b.Property(x=>x.AccountNumberSnapshot).HasMaxLength(30).IsRequired();b.Property(x=>x.AccountHolderNameSnapshot).HasMaxLength(150).IsRequired();b.Property(x=>x.ProviderReference).HasMaxLength(255);b.Property(x=>x.IdempotencyKey).HasMaxLength(100).IsRequired();b.Property(x=>x.FailureCode).HasMaxLength(100);b.Property(x=>x.FailureMessage).HasMaxLength(1000);
+                b.HasKey(x=>x.Id);b.Property(x=>x.Amount).HasPrecision(18,2);b.Property(x=>x.BankCodeSnapshot).HasMaxLength(20).IsRequired();b.Property(x=>x.BankNameSnapshot).HasMaxLength(100);b.Property(x=>x.AccountNumberSnapshot).HasMaxLength(30).IsRequired();b.Property(x=>x.AccountHolderNameSnapshot).HasMaxLength(150).IsRequired();b.Property(x=>x.QrCodeUrlSnapshot).HasMaxLength(1000);b.Property(x=>x.ProviderReference).HasMaxLength(255);b.Property(x=>x.IdempotencyKey).HasMaxLength(100).IsRequired();b.Property(x=>x.FailureCode).HasMaxLength(100);b.Property(x=>x.FailureMessage).HasMaxLength(1000);
                 b.HasIndex(x=>new{x.MuaId,x.IdempotencyKey}).IsUnique();b.HasIndex(x=>new{x.MuaId,x.Status});
                 b.HasOne(x=>x.Mua).WithMany().HasForeignKey(x=>x.MuaId).OnDelete(DeleteBehavior.Restrict);b.HasOne(x=>x.RequestedByUser).WithMany().HasForeignKey(x=>x.RequestedBy).OnDelete(DeleteBehavior.Restrict);b.HasOne(x=>x.LastHandledByUser).WithMany().HasForeignKey(x=>x.LastHandledBy).OnDelete(DeleteBehavior.SetNull);
             });

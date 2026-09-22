@@ -10,6 +10,9 @@ namespace BeautyBookBackend.DTOs
         [Required, StringLength(30, MinimumLength=5)] public string AccountNumber { get; set; } = string.Empty;
         [Required, StringLength(150, MinimumLength=2)] public string AccountHolderName { get; set; } = string.Empty;
         public bool IsDefault { get; set; }
+        [Required] public string CurrentPassword { get; set; } = string.Empty;
+        public string Method { get; set; } = "BANK";
+        [Url, StringLength(1000)] public string? QrCodeUrl { get; set; }
     }
     public class MuaBankAccountDto
     {
@@ -21,6 +24,10 @@ namespace BeautyBookBackend.DTOs
         public bool IsDefault { get; set; }
         public bool IsActive { get; set; }
         public string VerificationStatus { get; set; } = "Entered";
+        public string Method { get; set; } = "BANK";
+        public string? QrCodeUrl { get; set; }
+        public DateTime ActivatedAt { get; set; }
+        public bool IsCoolingDown { get; set; }
     }
     public class CreatePayoutRequest
     {
@@ -56,6 +63,7 @@ namespace BeautyBookBackend.DTOs
         public DateTime? ReconciledAt { get; set; }
         public string? FailureCode { get; set; }
         public string? FailureMessage { get; set; }
+        public string? QrCodeUrl { get; set; }
     }
     public class AdminPayoutDto : PayoutDto
     {

@@ -18,6 +18,7 @@ namespace BeautyBookBackend.Models
         public decimal RemainingAmount { get; set; }
         public decimal PlatformFeeAmount { get; set; }
         public decimal MuaPayoutAmount { get; set; }
+        public string FinancialPolicyVersion { get; set; } = "V1_DEPOSIT_FEE";
         public int TotalDurationMinutes { get; set; }
         public DateTime BookingDate { get; set; }
         public TimeSpan StartTime { get; set; }

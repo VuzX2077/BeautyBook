@@ -15,6 +15,7 @@ namespace BeautyBookBackend.Models
         public string? BankNameSnapshot { get; set; }
         public string AccountNumberSnapshot { get; set; } = string.Empty;
         public string AccountHolderNameSnapshot { get; set; } = string.Empty;
+        public string? QrCodeUrlSnapshot { get; set; }
         public string? ProviderReference { get; set; }
         public string IdempotencyKey { get; set; } = string.Empty;
         public DateTime CreatedAt { get; set; }

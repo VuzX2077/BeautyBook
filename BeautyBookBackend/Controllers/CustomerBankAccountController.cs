@@ -12,7 +12,8 @@ namespace BeautyBookBackend.Controllers
     public class CustomerBankAccountController : ControllerBase
     {
         private readonly IRefundService _refunds;
-        public CustomerBankAccountController(IRefundService refunds) => _refunds = refunds;
+        private readonly IAuthService _auth;
+        public CustomerBankAccountController(IRefundService refunds, IAuthService auth) { _refunds = refunds; _auth = auth; }
         private Guid CurrentUserId => Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString());
 
         [HttpGet]
@@ -20,11 +21,12 @@ namespace BeautyBookBackend.Controllers
 
         [HttpPost]
         public async Task<IActionResult> Add([FromBody] UpsertCustomerBankAccountRequest request) =>
-            Ok(await _refunds.AddBankAccountAsync(CurrentUserId, request));
+            !await _auth.VerifyPasswordAsync(CurrentUserId, request.CurrentPassword) ? StatusCode(403, new { Code = "SENSITIVE_AUTH_REQUIRED", Message = "Mật khẩu xác nhận không đúng." }) : Ok(await _refunds.AddBankAccountAsync(CurrentUserId, request));
 
         [HttpPut("{id:guid}")]
         public async Task<IActionResult> Update(Guid id, [FromBody] UpsertCustomerBankAccountRequest request)
         {
+            if (!await _auth.VerifyPasswordAsync(CurrentUserId, request.CurrentPassword)) return StatusCode(403, new { Code = "SENSITIVE_AUTH_REQUIRED", Message = "Mật khẩu xác nhận không đúng." });
             var result = await _refunds.UpdateBankAccountAsync(CurrentUserId, id, request);
             return result == null ? NotFound() : Ok(result);
         }

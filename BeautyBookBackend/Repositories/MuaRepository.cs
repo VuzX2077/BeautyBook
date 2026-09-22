@@ -33,7 +33,7 @@ namespace BeautyBookBackend.Repositories
         {
             return await _context.MakeupArtistProfiles
                 .Include(m => m.User)
-                .Where(m => m.Status == Models.Enums.MuaStatus.Listed && m.User != null && m.User.IsActive && m.User.DeletedAt == null)
+                .Where(m => m.Status == Models.Enums.MuaStatus.Listed && m.VerificationStatus == Models.Enums.MuaVerificationStatus.Approved && m.User != null && m.User.IsActive && m.User.DeletedAt == null)
                 .OrderByDescending(m => m.RankScore)
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)

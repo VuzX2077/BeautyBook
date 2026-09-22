@@ -70,7 +70,7 @@ namespace BeautyBookBackend.Services
             var profile = await _muaRepository.GetProfileWithFullDetailsAsync(muaId);
             if (profile == null) return null;
             var isOwner = currentUserId == muaId;
-            if (!isOwner && (profile.Status != Models.Enums.MuaStatus.Listed || profile.User?.IsActive != true || profile.User.DeletedAt.HasValue)) return null;
+            if (!isOwner && (profile.Status != Models.Enums.MuaStatus.Listed || profile.VerificationStatus != Models.Enums.MuaVerificationStatus.Approved || profile.User?.IsActive != true || profile.User.DeletedAt.HasValue)) return null;
 
             var styles = await _muaRepository.GetStyleNamesByMuaIdAsync(muaId);
             var services = await _muaRepository.GetServicesByMuaIdAsync(muaId);
@@ -153,7 +153,7 @@ namespace BeautyBookBackend.Services
             if (currentUserId != muaId)
             {
                 var isPublic = await _dbContext.MakeupArtistProfiles.AnyAsync(x => x.MUAId == muaId
-                    && x.Status == Models.Enums.MuaStatus.Listed && x.User != null && x.User.IsActive && x.User.DeletedAt == null);
+                    && x.Status == Models.Enums.MuaStatus.Listed && x.VerificationStatus == Models.Enums.MuaVerificationStatus.Approved && x.User != null && x.User.IsActive && x.User.DeletedAt == null);
                 if (!isPublic) return new List<ServiceDto>();
                 services = services.Where(x => x.IsActive).ToList();
             }
@@ -239,7 +239,7 @@ namespace BeautyBookBackend.Services
             if (!isOwner)
             {
                 portfolios = portfolios
-                    .Where(p => !p.IsHidden && p.MakeupArtistProfile?.Status == Models.Enums.MuaStatus.Listed && p.MakeupArtistProfile.User?.IsActive == true && !p.MakeupArtistProfile.User.DeletedAt.HasValue)
+                    .Where(p => !p.IsHidden && p.MakeupArtistProfile?.Status == Models.Enums.MuaStatus.Listed && p.MakeupArtistProfile.VerificationStatus == Models.Enums.MuaVerificationStatus.Approved && p.MakeupArtistProfile.User?.IsActive == true && !p.MakeupArtistProfile.User.DeletedAt.HasValue)
                     .ToList();
             }
 
@@ -463,6 +463,7 @@ namespace BeautyBookBackend.Services
             query = query.Where(p => !p.IsHidden
                 && p.MakeupArtistProfile != null
                 && p.MakeupArtistProfile.Status == Models.Enums.MuaStatus.Listed
+                && p.MakeupArtistProfile.VerificationStatus == Models.Enums.MuaVerificationStatus.Approved
                 && p.MakeupArtistProfile.User != null
                 && p.MakeupArtistProfile.User.IsActive
                 && p.MakeupArtistProfile.User.DeletedAt == null);
@@ -549,7 +550,7 @@ namespace BeautyBookBackend.Services
                 RankScore = profile.RankScore,
                 ListedAt = profile.ListedAt,
                 LastActiveAt = profile.LastActiveAt,
-                VerificationStatus = "NOT_SUBMITTED"
+                VerificationStatus = profile.VerificationStatus.ToString()
             };
         }
 
@@ -584,7 +585,7 @@ namespace BeautyBookBackend.Services
                 RankScore = profile.RankScore,
                 ListedAt = profile.ListedAt,
                 LastActiveAt = profile.LastActiveAt,
-                VerificationStatus = "NOT_SUBMITTED",
+                VerificationStatus = profile.VerificationStatus.ToString(),
                 Services = services.Select(ToServiceDto).ToList(),
                 Portfolio = portfolio.Select(ToPortfolioDto).ToList()
             };

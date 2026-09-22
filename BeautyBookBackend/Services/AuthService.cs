@@ -108,6 +108,7 @@ namespace BeautyBookBackend.Services
                     AverageRating = 0,
                     TotalBookings = 0,
                     Status = MuaStatus.Draft
+                    ,VerificationStatus = MuaVerificationStatus.Draft
                 };
                 await _muaRepository.AddProfileAsync(profile);
             }

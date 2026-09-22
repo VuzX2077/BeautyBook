@@ -18,6 +18,11 @@ namespace BeautyBookBackend.Models
         public string? FacebookUrl { get; set; }
 
         public Models.Enums.MuaStatus Status { get; set; } = Models.Enums.MuaStatus.Draft;
+        public Models.Enums.MuaVerificationStatus VerificationStatus { get; set; } = Models.Enums.MuaVerificationStatus.Draft;
+        public DateTime? SubmittedAt { get; set; }
+        public DateTime? ReviewedAt { get; set; }
+        public Guid? ReviewedByAdminId { get; set; }
+        public string? RejectionReason { get; set; }
         public int RankScore { get; set; } = 0;
         public int ProfileQualityScore { get; set; } = 0;
         public DateTime? ListedAt { get; set; }

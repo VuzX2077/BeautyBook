@@ -199,6 +199,14 @@ namespace BeautyBookBackend.Controllers
             return Ok(styles);
         }
 
+        [Authorize(Roles = nameof(UserRole.MUA))]
+        [HttpPost("application/submit")]
+        public async Task<IActionResult> SubmitApplication()
+        {
+            var result = await _eligibilityService.SubmitForReviewAsync(CurrentUserId);
+            return result.Success ? Ok(await _eligibilityService.EvaluateAsync(CurrentUserId)) : BadRequest(new { Code = "MUA_APPLICATION_INCOMPLETE", Message = result.Error });
+        }
+
         [Authorize(Roles = nameof(UserRole.Admin))]
         [HttpPost("styles")]
         public async Task<IActionResult> CreateStyle([FromBody] CreateMakeupStyleRequest request)

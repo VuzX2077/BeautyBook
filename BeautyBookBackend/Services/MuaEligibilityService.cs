@@ -2,6 +2,7 @@ using System.Net.Mail;
 using BeautyBookBackend.Data;
 using BeautyBookBackend.DTOs;
 using BeautyBookBackend.Models.Enums;
+using BeautyBookBackend.Models;
 using Microsoft.EntityFrameworkCore;
 
 namespace BeautyBookBackend.Services
@@ -51,12 +52,12 @@ namespace BeautyBookBackend.Services
             requirements.Add(Requirement("workingSchedule", "Có lịch làm việc hợp lệ", hasValidSchedule));
             if (updateStatus && profile.Status != MuaStatus.Suspended)
             {
-                if (canPublish && profile.Status == MuaStatus.Draft)
+                if (canPublish && hasValidSchedule && profile.VerificationStatus == MuaVerificationStatus.Approved && profile.Status == MuaStatus.Draft)
                 {
                     profile.Status = MuaStatus.Listed;
                     profile.ListedAt = DateTime.UtcNow;
                 }
-                else if (!canPublish && profile.Status == MuaStatus.Listed)
+                else if ((!canPublish || !hasValidSchedule || profile.VerificationStatus != MuaVerificationStatus.Approved) && profile.Status == MuaStatus.Listed)
                 {
                     profile.Status = MuaStatus.Draft;
                 }
@@ -82,10 +83,13 @@ namespace BeautyBookBackend.Services
             {
                 CompletionPercentage = (int)Math.Round(requirements.Count(x => x.IsMet) * 100m / requirements.Count),
                 ProfileStatus = profile.Status.ToString(),
-                CanPublishProfile = canPublish && profile.Status != MuaStatus.Suspended,
-                CanReceiveBookings = operational && profile.Status == MuaStatus.Listed && canPublish && hasValidSchedule,
+                CanPublishProfile = canPublish && hasValidSchedule && profile.VerificationStatus == MuaVerificationStatus.Approved && profile.Status != MuaStatus.Suspended,
+                CanReceiveBookings = operational && profile.Status == MuaStatus.Listed && canPublish && hasValidSchedule && profile.VerificationStatus == MuaVerificationStatus.Approved,
                 CanWithdraw = operational && hasActiveBankAccount && hasWithdrawableReceivable,
-                VerificationStatus = "NOT_SUBMITTED",
+                VerificationStatus = profile.VerificationStatus.ToString(),
+                RejectionReason = profile.RejectionReason,
+                SubmittedAt = profile.SubmittedAt,
+                ReviewedAt = profile.ReviewedAt,
                 Requirements = requirements,
                 MissingRequirements = requirements.Where(x => !x.IsMet).ToList()
             };
@@ -118,6 +122,64 @@ namespace BeautyBookBackend.Services
             await _db.SaveChangesAsync();
             if (await _db.MakeupArtistProfiles.AnyAsync(x => x.MUAId == userId)) await EvaluateAsync(userId);
             return true;
+        }
+
+        public async Task<(bool Success, string? Error)> SubmitForReviewAsync(Guid muaId)
+        {
+            var result = await EvaluateAsync(muaId);
+            if (result == null) return (false, "Không tìm thấy hồ sơ MUA.");
+            if (result.MissingRequirements.Count > 0)
+                return (false, "Vui lòng hoàn thành đầy đủ hồ sơ, dịch vụ, portfolio và lịch làm việc trước khi gửi duyệt.");
+            var profile = await _db.MakeupArtistProfiles.FirstAsync(x => x.MUAId == muaId);
+            if (profile.VerificationStatus == MuaVerificationStatus.Approved) return (true, null);
+            profile.VerificationStatus = MuaVerificationStatus.PendingReview;
+            profile.SubmittedAt = DateTime.UtcNow;
+            profile.ReviewedAt = null;
+            profile.ReviewedByAdminId = null;
+            profile.RejectionReason = null;
+            if (profile.Status != MuaStatus.Suspended) profile.Status = MuaStatus.Draft;
+            await _db.SaveChangesAsync();
+            return (true, null);
+        }
+
+        public async Task<bool> ReviewAsync(Guid muaId, Guid adminId, bool approved, string? reason = null)
+        {
+            var now = DateTime.UtcNow;
+            var nextStatus = approved ? MuaVerificationStatus.Approved : MuaVerificationStatus.Rejected;
+            var rejectionReason = approved ? null : reason?.Trim();
+            var changed = await _db.MakeupArtistProfiles
+                .Where(x => x.MUAId == muaId && x.VerificationStatus == MuaVerificationStatus.PendingReview)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(x => x.VerificationStatus, nextStatus)
+                    .SetProperty(x => x.ReviewedAt, now)
+                    .SetProperty(x => x.ReviewedByAdminId, adminId)
+                    .SetProperty(x => x.RejectionReason, rejectionReason));
+            if (changed != 1) return false;
+            await EvaluateAsync(muaId);
+            _db.AppNotifications.Add(new AppNotification
+            {
+                Id = Guid.NewGuid(), UserId = muaId, Type = approved ? "MUA_APPLICATION_APPROVED" : "MUA_APPLICATION_REJECTED",
+                Title = approved ? "Hồ sơ MUA đã được duyệt" : "Hồ sơ MUA cần điều chỉnh",
+                Body = approved ? "Hồ sơ của bạn đã được duyệt và có thể xuất hiện công khai khi đủ điều kiện vận hành." : rejectionReason ?? "Vui lòng cập nhật hồ sơ và gửi lại để xét duyệt.",
+                DataJson = System.Text.Json.JsonSerializer.Serialize(new { url = "/mua-onboarding/setup" }),
+                ScheduledAt = now, Status = "Pending", CreatedAt = now
+            });
+            await _db.SaveChangesAsync();
+            return true;
+        }
+
+        public async Task<List<AdminMuaApplicationListItemDto>> GetApplicationsAsync(string? status, int page, int pageSize)
+        {
+            var query = _db.MakeupArtistProfiles.AsNoTracking().Include(x => x.User).Include(x => x.Services).Include(x => x.Portfolios).AsQueryable();
+            if (!string.IsNullOrWhiteSpace(status) && Enum.TryParse<MuaVerificationStatus>(status, true, out var parsed)) query = query.Where(x => x.VerificationStatus == parsed);
+            var rows = await query.OrderByDescending(x => x.SubmittedAt ?? DateTime.MinValue).Skip((Math.Max(page, 1) - 1) * Math.Clamp(pageSize, 1, 50)).Take(Math.Clamp(pageSize, 1, 50)).ToListAsync();
+            var result = new List<AdminMuaApplicationListItemDto>();
+            foreach (var x in rows)
+            {
+                var eligibility = await EvaluateAsync(x.MUAId, false);
+                result.Add(new AdminMuaApplicationListItemDto { MuaId = x.MUAId, FullName = x.User?.FullName ?? "MUA", AvatarUrl = x.User?.AvatarUrl, City = x.City, ExperienceYears = x.ExperienceYears, VerificationStatus = x.VerificationStatus.ToString(), SubmittedAt = x.SubmittedAt, ReviewedAt = x.ReviewedAt, RejectionReason = x.RejectionReason, ActiveServiceCount = x.Services.Count(s => s.IsActive), PublicPortfolioImageCount = x.Portfolios.Where(p => !p.IsHidden).SelectMany(p => p.ImageUrls).Count(IsValidPublicUrl), CompletionPercentage = eligibility?.CompletionPercentage ?? 0 });
+            }
+            return result;
         }
 
         private static MuaEligibilityRequirementDto Requirement(string key, string label, bool met, int? current = null, int? required = null) =>

@@ -3,6 +3,7 @@ using BeautyBookBackend.Models.Enums;
 using BeautyBookBackend.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 
 namespace BeautyBookBackend.Controllers
 {
@@ -20,6 +21,20 @@ namespace BeautyBookBackend.Controllers
             _muaService = muaService;
             _scheduleService = scheduleService;
         }
+
+        private Guid CurrentUserId => Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString());
+
+        [HttpGet("mua-applications")]
+        public async Task<IActionResult> GetApplications([FromQuery] string? status = "PendingReview", [FromQuery] int page = 1, [FromQuery] int pageSize = 20) =>
+            Ok(await _eligibility.GetApplicationsAsync(status, page, pageSize));
+
+        [HttpPost("mua-applications/{muaId:guid}/approve")]
+        public async Task<IActionResult> Approve(Guid muaId) =>
+            await _eligibility.ReviewAsync(muaId, CurrentUserId, true) ? Ok(await _eligibility.EvaluateAsync(muaId)) : Conflict(new { Message = "Hồ sơ không còn ở trạng thái chờ duyệt." });
+
+        [HttpPost("mua-applications/{muaId:guid}/reject")]
+        public async Task<IActionResult> Reject(Guid muaId, RejectMuaApplicationRequest request) =>
+            await _eligibility.ReviewAsync(muaId, CurrentUserId, false, request.Reason) ? Ok(await _eligibility.EvaluateAsync(muaId)) : Conflict(new { Message = "Hồ sơ không còn ở trạng thái chờ duyệt." });
 
         [HttpGet("muas/{muaId:guid}")]
         public async Task<IActionResult> GetMuaForManagement(Guid muaId)

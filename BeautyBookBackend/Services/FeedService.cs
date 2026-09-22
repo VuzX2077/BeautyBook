@@ -32,6 +32,7 @@ namespace BeautyBookBackend.Services
                 .Include(p => p.Service)
                 .Where(p => p.MakeupArtistProfile != null
                     && p.MakeupArtistProfile.Status == MuaStatus.Listed
+                    && p.MakeupArtistProfile.VerificationStatus == MuaVerificationStatus.Approved
                     && p.MakeupArtistProfile.User != null
                     && p.MakeupArtistProfile.User.IsActive
                     && p.MakeupArtistProfile.User.DeletedAt == null

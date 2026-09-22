@@ -117,7 +117,8 @@ namespace BeautyBookBackend.Services
                 .FromSqlInterpolated($"SELECT * FROM \"Users\" WHERE \"UserId\" = {createDto.MUAId} FOR SHARE")
                 .FirstOrDefaultAsync();
             if (muaProfile == null || muaUser == null || !muaUser.IsActive || muaUser.DeletedAt.HasValue
-                || muaProfile.Status != MuaStatus.Listed || muaProfile.Status == MuaStatus.Suspended)
+                || muaProfile.Status != MuaStatus.Listed || muaProfile.Status == MuaStatus.Suspended
+                || muaProfile.VerificationStatus != MuaVerificationStatus.Approved)
                 throw new BookingRuleException("MUA_NOT_ACCEPTING_BOOKINGS", "Makeup Artist hiện chưa thể nhận booking.");
 
             var eligibility = await _eligibilityService.EvaluateAsync(createDto.MUAId);

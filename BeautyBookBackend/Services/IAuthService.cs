@@ -10,5 +10,6 @@ namespace BeautyBookBackend.Services
         Task<TokenDto?> GoogleLoginAsync(GoogleLoginDto googleLoginDto);
         Task<TokenDto?> LoginAsync(LoginDto loginDto);
         Task<UserDto?> RegisterAsync(RegisterDto registerDto);
+        Task<bool> VerifyPasswordAsync(Guid userId, string password);
     }
 }

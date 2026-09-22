@@ -39,5 +39,34 @@ namespace BeautyBookBackend.Controllers
                 HttpContext.RequestAborted);
             return Ok(new { Url = url });
         }
+
+        [HttpPost("bank-qr")]
+        [RequestSizeLimit(5 * 1024 * 1024)]
+        public async Task<IActionResult> UploadBankQr(IFormFile file)
+        {
+            if (file.Length == 0 || file.Length > 5 * 1024 * 1024 || !AllowedTypes.Contains(file.ContentType))
+                return BadRequest(new { Message = "Ảnh QR không hợp lệ hoặc vượt quá 5MB." });
+
+            await using var input = file.OpenReadStream();
+            using var buffer = new MemoryStream();
+            await input.CopyToAsync(buffer, HttpContext.RequestAborted);
+            BankQrData decoded;
+            try { decoded = BankQrDecoder.DecodeImage(buffer.ToArray()); }
+            catch (InvalidOperationException ex) { return BadRequest(new { Code = "QR_NOT_RECOGNIZED", Message = ex.Message }); }
+
+            buffer.Position = 0;
+            var url = await _imageStorage.UploadPublicImageAsync(
+                buffer, file.ContentType, ExtensionsByContentType[file.ContentType], HttpContext.RequestAborted);
+            return Ok(new
+            {
+                Url = url,
+                decoded.Method,
+                decoded.BankBin,
+                decoded.AccountNumber,
+                decoded.AccountName,
+                RequiresManualAccountName = string.IsNullOrWhiteSpace(decoded.AccountName),
+                RequiresManualAccountNumber = string.IsNullOrWhiteSpace(decoded.AccountNumber)
+            });
+        }
     }
 }

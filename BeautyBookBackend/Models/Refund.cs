@@ -21,6 +21,7 @@ namespace BeautyBookBackend.Models
         public string? DestinationBankName { get; set; }
         public string? DestinationAccountNumber { get; set; }
         public string? DestinationAccountName { get; set; }
+        public string? DestinationQrCodeUrl { get; set; }
         public DateTime? DestinationCapturedAt { get; set; }
         public int AttemptCount { get; set; }
         public DateTime? LastAttemptAt { get; set; }

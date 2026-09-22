@@ -20,9 +20,6 @@ namespace BeautyBookBackend.Services
 
     public class BookingService : IBookingService
     {
-        private const decimal DepositRate = 0.30m;
-        private const decimal PlatformFeeRate = 0.08m;
-
         private readonly IBookingRepository _bookingRepository;
         private readonly IMuaRepository _muaRepository;
         private readonly IReviewRepository _reviewRepository;
@@ -181,8 +178,7 @@ namespace BeautyBookBackend.Services
             if (await _bookingRepository.HasOverlappingBookingAsync(createDto.MUAId, createDto.BookingDate, createDto.StartTime, endTime))
                 throw new BookingRuleException("SLOT_UNAVAILABLE", "Khung giờ này vừa được khách hàng khác giữ.", 409);
 
-            var depositAmount = decimal.Round(totalAmount * DepositRate, 0, MidpointRounding.AwayFromZero);
-            var platformFeeAmount = decimal.Round(depositAmount * PlatformFeeRate, 0, MidpointRounding.AwayFromZero);
+            var financials = BookingFinancialCalculator.Calculate(totalAmount);
             var now = DateTime.UtcNow;
             var booking = new Booking
             {
@@ -200,11 +196,12 @@ namespace BeautyBookBackend.Services
                 ServiceLatitude = createDto.ServiceLatitude,
                 ServiceLongitude = createDto.ServiceLongitude,
                 Notes = createDto.Notes?.Trim(),
-                DepositRate = DepositRate,
-                DepositAmount = depositAmount,
-                RemainingAmount = totalAmount - depositAmount,
-                PlatformFeeAmount = platformFeeAmount,
-                MuaPayoutAmount = depositAmount - platformFeeAmount,
+                DepositRate = BookingFinancialCalculator.DepositRate,
+                DepositAmount = financials.DepositAmount,
+                RemainingAmount = financials.RemainingAmount,
+                PlatformFeeAmount = financials.PlatformFeeAmount,
+                MuaPayoutAmount = financials.MuaDepositPayoutAmount,
+                FinancialPolicyVersion = BookingFinancialCalculator.CurrentPolicyVersion,
                 Status = BookingStatus.PendingPayment,
                 PaymentStatus = PaymentStatus.Unpaid,
                 CreatedAt = now,

@@ -67,12 +67,26 @@ namespace BeautyBookBackend.Services
         public async Task<TokenDto?> LoginAsync(LoginDto loginDto)
         {
             var user = await _userRepository.GetByEmailAsync(loginDto.Email);
-            if (user == null || !user.IsActive || user.DeletedAt.HasValue || user.PasswordHash != HashPassword(loginDto.Password))
+            if (user == null || !user.IsActive || user.DeletedAt.HasValue || !VerifyPasswordHash(loginDto.Password, user.PasswordHash))
             {
                 return null;
             }
 
+            if (!user.PasswordHash!.StartsWith("PBKDF2$", StringComparison.Ordinal))
+            {
+                user.PasswordHash = HashPassword(loginDto.Password);
+                await _unitOfWork.SaveChangesAsync();
+            }
+
             return await GenerateJwtTokenAsync(user);
+        }
+
+        public async Task<bool> VerifyPasswordAsync(Guid userId, string password)
+        {
+            if (string.IsNullOrWhiteSpace(password)) return false;
+            var user = await _userRepository.GetByIdAsync(userId);
+            if (user == null || !user.IsActive || user.DeletedAt.HasValue || string.IsNullOrWhiteSpace(user.PasswordHash)) return false;
+            return VerifyPasswordHash(password, user.PasswordHash);
         }
 
         public async Task<TokenDto?> BecomeMuaAsync(Guid userId, MuaApplicationRequestDto request)
@@ -228,11 +242,34 @@ namespace BeautyBookBackend.Services
             };
         }
 
-        private string HashPassword(string password)
+        private static string HashPassword(string password)
         {
+            const int iterations = 210_000;
+            var salt = RandomNumberGenerator.GetBytes(16);
+            var hash = Rfc2898DeriveBytes.Pbkdf2(password, salt, iterations, HashAlgorithmName.SHA256, 32);
+            return $"PBKDF2${iterations}${Convert.ToBase64String(salt)}${Convert.ToBase64String(hash)}";
+        }
+
+        private static bool VerifyPasswordHash(string password, string? stored)
+        {
+            if (string.IsNullOrWhiteSpace(stored)) return false;
+            if (stored.StartsWith("PBKDF2$", StringComparison.Ordinal))
+            {
+                var parts = stored.Split('$');
+                if (parts.Length != 4 || !int.TryParse(parts[1], out var iterations)) return false;
+                try
+                {
+                    var salt = Convert.FromBase64String(parts[2]);
+                    var expected = Convert.FromBase64String(parts[3]);
+                    var actual = Rfc2898DeriveBytes.Pbkdf2(password, salt, iterations, HashAlgorithmName.SHA256, expected.Length);
+                    return CryptographicOperations.FixedTimeEquals(expected, actual);
+                }
+                catch (FormatException) { return false; }
+            }
             using var sha256 = SHA256.Create();
-            var hashedBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(password));
-            return Convert.ToBase64String(hashedBytes);
+            var legacy = sha256.ComputeHash(Encoding.UTF8.GetBytes(password));
+            try { return CryptographicOperations.FixedTimeEquals(Convert.FromBase64String(stored), legacy); }
+            catch (FormatException) { return false; }
         }
 
         private List<string> GetGoogleClientIds()

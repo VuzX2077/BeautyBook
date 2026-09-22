@@ -12,6 +12,9 @@ namespace BeautyBookBackend.Models
         public bool IsActive { get; set; } = true;
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
+        public DateTime ActivatedAt { get; set; }
+        public string Method { get; set; } = "BANK";
+        public string? QrCodeUrl { get; set; }
         public MakeupArtistProfile? Mua { get; set; }
     }
 }

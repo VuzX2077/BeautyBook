@@ -46,7 +46,7 @@ namespace BeautyBookBackend.Services
 
             var now = DateTime.UtcNow;
             var destination = await _context.CustomerBankAccounts.AsNoTracking()
-                .Where(x => x.CustomerId == booking.CustomerId && x.IsActive && x.IsDefault)
+                .Where(x => x.CustomerId == booking.CustomerId && x.IsActive && x.IsDefault && x.ActivatedAt <= DateTime.UtcNow)
                 .FirstOrDefaultAsync();
             var refund = new Refund
             {
@@ -94,12 +94,13 @@ namespace BeautyBookBackend.Services
             {
                 Id = Guid.NewGuid(), CustomerId = customerId, BankBin = request.BankBin.Trim(),
                 BankName = Clean(request.BankName), AccountNumber = request.AccountNumber.Trim(),
-                AccountHolderName = request.AccountHolderName.Trim().ToUpperInvariant(),
+                AccountHolderName = request.AccountHolderName.Trim().ToUpperInvariant(), Method = NormalizeMethod(request.Method),
+                QrCodeUrl = ResolveQrUrl(request.BankBin, request.AccountNumber, request.Method, request.QrCodeUrl), ActivatedAt = now.AddHours(24),
                 IsDefault = request.IsDefault || !hasAny, IsActive = true, CreatedAt = now, UpdatedAt = now
             };
             _context.CustomerBankAccounts.Add(entity);
             await _context.SaveChangesAsync();
-            if (entity.IsDefault)
+            if (entity.IsDefault && entity.ActivatedAt <= now)
             {
                 await AttachAwaitingRefundsAsync(customerId, entity, now);
                 await _context.SaveChangesAsync();
@@ -121,11 +122,14 @@ namespace BeautyBookBackend.Services
             entity.BankName = Clean(request.BankName);
             entity.AccountNumber = request.AccountNumber.Trim();
             entity.AccountHolderName = request.AccountHolderName.Trim().ToUpperInvariant();
+            entity.Method = NormalizeMethod(request.Method);
+            entity.QrCodeUrl = ResolveQrUrl(request.BankBin, request.AccountNumber, request.Method, request.QrCodeUrl);
+            entity.ActivatedAt = DateTime.UtcNow.AddHours(24);
             entity.IsDefault = request.IsDefault;
             var now = DateTime.UtcNow;
             entity.UpdatedAt = now;
             await _context.SaveChangesAsync();
-            if (entity.IsDefault)
+            if (entity.IsDefault && entity.ActivatedAt <= now)
             {
                 await AttachAwaitingRefundsAsync(customerId, entity, now);
                 await _context.SaveChangesAsync();
@@ -153,7 +157,7 @@ namespace BeautyBookBackend.Services
             var ownsRefund = await _context.Bookings.AnyAsync(x => x.BookingId == refund.BookingId && x.CustomerId == customerId);
             if (!ownsRefund || refund.Status != RefundStatus.AwaitingDestination) return null;
             var bank = await _context.CustomerBankAccounts.AsNoTracking()
-                .FirstOrDefaultAsync(x => x.Id == bankAccountId && x.CustomerId == customerId && x.IsActive);
+                .FirstOrDefaultAsync(x => x.Id == bankAccountId && x.CustomerId == customerId && x.IsActive && x.ActivatedAt <= DateTime.UtcNow);
             if (bank == null) return null;
             CaptureDestination(refund, bank, DateTime.UtcNow);
             refund.Status = RefundStatus.Pending;
@@ -386,6 +390,7 @@ namespace BeautyBookBackend.Services
                 booking.PaymentStatus = isFullRefund ? PaymentStatus.Refunded : PaymentStatus.PartiallyRefunded;
                 booking.UpdatedAt = now;
                 await _receivables.ReverseAsync(booking.BookingId);
+                _context.AppNotifications.Add(new AppNotification { Id = Guid.NewGuid(), UserId = booking.CustomerId, Type = "REFUND_COMPLETED", Title = "Hoàn tiền thành công", Body = $"B-Book đã xác nhận hoàn {refund.Amount:N0}đ. Mã giao dịch: {refund.ProviderReference}.", DataJson = System.Text.Json.JsonSerializer.Serialize(new { url = $"/booking/{booking.BookingId}/cancel-success" }), ScheduledAt = now, Status = "Pending", CreatedAt = now });
             }
             else if (target == RefundStatus.Failed)
             {
@@ -456,26 +461,35 @@ namespace BeautyBookBackend.Services
             refund.DestinationBankName = bank.BankName;
             refund.DestinationAccountNumber = bank.AccountNumber;
             refund.DestinationAccountName = bank.AccountHolderName;
+            refund.DestinationQrCodeUrl = bank.QrCodeUrl;
             refund.DestinationCapturedAt = now;
         }
 
         private static void ValidateBank(UpsertCustomerBankAccountRequest request)
         {
-            if (!Regex.IsMatch(request.BankBin?.Trim() ?? string.Empty, "^[0-9]{6}$"))
+            var method = NormalizeMethod(request.Method);
+            if (method == "MOMO" && !string.Equals(request.BankBin?.Trim(), "MOMO", StringComparison.OrdinalIgnoreCase))
+                throw new BookingRuleException("INVALID_MOMO_ACCOUNT", "Phương thức MoMo phải dùng mã MOMO.");
+            if (method == "BANK" && !Regex.IsMatch(request.BankBin?.Trim() ?? string.Empty, "^[0-9]{6}$"))
                 throw new BookingRuleException("INVALID_BANK_BIN", "Mã BIN ngân hàng không hợp lệ.");
-            if (!Regex.IsMatch(request.AccountNumber?.Trim() ?? string.Empty, "^[A-Za-z0-9]{5,30}$"))
+            var accountPattern = method == "MOMO" ? "^(0|84)[0-9]{8,10}$" : "^[A-Za-z0-9]{5,30}$";
+            if (!Regex.IsMatch(request.AccountNumber?.Trim() ?? string.Empty, accountPattern))
                 throw new BookingRuleException("INVALID_BANK_ACCOUNT", "Số tài khoản không hợp lệ.");
             if (string.IsNullOrWhiteSpace(request.AccountHolderName))
                 throw new BookingRuleException("INVALID_ACCOUNT_HOLDER", "Tên chủ tài khoản là bắt buộc.");
         }
 
         private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+        private static string NormalizeMethod(string? value) => string.Equals(value, "MOMO", StringComparison.OrdinalIgnoreCase) ? "MOMO" : "BANK";
+        private static string? ResolveQrUrl(string bankBin, string account, string? method, string? supplied) =>
+            !string.IsNullOrWhiteSpace(supplied) ? supplied.Trim() : NormalizeMethod(method) == "MOMO" ? null
+            : $"https://img.vietqr.io/image/{Uri.EscapeDataString(bankBin.Trim())}-{Uri.EscapeDataString(account.Trim())}-compact2.png";
         private static string Mask(string value) => value.Length <= 4 ? new string('*', value.Length) : new string('*', value.Length - 4) + value[^4..];
         private static CustomerBankAccountDto ToBankDto(CustomerBankAccount bank) => new()
         {
             Id = bank.Id, BankBin = bank.BankBin, BankName = bank.BankName,
             MaskedAccountNumber = Mask(bank.AccountNumber), AccountHolderName = bank.AccountHolderName,
-            IsDefault = bank.IsDefault
+            IsDefault = bank.IsDefault, Method = bank.Method, QrCodeUrl = bank.QrCodeUrl, ActivatedAt = bank.ActivatedAt, IsCoolingDown = bank.ActivatedAt > DateTime.UtcNow
         };
 
         private static AdminRefundDto ToAdminDto(Refund refund) => new()
@@ -487,6 +501,7 @@ namespace BeautyBookBackend.Services
             LastProviderState = refund.LastProviderState, AttemptCount = refund.AttemptCount,
             DestinationBankBin = refund.DestinationBankBin, DestinationBankName = refund.DestinationBankName,
             DestinationAccountNumber = refund.DestinationAccountNumber,
+            DestinationQrCodeUrl = refund.DestinationQrCodeUrl,
             MaskedDestinationAccountNumber = refund.DestinationAccountNumber == null ? null : Mask(refund.DestinationAccountNumber),
             DestinationAccountName = refund.DestinationAccountName, CreatedAt = refund.CreatedAt,
             ProcessingAt = refund.ProcessingAt, CompletedAt = refund.CompletedAt, FailedAt = refund.FailedAt,

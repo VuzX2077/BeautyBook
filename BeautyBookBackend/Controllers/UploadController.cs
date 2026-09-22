@@ -54,9 +54,30 @@ namespace BeautyBookBackend.Controllers
             try { decoded = BankQrDecoder.DecodeImage(buffer.ToArray()); }
             catch (InvalidOperationException ex) { return BadRequest(new { Code = "QR_NOT_RECOGNIZED", Message = ex.Message }); }
 
-            buffer.Position = 0;
-            var url = await _imageStorage.UploadPublicImageAsync(
-                buffer, file.ContentType, ExtensionsByContentType[file.ContentType], HttpContext.RequestAborted);
+            string url;
+            if (decoded.Method == "BANK")
+            {
+                // Do not depend on object storage for VietQR: after verification we return a
+                // deterministic QR generated from the decoded beneficiary data.
+                url = $"https://img.vietqr.io/image/{Uri.EscapeDataString(decoded.BankBin!)}-{Uri.EscapeDataString(decoded.AccountNumber!)}-compact2.png";
+            }
+            else
+            {
+                buffer.Position = 0;
+                try
+                {
+                    url = await _imageStorage.UploadPublicImageAsync(
+                        buffer, file.ContentType, ExtensionsByContentType[file.ContentType], HttpContext.RequestAborted);
+                }
+                catch (InvalidOperationException)
+                {
+                    return StatusCode(StatusCodes.Status503ServiceUnavailable, new
+                    {
+                        Code = "QR_STORAGE_UNAVAILABLE",
+                        Message = "Đã đọc được QR MoMo nhưng kho ảnh đang tạm thời không khả dụng. Vui lòng thử lại sau."
+                    });
+                }
+            }
             return Ok(new
             {
                 Url = url,

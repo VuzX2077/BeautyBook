@@ -26,6 +26,14 @@ namespace BeautyBookBackend.Controllers
         }
 
         private Guid CurrentUserId => Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString());
+        private Guid? CurrentUserIdOrNull
+        {
+            get
+            {
+                var value = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                return Guid.TryParse(value, out var userId) ? userId : null;
+            }
+        }
 
         [HttpGet("{id}/availability")]
         public async Task<IActionResult> GetAvailability(Guid id, [FromQuery] DateTime date, [FromQuery] int duration)
@@ -86,7 +94,7 @@ namespace BeautyBookBackend.Controllers
         [HttpGet("{id}/portfolio")]
         public async Task<IActionResult> GetPortfolio(Guid id)
         {
-            var portfolio = await _muaService.GetMuaPortfolioAsync(id);
+            var portfolio = await _muaService.GetMuaPortfolioAsync(id, CurrentUserIdOrNull);
             return Ok(portfolio);
         }
 

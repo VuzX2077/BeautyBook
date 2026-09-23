@@ -53,6 +53,14 @@ namespace BeautyBookBackend.Controllers
             BankQrData decoded;
             try { decoded = BankQrDecoder.DecodeImage(buffer.ToArray()); }
             catch (InvalidOperationException ex) { return BadRequest(new { Code = "QR_NOT_RECOGNIZED", Message = ex.Message }); }
+            catch (Exception) when (!HttpContext.RequestAborted.IsCancellationRequested)
+            {
+                return StatusCode(StatusCodes.Status503ServiceUnavailable, new
+                {
+                    Code = "QR_DECODER_UNAVAILABLE",
+                    Message = "Bộ đọc QR đang tạm thời không khả dụng. Vui lòng thử lại sau."
+                });
+            }
 
             string url;
             if (decoded.Method == "BANK")

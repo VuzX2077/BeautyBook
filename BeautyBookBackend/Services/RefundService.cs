@@ -46,7 +46,7 @@ namespace BeautyBookBackend.Services
 
             var now = DateTime.UtcNow;
             var destination = await _context.CustomerBankAccounts.AsNoTracking()
-                .Where(x => x.CustomerId == booking.CustomerId && x.IsActive && x.IsDefault && x.ActivatedAt <= DateTime.UtcNow)
+                .Where(x => x.CustomerId == booking.CustomerId && x.IsActive && x.IsDefault)
                 .FirstOrDefaultAsync();
             var refund = new Refund
             {
@@ -54,14 +54,18 @@ namespace BeautyBookBackend.Services
                 BookingId = booking.BookingId,
                 BookingPaymentId = payment.PaymentId,
                 Amount = amount,
-                Status = destination == null ? RefundStatus.AwaitingDestination : RefundStatus.Pending,
+                Status = destination == null || destination.ActivatedAt > now ? RefundStatus.AwaitingDestination : RefundStatus.Pending,
                 ReasonCode = reasonCode,
                 Reason = reason,
                 RequestedBy = requestedBy,
                 CreatedAt = now,
                 UpdatedAt = now
             };
-            if (destination != null) CaptureDestination(refund, destination, now);
+            if (destination != null)
+            {
+                CaptureDestination(refund, destination, now);
+                if (destination.ActivatedAt > now) refund.DestinationCapturedAt = destination.ActivatedAt;
+            }
             await _context.Refunds.AddAsync(refund);
             return refund;
         }
@@ -95,7 +99,7 @@ namespace BeautyBookBackend.Services
                 Id = Guid.NewGuid(), CustomerId = customerId, BankBin = request.BankBin.Trim(),
                 BankName = Clean(request.BankName), AccountNumber = request.AccountNumber.Trim(),
                 AccountHolderName = request.AccountHolderName.Trim().ToUpperInvariant(), Method = NormalizeMethod(request.Method),
-                QrCodeUrl = ResolveQrUrl(request.BankBin, request.AccountNumber, request.Method, request.QrCodeUrl), ActivatedAt = now.AddHours(24),
+                QrCodeUrl = ResolveQrUrl(request.BankBin, request.AccountNumber, request.Method, request.QrCodeUrl), ActivatedAt = now.AddHours(24), VerificationStatus = hasAny ? "APPROVED" : "PENDING_ADMIN",
                 IsDefault = request.IsDefault || !hasAny, IsActive = true, CreatedAt = now, UpdatedAt = now
             };
             _context.CustomerBankAccounts.Add(entity);
@@ -157,11 +161,13 @@ namespace BeautyBookBackend.Services
             var ownsRefund = await _context.Bookings.AnyAsync(x => x.BookingId == refund.BookingId && x.CustomerId == customerId);
             if (!ownsRefund || refund.Status != RefundStatus.AwaitingDestination) return null;
             var bank = await _context.CustomerBankAccounts.AsNoTracking()
-                .FirstOrDefaultAsync(x => x.Id == bankAccountId && x.CustomerId == customerId && x.IsActive && x.ActivatedAt <= DateTime.UtcNow);
+                .FirstOrDefaultAsync(x => x.Id == bankAccountId && x.CustomerId == customerId && x.IsActive);
             if (bank == null) return null;
-            CaptureDestination(refund, bank, DateTime.UtcNow);
-            refund.Status = RefundStatus.Pending;
-            refund.UpdatedAt = DateTime.UtcNow;
+            var now = DateTime.UtcNow;
+            CaptureDestination(refund, bank, now);
+            refund.Status = bank.ActivatedAt <= now ? RefundStatus.Pending : RefundStatus.AwaitingDestination;
+            if (bank.ActivatedAt > now) refund.DestinationCapturedAt = bank.ActivatedAt;
+            refund.UpdatedAt = now;
             await _context.SaveChangesAsync();
             await transaction.CommitAsync();
             return ToDto(refund);
@@ -197,6 +203,19 @@ namespace BeautyBookBackend.Services
         public async Task<int> MovePendingToManualActionRequiredAsync()
         {
             var automated = _configuration.GetValue<bool>("Refunds:AutomatedPayoutEnabled");
+            var now = DateTime.UtcNow;
+            var protectedDestinations = await _context.Refunds
+                .Where(x => x.Status == RefundStatus.AwaitingDestination
+                    && x.DestinationAccountNumber != null
+                    && x.DestinationCapturedAt != null
+                    && x.DestinationCapturedAt <= now)
+                .ToListAsync();
+            foreach (var refund in protectedDestinations)
+            {
+                refund.Status = RefundStatus.Pending;
+                refund.UpdatedAt = now;
+            }
+            if (protectedDestinations.Count > 0) await _context.SaveChangesAsync();
             var items = await _context.Refunds.AsNoTracking()
                 .Where(x => x.Status == RefundStatus.Pending
                     || (x.Status == RefundStatus.Processing && x.ProviderReferenceId != null))
@@ -489,7 +508,7 @@ namespace BeautyBookBackend.Services
         {
             Id = bank.Id, BankBin = bank.BankBin, BankName = bank.BankName,
             MaskedAccountNumber = Mask(bank.AccountNumber), AccountHolderName = bank.AccountHolderName,
-            IsDefault = bank.IsDefault, Method = bank.Method, QrCodeUrl = bank.QrCodeUrl, ActivatedAt = bank.ActivatedAt, IsCoolingDown = bank.ActivatedAt > DateTime.UtcNow
+            IsDefault = bank.IsDefault, Method = bank.Method, QrCodeUrl = bank.QrCodeUrl, ActivatedAt = bank.ActivatedAt, IsCoolingDown = bank.ActivatedAt > DateTime.UtcNow, VerificationStatus = bank.VerificationStatus
         };
 
         private static AdminRefundDto ToAdminDto(Refund refund) => new()

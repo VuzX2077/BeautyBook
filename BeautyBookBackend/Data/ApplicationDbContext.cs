@@ -288,6 +288,7 @@ namespace BeautyBookBackend.Data
                 b.Property(x => x.AccountHolderName).HasMaxLength(150).IsRequired();
                 b.Property(x => x.Method).HasMaxLength(20).HasDefaultValue("BANK");
                 b.Property(x => x.QrCodeUrl).HasMaxLength(1000);
+                b.Property(x => x.VerificationStatus).HasMaxLength(30).HasDefaultValue("APPROVED");
                 b.HasIndex(x => new { x.CustomerId, x.IsActive });
                 b.HasIndex(x => x.CustomerId).HasDatabaseName("UX_CustomerBankAccounts_Default")
                     .IsUnique().HasFilter("\"IsDefault\" = TRUE AND \"IsActive\" = TRUE");
@@ -347,7 +348,7 @@ namespace BeautyBookBackend.Data
 
             modelBuilder.Entity<MuaBankAccount>(b =>
             {
-                b.HasKey(x=>x.Id);b.Property(x=>x.BankCode).HasMaxLength(20).IsRequired();b.Property(x=>x.BankName).HasMaxLength(100);b.Property(x=>x.AccountNumber).HasMaxLength(30).IsRequired();b.Property(x=>x.AccountHolderName).HasMaxLength(150).IsRequired();b.Property(x=>x.Method).HasMaxLength(20).HasDefaultValue("BANK");b.Property(x=>x.QrCodeUrl).HasMaxLength(1000);
+                b.HasKey(x=>x.Id);b.Property(x=>x.BankCode).HasMaxLength(20).IsRequired();b.Property(x=>x.BankName).HasMaxLength(100);b.Property(x=>x.AccountNumber).HasMaxLength(30).IsRequired();b.Property(x=>x.AccountHolderName).HasMaxLength(150).IsRequired();b.Property(x=>x.Method).HasMaxLength(20).HasDefaultValue("BANK");b.Property(x=>x.QrCodeUrl).HasMaxLength(1000);b.Property(x=>x.VerificationStatus).HasMaxLength(30).HasDefaultValue("APPROVED");
                 b.HasIndex(x=>new{x.MuaId,x.IsActive});b.HasIndex(x=>x.MuaId).HasDatabaseName("UX_MuaBankAccounts_Default").IsUnique().HasFilter("\"IsDefault\" = TRUE AND \"IsActive\" = TRUE");
                 b.HasOne(x=>x.Mua).WithMany().HasForeignKey(x=>x.MuaId).OnDelete(DeleteBehavior.Restrict);
             });

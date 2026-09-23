@@ -34,6 +34,7 @@ namespace BeautyBookBackend.DTOs
         public string? QrCodeUrl { get; set; }
         public DateTime ActivatedAt { get; set; }
         public bool IsCoolingDown { get; set; }
+        public string VerificationStatus { get; set; } = "APPROVED";
     }
 
     public class UpsertCustomerBankAccountRequest

@@ -71,6 +71,10 @@ namespace BeautyBookBackend.Data
                 b.Property(m => m.SocialLinks).HasMaxLength(1000);
                 b.Property(m => m.InstagramUrl).HasMaxLength(500);
                 b.Property(m => m.FacebookUrl).HasMaxLength(500);
+                b.Property(m => m.Address).HasMaxLength(300);
+                b.Property(m => m.IdentityFrontUrl).HasMaxLength(1000);
+                b.Property(m => m.IdentityBackUrl).HasMaxLength(1000);
+                b.Property(m => m.PortraitUrl).HasMaxLength(1000);
                 b.Property(m => m.RejectionReason).HasMaxLength(1000);
                 b.HasIndex(m => new { m.VerificationStatus, m.SubmittedAt });
                 b.HasOne<User>().WithMany().HasForeignKey(m => m.ReviewedByAdminId).OnDelete(DeleteBehavior.SetNull);

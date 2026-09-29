@@ -3,6 +3,7 @@ using BeautyBookBackend.Models.Enums;
 using BeautyBookBackend.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 
 namespace BeautyBookBackend.Controllers
@@ -34,14 +35,19 @@ namespace BeautyBookBackend.Controllers
 
         [HttpPost("mua-applications/{muaId:guid}/reject")]
         public async Task<IActionResult> Reject(Guid muaId, RejectMuaApplicationRequest request) =>
-            await _eligibility.ReviewAsync(muaId, CurrentUserId, false, request.Reason) ? Ok(await _eligibility.EvaluateAsync(muaId)) : Conflict(new { Message = "Hồ sơ không còn ở trạng thái chờ duyệt." });
+            await _eligibility.ReviewAsync(muaId, CurrentUserId, false, request.Reason, request.ReasonCodes, request.Items) ? Ok(await _eligibility.EvaluateAsync(muaId)) : Conflict(new { Message = "Hồ sơ không còn ở trạng thái chờ duyệt." });
 
         [HttpGet("muas/{muaId:guid}")]
         public async Task<IActionResult> GetMuaForManagement(Guid muaId)
         {
             var profile = await _muaService.GetMuaByIdAsync(muaId, muaId);
             if (profile == null) return NotFound();
-            return Ok(new { Profile = profile, Schedule = await _scheduleService.GetManagementScheduleAsync(muaId), Eligibility = await _eligibility.EvaluateAsync(muaId) });
+            var db = HttpContext.RequestServices.GetRequiredService<BeautyBookBackend.Data.ApplicationDbContext>();
+            var privateProfile = await db.MakeupArtistProfiles.AsNoTracking().FirstAsync(x => x.MUAId == muaId);
+            var bank = await db.MuaBankAccounts.AsNoTracking().Where(x => x.MuaId == muaId && x.IsActive)
+                .OrderByDescending(x => x.IsDefault).Select(x => new { x.BankCode, x.BankName, x.AccountNumber, x.AccountHolderName, x.VerificationStatus }).FirstOrDefaultAsync();
+            var verificationDocuments = new { privateProfile.Address, privateProfile.IdentityFrontUrl, privateProfile.IdentityBackUrl, privateProfile.PortraitUrl, privateProfile.CertificateUrls };
+            return Ok(new { Profile = profile, VerificationDocuments = verificationDocuments, BankAccount = bank, Schedule = await _scheduleService.GetManagementScheduleAsync(muaId), Eligibility = await _eligibility.EvaluateAsync(muaId) });
         }
 
         [HttpPatch("muas/{muaId:guid}/suspension")]

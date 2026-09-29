@@ -203,11 +203,41 @@ builder.Services.AddSignalR();
 
 var app = builder.Build();
 
-if (builder.Configuration.GetValue<bool>("ApplyMigrations"))
+// Render deployments must be push-only: production applies pending migrations
+// before accepting traffic. A PostgreSQL advisory lock serializes concurrent
+// instance starts, and transient connection failures are retried while the
+// managed database wakes up.
+var applyMigrations = builder.Configuration.GetValue<bool?>("ApplyMigrations")
+    ?? app.Environment.IsProduction();
+if (applyMigrations)
 {
-    using var scope = app.Services.CreateScope();
-    var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-    dbContext.Database.Migrate();
+    const long migrationLockId = 724_266_524_669_001;
+    const int maxMigrationAttempts = 5;
+    for (var attempt = 1; attempt <= maxMigrationAttempts; attempt++)
+    {
+        try
+        {
+            await using var scope = app.Services.CreateAsyncScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await dbContext.Database.OpenConnectionAsync();
+            try
+            {
+                await dbContext.Database.ExecuteSqlRawAsync($"SELECT pg_advisory_lock({migrationLockId})");
+                await dbContext.Database.MigrateAsync();
+            }
+            finally
+            {
+                try { await dbContext.Database.ExecuteSqlRawAsync($"SELECT pg_advisory_unlock({migrationLockId})"); }
+                finally { await dbContext.Database.CloseConnectionAsync(); }
+            }
+            break;
+        }
+        catch (Exception exception) when (attempt < maxMigrationAttempts)
+        {
+            app.Logger.LogWarning(exception, "Database migration attempt {Attempt}/{MaxAttempts} failed; retrying.", attempt, maxMigrationAttempts);
+            await Task.Delay(TimeSpan.FromSeconds(attempt * 3));
+        }
+    }
 }
 
 // Configure the HTTP request pipeline.

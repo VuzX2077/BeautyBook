@@ -23,7 +23,14 @@ public sealed class MuaOnboardingContractTests
             Bio = "Chuyên trang điểm cô dâu tự nhiên.",
             ExperienceYears = 3,
             AvatarUrl = "https://cdn.example.com/avatar.jpg",
-            StyleIds = [1, 2]
+            StyleIds = [1, 2],
+            Address = "123 Nguyễn Huệ, Quận 1",
+            IdentityFrontUrl = "https://cdn.example.com/id-front.jpg",
+            IdentityBackUrl = "https://cdn.example.com/id-back.jpg",
+            PortraitUrl = "https://cdn.example.com/portrait.jpg",
+            PortfolioUrls = ["https://cdn.example.com/work.jpg"],
+            Services = [new() { Name = "Trang điểm cô dâu", Price = 1500000, DurationMinutes = 90 }],
+            BankAccount = new() { BankCode = "VCB", AccountNumber = "123456789", AccountHolderName = "NGUYEN THI LINH" }
         };
 
         Assert.Empty(Validate(request));

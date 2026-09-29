@@ -16,6 +16,12 @@ namespace BeautyBookBackend.Models
         public string? SocialLinks { get; set; }
         public string? InstagramUrl { get; set; }
         public string? FacebookUrl { get; set; }
+        public string? Address { get; set; }
+        public string? IdentityFrontUrl { get; set; }
+        public string? IdentityBackUrl { get; set; }
+        public string? PortraitUrl { get; set; }
+        public List<string> CertificateUrls { get; set; } = new();
+        public string? RejectionDetailsJson { get; set; }
 
         public Models.Enums.MuaStatus Status { get; set; } = Models.Enums.MuaStatus.Draft;
         public Models.Enums.MuaVerificationStatus VerificationStatus { get; set; } = Models.Enums.MuaVerificationStatus.Draft;

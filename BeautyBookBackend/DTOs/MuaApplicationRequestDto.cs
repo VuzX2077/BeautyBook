@@ -34,34 +34,13 @@ namespace BeautyBookBackend.DTOs
 
         [Required, StringLength(300, MinimumLength = 5)]
         public string Address { get; set; } = null!;
-        [Required, Url]
-        public string IdentityFrontUrl { get; set; } = null!;
-        [Required, Url]
-        public string IdentityBackUrl { get; set; } = null!;
-        [Required, Url]
-        public string PortraitUrl { get; set; } = null!;
+    }
+
+    public sealed class MuaIdentityVerificationRequestDto
+    {
+        [Required, Url] public string IdentityFrontUrl { get; set; } = null!;
+        [Required, Url] public string IdentityBackUrl { get; set; } = null!;
+        [Required, Url] public string PortraitUrl { get; set; } = null!;
         public List<string> CertificateUrls { get; set; } = new();
-        [Required, MinLength(1)]
-        public List<MuaApplicationServiceRequest> Services { get; set; } = new();
-        [Required, MinLength(1)]
-        public List<string> PortfolioUrls { get; set; } = new();
-        [Required]
-        public MuaApplicationBankRequest BankAccount { get; set; } = new();
-    }
-
-    public sealed class MuaApplicationServiceRequest
-    {
-        [Required, StringLength(100, MinimumLength = 2)] public string Name { get; set; } = null!;
-        [Range(0, 100000000)] public decimal Price { get; set; }
-        [Range(15, 1440)] public int DurationMinutes { get; set; }
-        [StringLength(500)] public string? Description { get; set; }
-    }
-
-    public sealed class MuaApplicationBankRequest
-    {
-        [Required, StringLength(20, MinimumLength = 2)] public string BankCode { get; set; } = null!;
-        [StringLength(100)] public string? BankName { get; set; }
-        [Required, RegularExpression("^[A-Za-z0-9]{5,30}$")] public string AccountNumber { get; set; } = null!;
-        [Required, StringLength(150, MinimumLength = 2)] public string AccountHolderName { get; set; } = null!;
     }
 }

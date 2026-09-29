@@ -39,14 +39,16 @@ namespace BeautyBookBackend.Services
             {
                 Requirement("accountActive", "Tài khoản đang hoạt động", profile.User.IsActive && !profile.User.DeletedAt.HasValue),
                 Requirement("basicInformation", "Thông tin cơ bản hợp lệ", HasValidBasicInformation(profile.User.FullName, profile.User.Email)),
+                Requirement("avatar", "Có ảnh đại diện", IsValidPublicUrl(profile.User.AvatarUrl)),
                 Requirement("phoneNumber", "Có số điện thoại", !string.IsNullOrWhiteSpace(profile.User.PhoneNumber)),
                 Requirement("city", "Có thành phố/khu vực", !string.IsNullOrWhiteSpace(profile.City)),
                 Requirement("address", "Có địa chỉ", !string.IsNullOrWhiteSpace(profile.Address)),
-                Requirement("identity", "Có đủ CCCD/CMND và ảnh chân dung", IsValidPublicUrl(profile.IdentityFrontUrl) && IsValidPublicUrl(profile.IdentityBackUrl) && IsValidPublicUrl(profile.PortraitUrl)),
+                Requirement("bio", "Có phần giới thiệu", !string.IsNullOrWhiteSpace(profile.Bio)),
+                Requirement("identityVerification", "Có đủ CCCD/CMND và ảnh chân dung", IsValidPublicUrl(profile.IdentityFrontUrl) && IsValidPublicUrl(profile.IdentityBackUrl) && IsValidPublicUrl(profile.PortraitUrl)),
                 Requirement("bankAccount", "Có tài khoản ngân hàng", hasActiveBankAccount),
                 Requirement("specialty", "Có chuyên môn hoặc phong cách", !string.IsNullOrWhiteSpace(profile.Specialization) || specialtyCount > 0, !string.IsNullOrWhiteSpace(profile.Specialization) ? 1 : specialtyCount, 1),
                 Requirement("activeService", "Có ít nhất 1 dịch vụ đang hoạt động", activeServiceCount >= 1, activeServiceCount, 1),
-                Requirement("publicPortfolioImages", "Có ít nhất 1 ảnh portfolio hợp lệ", publicImageCount >= 1, publicImageCount, 1)
+                Requirement("publicPortfolioImages", "Có ít nhất 3 ảnh portfolio hợp lệ", publicImageCount >= 3, publicImageCount, 3)
             };
 
             var hasValidSchedule = await _scheduleService.HasValidScheduleAsync(muaId);
@@ -141,8 +143,35 @@ namespace BeautyBookBackend.Services
             return (true, null);
         }
 
+        public async Task<(bool Success, string? Error)> UpdateIdentityVerificationAsync(Guid muaId, MuaIdentityVerificationRequestDto request)
+        {
+            var profile = await _db.MakeupArtistProfiles.FirstOrDefaultAsync(x => x.MUAId == muaId);
+            if (profile == null) return (false, "Không tìm thấy hồ sơ MUA.");
+            var urls = new[] { request.IdentityFrontUrl, request.IdentityBackUrl, request.PortraitUrl };
+            if (urls.Any(x => !IsValidPublicUrl(x)) || request.CertificateUrls.Any(x => !IsValidPublicUrl(x)))
+                return (false, "Ảnh xác minh phải là URL công khai hợp lệ.");
+            profile.IdentityFrontUrl = request.IdentityFrontUrl.Trim();
+            profile.IdentityBackUrl = request.IdentityBackUrl.Trim();
+            profile.PortraitUrl = request.PortraitUrl.Trim();
+            profile.CertificateUrls = request.CertificateUrls.Distinct().ToList();
+            if (profile.VerificationStatus == MuaVerificationStatus.Rejected)
+            {
+                profile.VerificationStatus = MuaVerificationStatus.Draft;
+                profile.RejectionReason = null;
+                profile.RejectionDetailsJson = null;
+            }
+            await _db.SaveChangesAsync();
+            await EvaluateAsync(muaId);
+            return (true, null);
+        }
+
         public async Task<bool> ReviewAsync(Guid muaId, Guid adminId, bool approved, string? reason = null, IReadOnlyList<string>? reasonCodes = null, IReadOnlyList<MuaApplicationRejectionItemDto>? items = null)
         {
+            if (approved)
+            {
+                var eligibility = await EvaluateAsync(muaId, false);
+                if (eligibility == null || eligibility.MissingRequirements.Count > 0) return false;
+            }
             await using var transaction = await _db.Database.BeginTransactionAsync();
             var lockKey = $"mua-review:{muaId:N}";
             await _db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({lockKey}, 0))");

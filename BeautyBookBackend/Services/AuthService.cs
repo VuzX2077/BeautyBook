@@ -145,48 +145,11 @@ namespace BeautyBookBackend.Services
             profile.Specialization = request.Specialization?.Trim();
             profile.SocialLinks = request.SocialLinks?.Trim();
             profile.Address = request.Address.Trim();
-            profile.IdentityFrontUrl = request.IdentityFrontUrl.Trim();
-            profile.IdentityBackUrl = request.IdentityBackUrl.Trim();
-            profile.PortraitUrl = request.PortraitUrl.Trim();
-            profile.CertificateUrls = request.CertificateUrls
-                .Where(x => Uri.TryCreate(x, UriKind.Absolute, out var uri) && (uri.Scheme == "http" || uri.Scheme == "https"))
-                .Distinct().ToList();
 
             var oldStyles = await _muaRepository.GetStyleLinksByMuaIdAsync(userId);
             _muaRepository.RemoveStyleLinks(oldStyles);
             foreach (var styleId in validStyleIds)
                 await _muaRepository.AddMuaStyleAsync(new MUAStyle { MUAId = userId, StyleId = styleId });
-
-            var oldServices = await _dbContext.Services.Where(x => x.MUAId == userId).ToListAsync();
-            _dbContext.Services.RemoveRange(oldServices);
-            _dbContext.Services.AddRange(request.Services.Select(item => new BeautyBookBackend.Models.Service
-            {
-                ServiceId = Guid.NewGuid(), MUAId = userId, ServiceName = item.Name.Trim(),
-                Description = item.Description?.Trim(), Price = item.Price,
-                DurationMinutes = item.DurationMinutes, IsActive = true
-            }));
-
-            var oldPortfolio = await _dbContext.Portfolios.Where(x => x.MUAId == userId).ToListAsync();
-            _dbContext.Portfolios.RemoveRange(oldPortfolio);
-            _dbContext.Portfolios.Add(new Portfolio
-            {
-                PortfolioId = Guid.NewGuid(), MUAId = userId, Title = "Hồ sơ đăng ký",
-                ImageUrls = request.PortfolioUrls.Distinct().ToList(), IsHidden = false, CreatedAt = DateTime.UtcNow
-            });
-
-            var bank = await _dbContext.MuaBankAccounts.FirstOrDefaultAsync(x => x.MuaId == userId && x.IsActive);
-            if (bank == null)
-            {
-                bank = new MuaBankAccount { Id = Guid.NewGuid(), MuaId = userId, CreatedAt = DateTime.UtcNow, IsActive = true, IsDefault = true };
-                _dbContext.MuaBankAccounts.Add(bank);
-            }
-            bank.BankCode = request.BankAccount.BankCode.Trim().ToUpperInvariant();
-            bank.BankName = request.BankAccount.BankName?.Trim();
-            bank.AccountNumber = request.BankAccount.AccountNumber.Trim();
-            bank.AccountHolderName = request.BankAccount.AccountHolderName.Trim().ToUpperInvariant();
-            bank.VerificationStatus = "PENDING_ADMIN";
-            bank.ActivatedAt = DateTime.UtcNow;
-            bank.UpdatedAt = DateTime.UtcNow;
 
             user.Role = UserRole.MUA;
             await _unitOfWork.SaveChangesAsync();

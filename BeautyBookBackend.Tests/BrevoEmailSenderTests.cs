@@ -39,6 +39,15 @@ public class BrevoEmailSenderTests
     }
 
     [Theory]
+    [InlineData("BANK_ACCOUNT_ADD", "Mã OTP xác minh thêm tài khoản nhận tiền")]
+    [InlineData("BANK_ACCOUNT_UPDATE", "Mã OTP xác minh thay đổi tài khoản nhận tiền")]
+    public async Task BankOtpExplainsSensitiveReceivingDestinationChange(string purpose,string subject)
+    {
+        var handler=new Handler(async request=>{using var json=JsonDocument.Parse(await request.Content!.ReadAsStringAsync());Assert.Equal(subject,json.RootElement.GetProperty("subject").GetString());var text=json.RootElement.GetProperty("textContent").GetString();Assert.Contains("thay đổi nơi nhận tiền",text);Assert.Contains("Không chia sẻ OTP",text);Assert.Contains("đổi mật khẩu",text);return new HttpResponseMessage(HttpStatusCode.Created);});
+        await Sender(handler).SendOtpAsync("recipient@example.com","123456",purpose);
+    }
+
+    [Theory]
     [InlineData(401, "{\"code\":\"unauthorized\"}")]
     [InlineData(429, "{\"code\":\"too_many_requests\"}")]
     [InlineData(500, "non-JSON upstream failure")]

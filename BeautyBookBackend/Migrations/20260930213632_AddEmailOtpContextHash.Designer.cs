@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using BeautyBookBackend.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace BeautyBookBackend.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260930213632_AddEmailOtpContextHash")]
+    partial class AddEmailOtpContextHash
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -671,16 +674,6 @@ namespace BeautyBookBackend.Migrations
                     b.Property<double?>("Longitude")
                         .HasColumnType("double precision");
 
-                    b.Property<bool>("OperatingLocationConfirmed")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("OperatingLocationLabel")
-                        .HasMaxLength(300)
-                        .HasColumnType("character varying(300)");
-
-                    b.Property<int?>("OperatingProvinceCode")
-                        .HasColumnType("integer");
-
                     b.Property<string>("PortfolioCoverUrl")
                         .HasColumnType("text");
 
@@ -693,9 +686,6 @@ namespace BeautyBookBackend.Migrations
 
                     b.Property<int?>("ProvinceCode")
                         .HasColumnType("integer");
-
-                    b.Property<bool>("PublicMeetingPoint")
-                        .HasColumnType("boolean");
 
                     b.Property<int>("RankScore")
                         .HasColumnType("integer");
@@ -738,8 +728,6 @@ namespace BeautyBookBackend.Migrations
                     b.HasIndex("ReviewedByAdminId");
 
                     b.HasIndex("VerificationStatus", "SubmittedAt");
-
-                    b.HasIndex("OperatingProvinceCode", "Status", "VerificationStatus");
 
                     b.ToTable("MakeupArtistProfiles");
                 });
@@ -868,22 +856,6 @@ namespace BeautyBookBackend.Migrations
                         {
                             t.HasCheckConstraint("CK_MuaFollows_NoSelfFollow", "\"UserId\" <> \"MuaId\"");
                         });
-                });
-
-            modelBuilder.Entity("BeautyBookBackend.Models.MuaOperatingArea", b =>
-                {
-                    b.Property<Guid>("MuaId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("AreaId")
-                        .HasMaxLength(60)
-                        .HasColumnType("character varying(60)");
-
-                    b.HasKey("MuaId", "AreaId");
-
-                    b.HasIndex("AreaId");
-
-                    b.ToTable("MuaOperatingAreas");
                 });
 
             modelBuilder.Entity("BeautyBookBackend.Models.MuaReceivable", b =>
@@ -2017,17 +1989,6 @@ namespace BeautyBookBackend.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("BeautyBookBackend.Models.MuaOperatingArea", b =>
-                {
-                    b.HasOne("BeautyBookBackend.Models.MakeupArtistProfile", "Profile")
-                        .WithMany("OperatingAreas")
-                        .HasForeignKey("MuaId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Profile");
-                });
-
             modelBuilder.Entity("BeautyBookBackend.Models.MuaReceivable", b =>
                 {
                     b.HasOne("BeautyBookBackend.Models.Booking", "Booking")
@@ -2335,8 +2296,6 @@ namespace BeautyBookBackend.Migrations
 
             modelBuilder.Entity("BeautyBookBackend.Models.MakeupArtistProfile", b =>
                 {
-                    b.Navigation("OperatingAreas");
-
                     b.Navigation("Portfolios");
 
                     b.Navigation("Services");

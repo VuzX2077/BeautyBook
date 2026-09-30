@@ -174,6 +174,7 @@ builder.Services.AddAuthentication(options =>
 
 // Register Application Services (Dependency Injection)
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IEmailOtpService, EmailOtpService>();
 builder.Services.AddHttpClient<IEmailSender, BrevoEmailSender>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(20);

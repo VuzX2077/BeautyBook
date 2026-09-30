@@ -8,7 +8,7 @@ public sealed class SetBankAccountDefaultRequest
     public string CurrentPassword { get; set; } = string.Empty;
 }
 
-public class UpsertBankAccountRequest
+public class BankAccountDraftRequest
 {
     [Required, MaxLength(20)] public string BankCode { get; set; } = string.Empty;
     [Required, MaxLength(20)] public string BankBin { get; set; } = string.Empty;
@@ -17,8 +17,18 @@ public class UpsertBankAccountRequest
     [Required, MaxLength(150)] public string AccountHolderName { get; set; } = string.Empty;
     [Required, MaxLength(20)] public string Method { get; set; } = "BANK";
     [Url, MaxLength(1000)] public string? QrCodeUrl { get; set; }
-    [Required] public string CurrentPassword { get; set; } = string.Empty;
-    public bool IsDefault { get; set; }
+}
+
+public sealed class UpsertBankAccountRequest : BankAccountDraftRequest
+{
+    public string Otp { get; set; } = string.Empty;
+}
+
+public sealed class BankAccountOtpResponse
+{
+    public string MaskedEmail { get; set; } = string.Empty;
+    public int ExpiresInSeconds { get; set; } = 300;
+    public int ResendAfterSeconds { get; set; } = 60;
 }
 
 public sealed class BankAccountDto

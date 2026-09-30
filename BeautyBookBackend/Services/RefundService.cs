@@ -460,7 +460,7 @@ namespace BeautyBookBackend.Services
         }
 
         private static string Mask(string value) => value.Length <= 4 ? new string('*', value.Length) : new string('*', value.Length - 4) + value[^4..];
-        private static BookingRuleException BankUnavailable(string code)=>new(code,code switch{"BANK_ACCOUNT_PENDING_APPROVAL"=>"Tài khoản nhận tiền đang chờ admin duyệt.","BANK_ACCOUNT_REJECTED"=>"Tài khoản nhận tiền đã bị từ chối.","BANK_ACCOUNT_COOLDOWN"=>"Tài khoản nhận tiền đã được duyệt nhưng vẫn đang trong thời gian bảo vệ 24 giờ.",_=>"Không tìm thấy tài khoản nhận tiền đang hoạt động."},409);
+        private static BookingRuleException BankUnavailable(string code)=>new(code,code switch{"BANK_ACCOUNT_PENDING_APPROVAL"=>"Tài khoản nhận tiền đang chờ admin duyệt.","BANK_ACCOUNT_REJECTED"=>"Tài khoản nhận tiền đã bị từ chối.",_=>"Không tìm thấy tài khoản nhận tiền đang hoạt động."},409);
 
         private static AdminRefundDto ToAdminDto(Refund refund) => new()
         {

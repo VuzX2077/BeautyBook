@@ -23,7 +23,7 @@ namespace BeautyBookBackend.Services
         private readonly IUnitOfWork _unitOfWork;
         private readonly IConfiguration _configuration;
         private readonly ApplicationDbContext _dbContext;
-        private readonly IEmailSender _emailSender;
+        private readonly IEmailOtpService _emailOtpService;
 
         public AuthService(
             IUserRepository userRepository,
@@ -31,21 +31,21 @@ namespace BeautyBookBackend.Services
             IUnitOfWork unitOfWork,
             IConfiguration configuration,
             ApplicationDbContext dbContext,
-            IEmailSender emailSender)
+            IEmailOtpService emailOtpService)
         {
             _userRepository = userRepository;
             _muaRepository = muaRepository;
             _unitOfWork = unitOfWork;
             _configuration = configuration;
             _dbContext = dbContext;
-            _emailSender = emailSender;
+            _emailOtpService = emailOtpService;
         }
 
         public async Task<string?> SendRegistrationOtpAsync(string email)
         {
             email = NormalizeEmail(email);
             if (await _userRepository.EmailExistsAsync(email)) return "EMAIL_EXISTS";
-            await IssueOtpAsync(email, "REGISTER");
+            await _emailOtpService.IssueAsync(email, "REGISTER", resendCooldownSeconds: 45);
             return null;
         }
 
@@ -54,7 +54,7 @@ namespace BeautyBookBackend.Services
             email = NormalizeEmail(email);
             var user = await _userRepository.GetByEmailAsync(email);
             if (user != null && user.IsActive && !user.DeletedAt.HasValue && !string.IsNullOrWhiteSpace(user.PasswordHash))
-                await IssueOtpAsync(email, "RESET_PASSWORD");
+                await _emailOtpService.IssueAsync(email, "RESET_PASSWORD");
         }
 
         public async Task<UserDto?> RegisterAsync(RegisterDto registerDto)
@@ -65,7 +65,7 @@ namespace BeautyBookBackend.Services
                 return null;
             }
 
-            var otp = await ConsumeOtpAsync(registerDto.Email, "REGISTER", registerDto.Otp);
+            var otp = await _emailOtpService.ConsumeAsync(registerDto.Email, "REGISTER", null, registerDto.Otp);
             if (!otp) return null;
 
             var user = new User
@@ -92,7 +92,7 @@ namespace BeautyBookBackend.Services
             var email = NormalizeEmail(request.Email);
             var user = await _userRepository.GetByEmailAsync(email);
             if (user == null || !user.IsActive || user.DeletedAt.HasValue || string.IsNullOrWhiteSpace(user.PasswordHash)) return false;
-            if (!await ConsumeOtpAsync(email, "RESET_PASSWORD", request.Otp)) return false;
+            if (!await _emailOtpService.ConsumeAsync(email, "RESET_PASSWORD", null, request.Otp)) return false;
             user.PasswordHash = HashPassword(request.NewPassword);
             await _unitOfWork.SaveChangesAsync();
             return true;
@@ -106,63 +106,6 @@ namespace BeautyBookBackend.Services
             user.PasswordHash = HashPassword(request.NewPassword);
             await _unitOfWork.SaveChangesAsync();
             return true;
-        }
-
-        private async Task IssueOtpAsync(string email, string purpose)
-        {
-            var now = DateTime.UtcNow;
-            var latest = await _dbContext.EmailOtps
-                .Where(x => x.Email == email && x.Purpose == purpose)
-                .OrderByDescending(x => x.CreatedAt).FirstOrDefaultAsync();
-            var cooldownSeconds = purpose == "REGISTER" ? 45 : 60;
-            if (latest != null && latest.CreatedAt > now.AddSeconds(-cooldownSeconds))
-                throw new OtpCooldownException(cooldownSeconds);
-
-            var active = await _dbContext.EmailOtps
-                .Where(x => x.Email == email && x.Purpose == purpose && x.UsedAt == null).ToListAsync();
-            foreach (var item in active) item.UsedAt = now;
-
-            var code = RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6");
-            var issuedOtp = new EmailOtp
-            {
-                Id = Guid.NewGuid(), Email = email, Purpose = purpose,
-                CodeHash = HashOtp(email, purpose, code), CreatedAt = now, ExpiresAt = now.AddMinutes(5)
-            };
-            _dbContext.EmailOtps.Add(issuedOtp);
-            await _dbContext.SaveChangesAsync();
-            try
-            {
-                await _emailSender.SendOtpAsync(email, code, purpose);
-            }
-            catch (EmailDeliveryException)
-            {
-                // A failed request must not leave a usable code or impose the
-                // successful-send cooldown. Previous codes stay invalidated.
-                _dbContext.EmailOtps.Remove(issuedOtp);
-                await _dbContext.SaveChangesAsync();
-                throw;
-            }
-        }
-
-        private async Task<bool> ConsumeOtpAsync(string email, string purpose, string code)
-        {
-            var now = DateTime.UtcNow;
-            var otp = await _dbContext.EmailOtps.Where(x => x.Email == email && x.Purpose == purpose && x.UsedAt == null)
-                .OrderByDescending(x => x.CreatedAt).FirstOrDefaultAsync();
-            if (otp == null || otp.ExpiresAt <= now || otp.FailedAttempts >= 5) return false;
-            var valid = CryptographicOperations.FixedTimeEquals(
-                Encoding.UTF8.GetBytes(otp.CodeHash), Encoding.UTF8.GetBytes(HashOtp(email, purpose, code)));
-            if (!valid) { otp.FailedAttempts++; await _dbContext.SaveChangesAsync(); return false; }
-            otp.UsedAt = now;
-            await _dbContext.SaveChangesAsync();
-            return true;
-        }
-
-        private string HashOtp(string email, string purpose, string code)
-        {
-            var secret = _configuration["Otp:HashKey"] ?? _configuration["Jwt:Key"]
-                ?? throw new InvalidOperationException("Otp:HashKey is not configured.");
-            return Convert.ToHexString(HMACSHA256.HashData(Encoding.UTF8.GetBytes(secret), Encoding.UTF8.GetBytes($"{email}|{purpose}|{code}")));
         }
 
         private static string NormalizeEmail(string email) => email.Trim().ToLowerInvariant();

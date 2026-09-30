@@ -34,5 +34,5 @@ internal static class BankAccountDefaultManager
     }
 
     public static BookingRuleException NotUsableAsDefault() => new(NotUsableCode,
-        "Chỉ tài khoản đã được duyệt và hết thời gian bảo vệ mới có thể đặt làm mặc định.", 409);
+        "Chỉ tài khoản đã được duyệt mới có thể đặt làm mặc định.", 409);
 }

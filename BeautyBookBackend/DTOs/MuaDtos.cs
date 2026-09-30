@@ -27,6 +27,10 @@ namespace BeautyBookBackend.DTOs
         public bool PhoneVerified { get; set; }
 
         public string? City { get; set; }
+        public string? District { get; set; }
+        public int? ProvinceCode { get; set; }
+        public int? DistrictCode { get; set; }
+        public string? ExperienceLevel { get; set; }
         public string? Specialization { get; set; }
         public string? SocialLinks { get; set; }
         public List<string> Styles { get; set; } = new();
@@ -85,6 +89,12 @@ namespace BeautyBookBackend.DTOs
 
     public class MuaUpdateDto
     {
+        [StringLength(100)] public string? District { get; set; }
+        public int? ProvinceCode { get; set; }
+        public int? DistrictCode { get; set; }
+        [RegularExpression("^(BEGINNER|UNDER_ONE|ONE_TO_THREE|THREE_TO_FIVE|OVER_FIVE)$")]
+        public string? ExperienceLevel { get; set; }
+        [StringLength(500)]
         public string? Bio { get; set; }
         public int ExperienceYears { get; set; }
         public string? PortfolioCoverUrl { get; set; }
@@ -99,7 +109,7 @@ namespace BeautyBookBackend.DTOs
         public string? SocialLinks { get; set; }
         public string? InstagramUrl { get; set; }
         public string? FacebookUrl { get; set; }
-        public List<int>? StyleIds { get; set; }
+        [MinLength(1), MaxLength(5)] public List<int>? StyleIds { get; set; }
         public string? DisplayName { get; set; }
     }
 

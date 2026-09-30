@@ -12,6 +12,12 @@ namespace BeautyBookBackend.Models
         public string? PortfolioCoverUrl { get; set; }
         
         public string? City { get; set; }
+        public string? District { get; set; }
+        public int? ProvinceCode { get; set; }
+        public int? DistrictCode { get; set; }
+        public string? ExperienceLevel { get; set; }
+        public double? Latitude { get; set; }
+        public double? Longitude { get; set; }
         public string? Specialization { get; set; }
         public string? SocialLinks { get; set; }
         public string? InstagramUrl { get; set; }

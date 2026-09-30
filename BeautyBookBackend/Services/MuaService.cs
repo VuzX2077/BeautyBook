@@ -96,7 +96,19 @@ namespace BeautyBookBackend.Services
             if (updateDto.Bio != null) profile.Bio = updateDto.Bio;
             if (updateDto.ExperienceYears > 0) profile.ExperienceYears = updateDto.ExperienceYears;
             if (updateDto.PortfolioCoverUrl != null) profile.PortfolioCoverUrl = updateDto.PortfolioCoverUrl;
+            if (updateDto.ProvinceCode.HasValue && !MuaOperatingAreaCatalog.IsValid(updateDto.ProvinceCode.Value, updateDto.DistrictCode, updateDto.City ?? profile.City ?? "", updateDto.District ?? profile.District)) return false;
+            if ((updateDto.City != null && updateDto.City != profile.City) || (updateDto.District != null && updateDto.District != profile.District))
+            {
+                profile.Latitude = null;
+                profile.Longitude = null;
+                profile.ProvinceCode = null;
+                profile.DistrictCode = null;
+            }
             if (updateDto.City != null) profile.City = updateDto.City;
+            if (updateDto.District != null) profile.District = updateDto.District;
+            if (updateDto.ProvinceCode.HasValue) profile.ProvinceCode = updateDto.ProvinceCode;
+            if (updateDto.DistrictCode.HasValue) profile.DistrictCode = updateDto.DistrictCode;
+            if (updateDto.ExperienceLevel != null) profile.ExperienceLevel = updateDto.ExperienceLevel;
             if (updateDto.Specialization != null) profile.Specialization = updateDto.Specialization;
             if (updateDto.SocialLinks != null) profile.SocialLinks = updateDto.SocialLinks;
             if (updateDto.InstagramUrl != null) profile.InstagramUrl = updateDto.InstagramUrl;
@@ -474,6 +486,7 @@ namespace BeautyBookBackend.Services
 
         public async Task<bool> UpdateStylesAsync(Guid muaId, List<int> styleIds)
         {
+            if (styleIds.Count < 1 || styleIds.Count > 5) return false;
             if (!await _muaRepository.ProfileExistsAsync(muaId)) return false;
 
             var distinctStyleIds = styleIds.Distinct().ToList();
@@ -508,9 +521,17 @@ namespace BeautyBookBackend.Services
 
         public async Task<MakeupStyleDto?> CreateStyleAsync(CreateMakeupStyleRequest request)
         {
-            var name = request.Name.Trim();
+            var name = System.Text.RegularExpressions.Regex.Replace(request.Name.Normalize(System.Text.NormalizationForm.FormKC).Trim(), @"\s+", " ");
             if (name.Length == 0 || name.Length > 100) return null;
-            if (await _dbContext.MakeupStyles.AnyAsync(style => style.Name != null && style.Name.ToLower() == name.ToLower())) return null;
+            await using var transaction = await _dbContext.Database.BeginTransactionAsync();
+            await _dbContext.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock(hashtextextended('makeup-style:create', 0))");
+            var existing = await _dbContext.MakeupStyles.FirstOrDefaultAsync(style => style.Name != null && style.Name.ToLower() == name.ToLower());
+            if (existing != null)
+            {
+                if (!existing.IsActive) return null;
+                await transaction.CommitAsync();
+                return ToMakeupStyleDto(existing);
+            }
 
             var style = new MakeupStyle
             {
@@ -521,6 +542,7 @@ namespace BeautyBookBackend.Services
             };
             _dbContext.MakeupStyles.Add(style);
             await _unitOfWork.SaveChangesAsync();
+            await transaction.CommitAsync();
             return ToMakeupStyleDto(style);
         }
 
@@ -540,6 +562,10 @@ namespace BeautyBookBackend.Services
                 PhoneNumber = profile.User?.PhoneNumber,
                 PhoneVerified = profile.User?.PhoneVerified ?? false,
                 City = profile.City,
+                District = profile.District,
+                ProvinceCode = profile.ProvinceCode,
+                DistrictCode = profile.DistrictCode,
+                ExperienceLevel = profile.ExperienceLevel,
                 Specialization = profile.Specialization,
                 SocialLinks = profile.SocialLinks,
                 InstagramUrl = profile.InstagramUrl,
@@ -574,6 +600,10 @@ namespace BeautyBookBackend.Services
                 PhoneNumber = profile.User?.PhoneNumber,
                 PhoneVerified = profile.User?.PhoneVerified ?? false,
                 City = profile.City,
+                District = profile.District,
+                ProvinceCode = profile.ProvinceCode,
+                DistrictCode = profile.DistrictCode,
+                ExperienceLevel = profile.ExperienceLevel,
                 Specialization = profile.Specialization,
                 SocialLinks = profile.SocialLinks,
                 InstagramUrl = profile.InstagramUrl,

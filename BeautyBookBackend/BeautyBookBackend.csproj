@@ -23,6 +23,7 @@
 
   <ItemGroup>
     <Folder Include="Controllers\" />
+    <EmbeddedResource Include="Data\vietnamAreas.json" />
   </ItemGroup>
 
 </Project>

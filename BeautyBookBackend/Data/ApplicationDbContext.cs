@@ -77,6 +77,8 @@ namespace BeautyBookBackend.Data
 
                 b.Property(m => m.AverageRating).HasPrecision(3, 2);
                 b.Property(m => m.City).HasMaxLength(100);
+                b.Property(m => m.District).HasMaxLength(100);
+                b.Property(m => m.ExperienceLevel).HasMaxLength(30);
                 b.Property(m => m.Specialization).HasMaxLength(255);
                 b.Property(m => m.SocialLinks).HasMaxLength(1000);
                 b.Property(m => m.InstagramUrl).HasMaxLength(500);

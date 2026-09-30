@@ -250,6 +250,18 @@ namespace BeautyBookBackend.Services
             profile.ExperienceLevel = request.ExperienceLevel;
             profile.Latitude = request.Latitude;
             profile.Longitude = request.Longitude;
+            profile.OperatingLocationConfirmed = request.OperatingLocationConfirmed;
+            profile.PublicMeetingPoint = request.PublicMeetingPoint;
+            profile.OperatingLocationLabel = request.OperatingLocationLabel?.Trim();
+            if (request.OperatingAreaIds != null)
+            {
+                profile.OperatingProvinceCode = request.OperatingProvinceCode;
+                profile.City = OperatingAreas.Province(request.OperatingProvinceCode)!.Name;
+                var wanted = request.OperatingAreaIds.ToHashSet();
+                foreach (var old in profile.OperatingAreas.Where(a => !wanted.Contains(a.AreaId)).ToList()) profile.OperatingAreas.Remove(old);
+                foreach (var id in wanted.Where(id => !profile.OperatingAreas.Any(a => a.AreaId == id)))
+                    profile.OperatingAreas.Add(new MuaOperatingArea { MuaId = userId, AreaId = id });
+            }
             profile.ExperienceYears = request.ExperienceYears ?? 0;
             profile.Specialization = request.Specialization?.Trim();
             profile.SocialLinks = request.SocialLinks?.Trim();

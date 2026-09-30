@@ -13,6 +13,11 @@ namespace BeautyBookBackend.Models
         
         public string? City { get; set; }
         public string? District { get; set; }
+        public int? OperatingProvinceCode { get; set; }
+        public bool OperatingLocationConfirmed { get; set; }
+        public bool PublicMeetingPoint { get; set; }
+        public string? OperatingLocationLabel { get; set; }
+        public ICollection<MuaOperatingArea> OperatingAreas { get; set; } = new List<MuaOperatingArea>();
         public int? ProvinceCode { get; set; }
         public int? DistrictCode { get; set; }
         public string? ExperienceLevel { get; set; }

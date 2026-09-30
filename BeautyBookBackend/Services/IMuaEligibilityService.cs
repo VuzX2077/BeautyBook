@@ -9,6 +9,7 @@ namespace BeautyBookBackend.Services
         Task<bool> SetAccountActiveAsync(Guid userId, bool isActive);
         Task<(bool Success, string? Error)> SubmitForReviewAsync(Guid muaId);
         Task<(bool Success, string? Error)> UpdateIdentityVerificationAsync(Guid muaId, MuaIdentityVerificationRequestDto request);
+        Task<MuaIdentityVerificationRequestDto?> GetIdentityVerificationAsync(Guid muaId);
         Task<bool> ReviewAsync(Guid muaId, Guid adminId, bool approved, string? reason = null, IReadOnlyList<string>? reasonCodes = null, IReadOnlyList<MuaApplicationRejectionItemDto>? items = null);
         Task<List<AdminMuaApplicationListItemDto>> GetApplicationsAsync(string? status, int page, int pageSize);
     }

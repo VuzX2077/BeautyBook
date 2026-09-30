@@ -41,6 +41,7 @@ namespace BeautyBookBackend.Data
         public DbSet<DevicePushToken> DevicePushTokens { get; set; } = null!;
         public DbSet<AppNotification> AppNotifications { get; set; } = null!;
         public DbSet<NotificationCampaign> NotificationCampaigns { get; set; } = null!;
+        public DbSet<EmailOtp> EmailOtps { get; set; } = null!;
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -70,6 +71,10 @@ namespace BeautyBookBackend.Data
                 b.Property(m => m.SocialLinks).HasMaxLength(1000);
                 b.Property(m => m.InstagramUrl).HasMaxLength(500);
                 b.Property(m => m.FacebookUrl).HasMaxLength(500);
+                b.Property(m => m.Address).HasMaxLength(300);
+                b.Property(m => m.IdentityFrontUrl).HasMaxLength(1000);
+                b.Property(m => m.IdentityBackUrl).HasMaxLength(1000);
+                b.Property(m => m.PortraitUrl).HasMaxLength(1000);
                 b.Property(m => m.RejectionReason).HasMaxLength(1000);
                 b.HasIndex(m => new { m.VerificationStatus, m.SubmittedAt });
                 b.HasOne<User>().WithMany().HasForeignKey(m => m.ReviewedByAdminId).OnDelete(DeleteBehavior.SetNull);
@@ -82,6 +87,16 @@ namespace BeautyBookBackend.Data
                 b.Property(s => s.Description).HasMaxLength(255);
                 b.Property(s => s.IsActive).HasDefaultValue(true);
                 b.HasIndex(s => s.Name).IsUnique();
+            });
+
+            modelBuilder.Entity<EmailOtp>(b =>
+            {
+                b.HasKey(x => x.Id);
+                b.Property(x => x.Email).HasMaxLength(255).IsRequired();
+                b.Property(x => x.Purpose).HasMaxLength(30).IsRequired();
+                b.Property(x => x.CodeHash).HasMaxLength(64).IsRequired();
+                b.HasIndex(x => new { x.Email, x.Purpose, x.CreatedAt });
+                b.HasIndex(x => x.ExpiresAt);
             });
 
             modelBuilder.Entity<MUAStyle>(b =>
@@ -247,8 +262,9 @@ namespace BeautyBookBackend.Data
             modelBuilder.Entity<Message>(b =>
             {
                 b.HasKey(m => m.MessageId);
-                b.Property(m => m.Content);
+                b.Property(m => m.Content).HasMaxLength(2000);
                 b.Property(m => m.ImageUrl).HasMaxLength(1000);
+                b.HasIndex(m => new { m.ChatRoomId, m.SentAt, m.MessageId });
                 b.HasOne(m => m.ReplyToMessage)
                     .WithMany()
                     .HasForeignKey(m => m.ReplyToMessageId)
@@ -384,10 +400,18 @@ namespace BeautyBookBackend.Data
                 b.Property(x => x.Status).HasMaxLength(20).IsRequired();
                 b.HasIndex(x => new { x.UserId, x.ReadAt, x.CreatedAt });
                 b.HasIndex(x => new { x.BookingId, x.UserId, x.Type }).IsUnique();
+                b.HasIndex(x => x.MessageId).IsUnique().HasFilter("\"MessageId\" IS NOT NULL");
                 b.HasIndex(x => new { x.Status, x.ScheduledAt });
                 b.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
                 b.HasOne(x => x.Booking).WithMany().HasForeignKey(x => x.BookingId).OnDelete(DeleteBehavior.Cascade);
+                b.HasOne(x => x.Message).WithMany().HasForeignKey(x => x.MessageId).OnDelete(DeleteBehavior.Cascade);
                 b.HasOne(x => x.Campaign).WithMany(x => x.Notifications).HasForeignKey(x => x.CampaignId).OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<ChatRoom>(b =>
+            {
+                b.HasKey(x => x.ChatRoomId);
+                b.HasIndex(x => new { x.CustomerId, x.MUAId }).IsUnique();
             });
 
             modelBuilder.Entity<NotificationCampaign>(b =>

@@ -215,6 +215,14 @@ namespace BeautyBookBackend.Controllers
             return result.Success ? Ok(await _eligibilityService.EvaluateAsync(CurrentUserId)) : BadRequest(new { Code = "MUA_APPLICATION_INCOMPLETE", Message = result.Error });
         }
 
+        [Authorize(Roles = nameof(UserRole.MUA))]
+        [HttpPut("verification/identity")]
+        public async Task<IActionResult> UpdateIdentityVerification([FromBody] MuaIdentityVerificationRequestDto request)
+        {
+            var result = await _eligibilityService.UpdateIdentityVerificationAsync(CurrentUserId, request);
+            return result.Success ? Ok(await _eligibilityService.EvaluateAsync(CurrentUserId)) : BadRequest(new { Message = result.Error });
+        }
+
         [Authorize(Roles = nameof(UserRole.Admin))]
         [HttpPost("styles")]
         public async Task<IActionResult> CreateStyle([FromBody] CreateMakeupStyleRequest request)

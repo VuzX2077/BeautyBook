@@ -30,10 +30,56 @@ namespace BeautyBookBackend.Controllers
             var user = await _authService.RegisterAsync(registerDto);
             if (user == null)
             {
-                return BadRequest(new { Message = "Email này đã được đăng ký sử dụng trong hệ thống." });
+                return BadRequest(new { Message = "Mã OTP không hợp lệ, đã hết hạn hoặc email đã được đăng ký." });
             }
 
             return Ok(new { Message = "Đăng ký tài khoản thành công!", User = user });
+        }
+
+        [HttpPost("register/request-otp")]
+        public async Task<IActionResult> RequestRegistrationOtp([FromBody] EmailDto request)
+        {
+            try
+            {
+                var error = await _authService.SendRegistrationOtpAsync(request.Email);
+                return error == "EMAIL_EXISTS"
+                    ? BadRequest(new { Code = error, Message = "Email này đã được đăng ký sử dụng trong hệ thống." })
+                    : Ok(new { Message = "Mã OTP đã được gửi đến email." });
+            }
+            catch (OtpCooldownException ex) { return StatusCode(429, new { Code = "OTP_COOLDOWN", Message = ex.Message }); }
+            catch (EmailDeliveryException)
+            {
+                return StatusCode(503, new { Code = "EMAIL_UNAVAILABLE", Message = "Chưa thể gửi mã OTP. Vui lòng thử lại sau." });
+            }
+        }
+
+        [HttpPost("forgot-password")]
+        public async Task<IActionResult> ForgotPassword([FromBody] EmailDto request)
+        {
+            try { await _authService.SendPasswordResetOtpAsync(request.Email); }
+            catch (OtpCooldownException) { }
+            catch (EmailDeliveryException)
+            {
+                return StatusCode(503, new { Code = "EMAIL_UNAVAILABLE", Message = "Chưa thể gửi mã OTP. Vui lòng thử lại sau." });
+            }
+            return Ok(new { Message = "Nếu email tồn tại, mã OTP đã được gửi." });
+        }
+
+        [HttpPost("reset-password")]
+        public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordDto request)
+            => await _authService.ResetPasswordAsync(request)
+                ? Ok(new { Message = "Đặt lại mật khẩu thành công." })
+                : BadRequest(new { Message = "Mã OTP không hợp lệ, đã hết hạn hoặc tài khoản không hỗ trợ mật khẩu." });
+
+        [Authorize]
+        [HttpPost("change-password")]
+        public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordDto request)
+        {
+            var id = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(id, out var userId)) return Unauthorized();
+            return await _authService.ChangePasswordAsync(userId, request)
+                ? Ok(new { Message = "Đổi mật khẩu thành công." })
+                : BadRequest(new { Message = "Mật khẩu hiện tại không chính xác hoặc tài khoản không hỗ trợ mật khẩu." });
         }
 
         [HttpPost("login")]

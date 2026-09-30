@@ -65,12 +65,12 @@ namespace BeautyBookBackend.Controllers
         }
 
         [HttpGet("rooms/{roomId}/messages")]
-        public async Task<IActionResult> GetMessages(Guid roomId)
+        public async Task<IActionResult> GetMessages(Guid roomId, [FromQuery] DateTime? before = null, [FromQuery] int limit = 50)
         {
             try
             {
                 var userId = GetCurrentUserId();
-                var messages = await _chatService.GetMessagesByRoomIdAsync(roomId, userId);
+                var messages = await _chatService.GetMessagesByRoomIdAsync(roomId, userId, before, limit);
                 return Ok(messages);
             }
             catch (UnauthorizedAccessException ex)
@@ -90,13 +90,9 @@ namespace BeautyBookBackend.Controllers
             {
                 var userId = GetCurrentUserId();
                 var messageDto = await _chatService.SendMessageAsync(roomId, userId, request.Content, request.ImageUrl, request.ReplyToMessageId);
-
-                // Broadcast via SignalR to the room participants
-                // In a real app, we might get the room participants and send to their user groups
-                // For simplicity, we just broadcast to the room ID group if they joined it, 
-                // OR we send to the specific User IDs.
-                // Let's send to the room group. Clients must join the room group when they open the chat.
-                await _hubContext.Clients.Group(roomId.ToString()).SendAsync("ReceiveMessage", messageDto);
+                var participants = await _chatService.GetParticipantsAsync(roomId, userId);
+                await _hubContext.Clients.Groups(participants.CustomerId.ToString(), participants.MuaId.ToString())
+                    .SendAsync("ReceiveMessage", messageDto);
 
                 return Ok(messageDto);
             }
@@ -116,43 +112,28 @@ namespace BeautyBookBackend.Controllers
             try
             {
                 var message = await _chatService.ToggleReactionAsync(roomId, messageId, GetCurrentUserId(), request.Emoji);
-                await _hubContext.Clients.Group(roomId.ToString()).SendAsync("MessageUpdated", message);
+                var participants = await _chatService.GetParticipantsAsync(roomId, GetCurrentUserId());
+                await _hubContext.Clients.Groups(participants.CustomerId.ToString(), participants.MuaId.ToString()).SendAsync("MessageUpdated", message);
                 return Ok(message);
             }
             catch (UnauthorizedAccessException) { return Forbid(); }
             catch (Exception ex) { return BadRequest(new { Message = ex.Message }); }
         }
 
-        [HttpPost("rooms/{roomId}/join")]
-        public async Task<IActionResult> JoinRoomGroup(Guid roomId, [FromQuery] string connectionId)
+        [HttpPost("rooms/{roomId:guid}/read")]
+        public async Task<IActionResult> MarkRead(Guid roomId)
         {
             try
             {
-                // Verify user can access room
                 var userId = GetCurrentUserId();
-                await _chatService.GetMessagesByRoomIdAsync(roomId, userId); // Throws if not allowed
-                
-                await _hubContext.Groups.AddToGroupAsync(connectionId, roomId.ToString());
-                return Ok();
+                var count = await _chatService.MarkReadAsync(roomId, userId);
+                var participants = await _chatService.GetParticipantsAsync(roomId, userId);
+                await _hubContext.Clients.Groups(participants.CustomerId.ToString(), participants.MuaId.ToString())
+                    .SendAsync("MessagesRead", new { RoomId = roomId, ReaderId = userId, ReadAt = DateTime.UtcNow });
+                return Ok(new { Updated = count });
             }
-            catch (Exception ex)
-            {
-                return BadRequest(new { Message = ex.Message });
-            }
-        }
-        
-        [HttpPost("rooms/{roomId}/leave")]
-        public async Task<IActionResult> LeaveRoomGroup(Guid roomId, [FromQuery] string connectionId)
-        {
-            try
-            {
-                await _hubContext.Groups.RemoveFromGroupAsync(connectionId, roomId.ToString());
-                return Ok();
-            }
-            catch (Exception ex)
-            {
-                return BadRequest(new { Message = ex.Message });
-            }
+            catch (UnauthorizedAccessException) { return Forbid(); }
+            catch (Exception ex) { return BadRequest(new { Message = ex.Message }); }
         }
     }
 }

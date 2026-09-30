@@ -5,6 +5,7 @@ using BeautyBookBackend.DTOs;
 using BeautyBookBackend.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
+using BeautyBookBackend.Services;
 
 namespace BeautyBookBackend.Tests;
 
@@ -39,6 +40,17 @@ public class NotificationSafetyTests
         using var context = CreateContext();
         var property = context.Model.FindEntityType(typeof(AppNotification))!.FindProperty(nameof(AppNotification.CampaignId));
         Assert.True(property!.IsNullable);
+    }
+
+    [Fact]
+    public void ChatNotification_HasUniqueMessageLinkAndUsesChatChannel()
+    {
+        using var context = CreateContext();
+        var entity = context.Model.FindEntityType(typeof(AppNotification))!;
+        var index = Assert.Single(entity.GetIndexes(), x => x.Properties.Select(p => p.Name)
+            .SequenceEqual(new[] { nameof(AppNotification.MessageId) }));
+        Assert.True(index.IsUnique);
+        Assert.Equal("chat", NotificationChannelResolver.Resolve("CHAT_MESSAGE"));
     }
 
     [Theory]

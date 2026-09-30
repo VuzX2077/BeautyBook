@@ -31,5 +31,16 @@ namespace BeautyBookBackend.DTOs
         public string AvatarUrl { get; set; } = null!;
         [MinLength(1, ErrorMessage = "Vui lòng chọn ít nhất một chuyên môn.")]
         public List<int> StyleIds { get; set; } = new();
+
+        [Required, StringLength(300, MinimumLength = 5)]
+        public string Address { get; set; } = null!;
+    }
+
+    public sealed class MuaIdentityVerificationRequestDto
+    {
+        [Required, Url] public string IdentityFrontUrl { get; set; } = null!;
+        [Required, Url] public string IdentityBackUrl { get; set; } = null!;
+        [Required, Url] public string PortraitUrl { get; set; } = null!;
+        public List<string> CertificateUrls { get; set; } = new();
     }
 }

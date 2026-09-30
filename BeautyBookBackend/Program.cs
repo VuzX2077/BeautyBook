@@ -142,6 +142,13 @@ builder.Services.AddAuthentication(options =>
     };
     options.Events = new JwtBearerEvents
     {
+        OnMessageReceived = context =>
+        {
+            var accessToken = context.Request.Query["access_token"];
+            if (!string.IsNullOrEmpty(accessToken) && context.HttpContext.Request.Path.StartsWithSegments("/chathub"))
+                context.Token = accessToken;
+            return Task.CompletedTask;
+        },
         OnTokenValidated = async context =>
         {
             var userIdValue = context.Principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
@@ -160,6 +167,10 @@ builder.Services.AddAuthentication(options =>
 
 // Register Application Services (Dependency Injection)
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddHttpClient<IEmailSender, BrevoEmailSender>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(20);
+});
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IMuaService, MuaService>();
 builder.Services.AddScoped<IMuaEligibilityService, MuaEligibilityService>();
@@ -184,6 +195,7 @@ builder.Services.AddScoped<IWalletService, WalletService>();
 builder.Services.AddHttpClient<IImageStorage, SupabaseImageStorage>();
 builder.Services.AddScoped<IFeedService, FeedService>();
 builder.Services.AddScoped<IChatService, ChatService>();
+builder.Services.AddScoped<IChatNotificationService, ChatNotificationService>();
 builder.Services.AddHttpClient<IPayOsService, PayOsService>(client =>
 {
     var baseUrl = builder.Configuration["PayOS:BaseUrl"] ?? "https://api-merchant.payos.vn";
@@ -204,11 +216,41 @@ builder.Services.AddSignalR();
 
 var app = builder.Build();
 
-if (builder.Configuration.GetValue<bool>("ApplyMigrations"))
+// Render deployments must be push-only: production applies pending migrations
+// before accepting traffic. A PostgreSQL advisory lock serializes concurrent
+// instance starts, and transient connection failures are retried while the
+// managed database wakes up.
+var applyMigrations = builder.Configuration.GetValue<bool?>("ApplyMigrations")
+    ?? app.Environment.IsProduction();
+if (applyMigrations)
 {
-    using var scope = app.Services.CreateScope();
-    var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-    dbContext.Database.Migrate();
+    const long migrationLockId = 724_266_524_669_001;
+    const int maxMigrationAttempts = 5;
+    for (var attempt = 1; attempt <= maxMigrationAttempts; attempt++)
+    {
+        try
+        {
+            await using var scope = app.Services.CreateAsyncScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await dbContext.Database.OpenConnectionAsync();
+            try
+            {
+                await dbContext.Database.ExecuteSqlRawAsync($"SELECT pg_advisory_lock({migrationLockId})");
+                await dbContext.Database.MigrateAsync();
+            }
+            finally
+            {
+                try { await dbContext.Database.ExecuteSqlRawAsync($"SELECT pg_advisory_unlock({migrationLockId})"); }
+                finally { await dbContext.Database.CloseConnectionAsync(); }
+            }
+            break;
+        }
+        catch (Exception exception) when (attempt < maxMigrationAttempts)
+        {
+            app.Logger.LogWarning(exception, "Database migration attempt {Attempt}/{MaxAttempts} failed; retrying.", attempt, maxMigrationAttempts);
+            await Task.Delay(TimeSpan.FromSeconds(attempt * 3));
+        }
+    }
 }
 
 // Configure the HTTP request pipeline.

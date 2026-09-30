@@ -33,6 +33,7 @@ namespace BeautyBookBackend.Services
                 .SelectMany(x => x.ImageUrls ?? new List<string>())
                 .Count(IsValidPublicUrl);
             var activeServiceCount = profile.Services.Count(x => x.IsActive);
+            var hasActiveBankAccount = await _db.BankAccounts.AnyAsync(x => x.UserId == muaId && x.IsActive);
 
             var requirements = new List<MuaEligibilityRequirementDto>
             {
@@ -41,15 +42,17 @@ namespace BeautyBookBackend.Services
                 Requirement("avatar", "Có ảnh đại diện", IsValidPublicUrl(profile.User.AvatarUrl)),
                 Requirement("phoneNumber", "Có số điện thoại", !string.IsNullOrWhiteSpace(profile.User.PhoneNumber)),
                 Requirement("city", "Có thành phố/khu vực", !string.IsNullOrWhiteSpace(profile.City)),
+                Requirement("address", "Có địa chỉ", !string.IsNullOrWhiteSpace(profile.Address)),
                 Requirement("bio", "Có phần giới thiệu", !string.IsNullOrWhiteSpace(profile.Bio)),
+                Requirement("identityVerification", "Có đủ CCCD/CMND và ảnh chân dung", IsValidPublicUrl(profile.IdentityFrontUrl) && IsValidPublicUrl(profile.IdentityBackUrl) && IsValidPublicUrl(profile.PortraitUrl)),
+                Requirement("bankAccount", "Có tài khoản ngân hàng", hasActiveBankAccount),
                 Requirement("specialty", "Có chuyên môn hoặc phong cách", !string.IsNullOrWhiteSpace(profile.Specialization) || specialtyCount > 0, !string.IsNullOrWhiteSpace(profile.Specialization) ? 1 : specialtyCount, 1),
                 Requirement("activeService", "Có ít nhất 1 dịch vụ đang hoạt động", activeServiceCount >= 1, activeServiceCount, 1),
-                Requirement("publicPortfolioImages", "Có ít nhất 3 ảnh portfolio công khai hợp lệ", publicImageCount >= 3, publicImageCount, 3)
+                Requirement("publicPortfolioImages", "Có ít nhất 3 ảnh portfolio hợp lệ", publicImageCount >= 3, publicImageCount, 3)
             };
 
             var canPublish = requirements.All(x => x.IsMet);
             var hasValidSchedule = await _scheduleService.HasValidScheduleAsync(muaId);
-            requirements.Add(Requirement("workingSchedule", "Có lịch làm việc hợp lệ", hasValidSchedule));
             if (updateStatus && profile.Status != MuaStatus.Suspended)
             {
                 if (canPublish && hasValidSchedule && profile.VerificationStatus == MuaVerificationStatus.Approved && profile.Status == MuaStatus.Draft)
@@ -86,7 +89,7 @@ namespace BeautyBookBackend.Services
             {
                 CompletionPercentage = (int)Math.Round(requirements.Count(x => x.IsMet) * 100m / requirements.Count),
                 ProfileStatus = profile.Status.ToString(),
-                CanPublishProfile = canPublish && hasValidSchedule && profile.VerificationStatus == MuaVerificationStatus.Approved && profile.Status != MuaStatus.Suspended,
+                CanPublishProfile = operational && profile.Status == MuaStatus.Listed && canPublish && hasValidSchedule && profile.VerificationStatus == MuaVerificationStatus.Approved,
                 CanReceiveBookings = operational && profile.Status == MuaStatus.Listed && canPublish && hasValidSchedule && profile.VerificationStatus == MuaVerificationStatus.Approved,
                 CanWithdraw = operational && hasUsableBankAccount && hasWithdrawableReceivable,
                 VerificationStatus = profile.VerificationStatus.ToString(),
@@ -132,7 +135,7 @@ namespace BeautyBookBackend.Services
             var result = await EvaluateAsync(muaId);
             if (result == null) return (false, "Không tìm thấy hồ sơ MUA.");
             if (result.MissingRequirements.Count > 0)
-                return (false, "Vui lòng hoàn thành đầy đủ hồ sơ, dịch vụ, portfolio và lịch làm việc trước khi gửi duyệt.");
+                return (false, "Vui lòng hoàn thành thông tin cá nhân, xác minh danh tính, ngân hàng, dịch vụ và portfolio trước khi gửi duyệt.");
             var profile = await _db.MakeupArtistProfiles.FirstAsync(x => x.MUAId == muaId);
             if (profile.VerificationStatus == MuaVerificationStatus.Approved) return (true, null);
             profile.VerificationStatus = MuaVerificationStatus.PendingReview;
@@ -145,29 +148,75 @@ namespace BeautyBookBackend.Services
             return (true, null);
         }
 
-        public async Task<bool> ReviewAsync(Guid muaId, Guid adminId, bool approved, string? reason = null)
+        public async Task<(bool Success, string? Error)> UpdateIdentityVerificationAsync(Guid muaId, MuaIdentityVerificationRequestDto request)
         {
+            var profile = await _db.MakeupArtistProfiles.FirstOrDefaultAsync(x => x.MUAId == muaId);
+            if (profile == null) return (false, "Không tìm thấy hồ sơ MUA.");
+            var urls = new[] { request.IdentityFrontUrl, request.IdentityBackUrl, request.PortraitUrl };
+            if (urls.Any(x => !IsValidPublicUrl(x)) || request.CertificateUrls.Any(x => !IsValidPublicUrl(x)))
+                return (false, "Ảnh xác minh phải là URL công khai hợp lệ.");
+            profile.IdentityFrontUrl = request.IdentityFrontUrl.Trim();
+            profile.IdentityBackUrl = request.IdentityBackUrl.Trim();
+            profile.PortraitUrl = request.PortraitUrl.Trim();
+            profile.CertificateUrls = request.CertificateUrls.Distinct().ToList();
+            if (profile.VerificationStatus == MuaVerificationStatus.Rejected)
+            {
+                profile.VerificationStatus = MuaVerificationStatus.Draft;
+                profile.RejectionReason = null;
+                profile.RejectionDetailsJson = null;
+            }
+            await _db.SaveChangesAsync();
+            await EvaluateAsync(muaId);
+            return (true, null);
+        }
+
+        public async Task<bool> ReviewAsync(Guid muaId, Guid adminId, bool approved, string? reason = null, IReadOnlyList<string>? reasonCodes = null, IReadOnlyList<MuaApplicationRejectionItemDto>? items = null)
+        {
+            if (approved)
+            {
+                var eligibility = await EvaluateAsync(muaId, false);
+                if (eligibility == null || eligibility.MissingRequirements.Count > 0) return false;
+            }
+            await using var transaction = await _db.Database.BeginTransactionAsync();
+            var lockKey = $"mua-review:{muaId:N}";
+            await _db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({lockKey}, 0))");
             var now = DateTime.UtcNow;
             var nextStatus = approved ? MuaVerificationStatus.Approved : MuaVerificationStatus.Rejected;
             var rejectionReason = approved ? null : reason?.Trim();
+            var rejectionDetailsJson = approved ? null : System.Text.Json.JsonSerializer.Serialize(new { reasonCodes, items });
             var changed = await _db.MakeupArtistProfiles
                 .Where(x => x.MUAId == muaId && x.VerificationStatus == MuaVerificationStatus.PendingReview)
                 .ExecuteUpdateAsync(setters => setters
                     .SetProperty(x => x.VerificationStatus, nextStatus)
                     .SetProperty(x => x.ReviewedAt, now)
                     .SetProperty(x => x.ReviewedByAdminId, adminId)
-                    .SetProperty(x => x.RejectionReason, rejectionReason));
-            if (changed != 1) return false;
+                    .SetProperty(x => x.RejectionReason, rejectionReason)
+                    .SetProperty(x => x.RejectionDetailsJson, rejectionDetailsJson));
+            if (changed != 1) { await transaction.RollbackAsync(); return false; }
+            if (approved)
+            {
+                var scheduledDays = await _db.MuaWorkingSchedules.Where(x => x.MUAId == muaId && x.IsActive)
+                    .Select(x => x.DayOfWeek).Distinct().ToListAsync();
+                _db.MuaWorkingSchedules.AddRange(Enum.GetValues<DayOfWeek>().Except(scheduledDays).Select(day => new MuaWorkingSchedule
+                    {
+                        Id = Guid.NewGuid(), MUAId = muaId, DayOfWeek = day,
+                        StartTime = TimeSpan.FromHours(8), EndTime = TimeSpan.FromHours(22), IsActive = true
+                    }));
+                var profile = await _db.MakeupArtistProfiles.FirstAsync(x => x.MUAId == muaId);
+                profile.Status = MuaStatus.Listed;
+                profile.ListedAt ??= now;
+            }
             await EvaluateAsync(muaId);
             _db.AppNotifications.Add(new AppNotification
             {
                 Id = Guid.NewGuid(), UserId = muaId, Type = approved ? "MUA_APPLICATION_APPROVED" : "MUA_APPLICATION_REJECTED",
-                Title = approved ? "Hồ sơ MUA đã được duyệt" : "Hồ sơ MUA cần điều chỉnh",
-                Body = approved ? "Hồ sơ của bạn đã được duyệt và có thể xuất hiện công khai khi đủ điều kiện vận hành." : rejectionReason ?? "Vui lòng cập nhật hồ sơ và gửi lại để xét duyệt.",
+                Title = approved ? "Hồ sơ MUA đã được duyệt" : "Hồ sơ MUA bị từ chối",
+                Body = approved ? "Hồ sơ của bạn đã được duyệt. Lịch nhận khách đã mở cả tuần từ 08:00 đến 22:00 và bạn có thể nhận booking ngay." : rejectionReason ?? "Vui lòng cập nhật hồ sơ và gửi lại để xét duyệt.",
                 DataJson = System.Text.Json.JsonSerializer.Serialize(new { url = "/mua-onboarding/setup" }),
                 ScheduledAt = now, Status = "Pending", CreatedAt = now
             });
             await _db.SaveChangesAsync();
+            await transaction.CommitAsync();
             return true;
         }
 

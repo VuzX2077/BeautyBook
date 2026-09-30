@@ -43,6 +43,16 @@ namespace BeautyBookBackend.DTOs
     {
         [System.ComponentModel.DataAnnotations.Required, System.ComponentModel.DataAnnotations.StringLength(1000, MinimumLength = 5)]
         public string Reason { get; set; } = string.Empty;
+        [System.ComponentModel.DataAnnotations.MinLength(1)]
+        public List<string> ReasonCodes { get; set; } = new();
+        public List<MuaApplicationRejectionItemDto> Items { get; set; } = new();
+    }
+
+    public sealed class MuaApplicationRejectionItemDto
+    {
+        public string Section { get; set; } = string.Empty;
+        public string Field { get; set; } = string.Empty;
+        public string Message { get; set; } = string.Empty;
     }
 
     public sealed class AdminMuaApplicationListItemDto

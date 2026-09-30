@@ -23,7 +23,8 @@ public sealed class MuaOnboardingContractTests
             Bio = "Chuyên trang điểm cô dâu tự nhiên.",
             ExperienceYears = 3,
             AvatarUrl = "https://cdn.example.com/avatar.jpg",
-            StyleIds = [1, 2]
+            StyleIds = [1, 2],
+            Address = "123 Nguyễn Huệ, Quận 1"
         };
 
         Assert.Empty(Validate(request));

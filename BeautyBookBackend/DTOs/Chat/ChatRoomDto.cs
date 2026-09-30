@@ -16,5 +16,6 @@ namespace BeautyBookBackend.DTOs.Chat
         public DateTime CreatedAt { get; set; }
         
         public MessageDto? LastMessage { get; set; }
+        public int UnreadCount { get; set; }
     }
 }

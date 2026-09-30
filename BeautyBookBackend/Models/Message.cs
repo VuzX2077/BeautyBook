@@ -11,6 +11,7 @@ namespace BeautyBookBackend.Models
         public string? Content { get; set; }
         public DateTime SentAt { get; set; }
         public bool IsRead { get; set; }
+        public DateTime? ReadAt { get; set; }
         public string? ImageUrl { get; set; }
         public Guid? ReplyToMessageId { get; set; }
 

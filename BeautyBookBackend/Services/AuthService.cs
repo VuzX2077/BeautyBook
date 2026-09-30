@@ -156,7 +156,7 @@ namespace BeautyBookBackend.Services
 
         public async Task<TokenDto?> LoginAsync(LoginDto loginDto)
         {
-            var user = await _userRepository.GetByEmailAsync(loginDto.Email);
+            var user = await _userRepository.GetByEmailAsync(NormalizeEmail(loginDto.Email));
             if (user == null || !user.IsActive || user.DeletedAt.HasValue || !VerifyPasswordHash(loginDto.Password, user.PasswordHash))
             {
                 return null;

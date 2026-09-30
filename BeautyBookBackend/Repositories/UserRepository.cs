@@ -17,12 +17,14 @@ namespace BeautyBookBackend.Repositories
 
         public Task<bool> EmailExistsAsync(string email)
         {
-            return _context.Users.AnyAsync(u => u.Email == email);
+            var normalizedEmail = email.Trim().ToLower();
+            return _context.Users.AnyAsync(u => u.Email != null && u.Email.ToLower() == normalizedEmail);
         }
 
         public Task<User?> GetByEmailAsync(string email)
         {
-            return _context.Users.FirstOrDefaultAsync(u => u.Email == email);
+            var normalizedEmail = email.Trim().ToLower();
+            return _context.Users.FirstOrDefaultAsync(u => u.Email != null && u.Email.ToLower() == normalizedEmail);
         }
 
         public Task<User?> GetByIdAsync(Guid userId)

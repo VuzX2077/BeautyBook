@@ -10,6 +10,7 @@ namespace BeautyBookBackend.Data
         {
         }
 
+        public DbSet<MuaFollow> MuaFollows { get; set; } = null!;
         public DbSet<User> Users { get; set; } = null!;
         public DbSet<MakeupArtistProfile> MakeupArtistProfiles { get; set; } = null!;
         public DbSet<MakeupStyle> MakeupStyles { get; set; } = null!;
@@ -47,6 +48,15 @@ namespace BeautyBookBackend.Data
         {
             base.OnModelCreating(modelBuilder);
 
+            modelBuilder.Entity<MuaFollow>(b =>
+            {
+                b.HasKey(f => new { f.UserId, f.MuaId });
+                b.HasIndex(f => new { f.MuaId, f.CreatedAt });
+                b.HasIndex(f => new { f.UserId, f.CreatedAt });
+                b.ToTable(t => t.HasCheckConstraint("CK_MuaFollows_NoSelfFollow", "\"UserId\" <> \"MuaId\""));
+                b.HasOne(f => f.User).WithMany().HasForeignKey(f => f.UserId).OnDelete(DeleteBehavior.Cascade);
+                b.HasOne(f => f.Mua).WithMany().HasForeignKey(f => f.MuaId).OnDelete(DeleteBehavior.Cascade);
+            });
             modelBuilder.Entity<User>(b =>
             {
                 b.HasKey(u => u.UserId);

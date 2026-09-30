@@ -34,7 +34,6 @@ public sealed class MuaOnboardingContractTests
     [InlineData("", "0901234567", "Hà Nội", "Giới thiệu hợp lệ cho hồ sơ.", "https://cdn.example.com/a.jpg")]
     [InlineData("Linh Makeup", "abc", "Hà Nội", "Giới thiệu hợp lệ cho hồ sơ.", "https://cdn.example.com/a.jpg")]
     [InlineData("Linh Makeup", "0901234567", "", "Giới thiệu hợp lệ cho hồ sơ.", "https://cdn.example.com/a.jpg")]
-    [InlineData("Linh Makeup", "0901234567", "Hà Nội", "ngắn", "https://cdn.example.com/a.jpg")]
     [InlineData("Linh Makeup", "0901234567", "Hà Nội", "Giới thiệu hợp lệ cho hồ sơ.", "blob:temporary")]
     public void InvalidApplication_IsRejected(string name, string phone, string city, string bio, string avatar)
     {

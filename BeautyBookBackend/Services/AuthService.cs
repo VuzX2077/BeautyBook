@@ -210,7 +210,7 @@ namespace BeautyBookBackend.Services
                 .Where(style => styleIds.Contains(style.StyleId) && style.IsActive)
                 .Select(style => style.StyleId)
                 .ToListAsync();
-            if (styleIds.Count == 0 || validStyleIds.Count != styleIds.Count)
+            if (styleIds.Count == 0 || request.StyleIds.Count > 5 || validStyleIds.Count != styleIds.Count)
             {
                 await transaction.RollbackAsync();
                 return null;
@@ -236,18 +236,24 @@ namespace BeautyBookBackend.Services
             }
 
             user.FullName = request.DisplayName.Trim();
-            if (!string.Equals(user.PhoneNumber, request.PhoneNumber.Trim(), StringComparison.Ordinal))
+            if (!string.IsNullOrWhiteSpace(request.PhoneNumber) && !string.Equals(user.PhoneNumber, request.PhoneNumber.Trim(), StringComparison.Ordinal))
             {
                 user.PhoneNumber = request.PhoneNumber.Trim();
                 user.PhoneVerified = false;
             }
             user.AvatarUrl = request.AvatarUrl.Trim();
             profile.City = request.City.Trim();
-            profile.Bio = request.Bio.Trim();
+            profile.Bio = request.Bio?.Trim();
+            profile.District = request.District?.Trim();
+            profile.ProvinceCode = request.ProvinceCode;
+            profile.DistrictCode = request.DistrictCode;
+            profile.ExperienceLevel = request.ExperienceLevel;
+            profile.Latitude = request.Latitude;
+            profile.Longitude = request.Longitude;
             profile.ExperienceYears = request.ExperienceYears ?? 0;
             profile.Specialization = request.Specialization?.Trim();
             profile.SocialLinks = request.SocialLinks?.Trim();
-            profile.Address = request.Address.Trim();
+            profile.Address = request.Address?.Trim();
 
             var oldStyles = await _muaRepository.GetStyleLinksByMuaIdAsync(userId);
             _muaRepository.RemoveStyleLinks(oldStyles);

@@ -234,6 +234,14 @@ namespace BeautyBookBackend.Controllers
         }
 
         [Authorize]
+        [HttpPost("styles/select-or-create")]
+        public async Task<IActionResult> SelectOrCreateStyle([FromBody] CreateMakeupStyleRequest request)
+        {
+            var style = await _muaService.CreateStyleAsync(request);
+            return style == null ? BadRequest(new { Message = "Tên phong cách không hợp lệ." }) : Ok(style);
+        }
+
+        [Authorize]
         [HttpPut("styles")]
         public async Task<IActionResult> UpdateStyles([FromBody] List<int> styleIds)
         {

@@ -172,6 +172,12 @@ namespace BeautyBookBackend.Services
                 muaProfile.Bio = null;
                 muaProfile.PortfolioCoverUrl = null;
                 muaProfile.City = null;
+                muaProfile.District = null;
+                muaProfile.ProvinceCode = null;
+                muaProfile.DistrictCode = null;
+                muaProfile.Latitude = null;
+                muaProfile.Longitude = null;
+                muaProfile.ExperienceLevel = null;
                 muaProfile.Specialization = null;
                 muaProfile.SocialLinks = null;
                 muaProfile.Status = MuaStatus.Suspended;

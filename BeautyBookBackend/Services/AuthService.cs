@@ -114,8 +114,9 @@ namespace BeautyBookBackend.Services
             var latest = await _dbContext.EmailOtps
                 .Where(x => x.Email == email && x.Purpose == purpose)
                 .OrderByDescending(x => x.CreatedAt).FirstOrDefaultAsync();
-            if (latest != null && latest.CreatedAt > now.AddSeconds(-60))
-                throw new OtpCooldownException();
+            var cooldownSeconds = purpose == "REGISTER" ? 45 : 60;
+            if (latest != null && latest.CreatedAt > now.AddSeconds(-cooldownSeconds))
+                throw new OtpCooldownException(cooldownSeconds);
 
             var active = await _dbContext.EmailOtps
                 .Where(x => x.Email == email && x.Purpose == purpose && x.UsedAt == null).ToListAsync();

@@ -46,14 +46,22 @@ namespace BeautyBookBackend.Controllers
                     ? BadRequest(new { Code = error, Message = "Email này đã được đăng ký sử dụng trong hệ thống." })
                     : Ok(new { Message = "Mã OTP đã được gửi đến email." });
             }
-            catch (InvalidOperationException ex) { return StatusCode(429, new { Message = ex.Message }); }
+            catch (OtpCooldownException ex) { return StatusCode(429, new { Code = "OTP_COOLDOWN", Message = ex.Message }); }
+            catch (EmailDeliveryException)
+            {
+                return StatusCode(503, new { Code = "EMAIL_UNAVAILABLE", Message = "Chưa thể gửi mã OTP. Vui lòng thử lại sau." });
+            }
         }
 
         [HttpPost("forgot-password")]
         public async Task<IActionResult> ForgotPassword([FromBody] EmailDto request)
         {
             try { await _authService.SendPasswordResetOtpAsync(request.Email); }
-            catch (InvalidOperationException) { }
+            catch (OtpCooldownException) { }
+            catch (EmailDeliveryException)
+            {
+                return StatusCode(503, new { Code = "EMAIL_UNAVAILABLE", Message = "Chưa thể gửi mã OTP. Vui lòng thử lại sau." });
+            }
             return Ok(new { Message = "Nếu email tồn tại, mã OTP đã được gửi." });
         }
 

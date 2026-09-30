@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using BeautyBookBackend.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace BeautyBookBackend.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260929201739_CleanupLegacyInvalidBankDefaults")]
+    partial class CleanupLegacyInvalidBankDefaults
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -52,9 +55,6 @@ namespace BeautyBookBackend.Migrations
                     b.Property<string>("LastError")
                         .HasColumnType("text");
 
-                    b.Property<Guid?>("MessageId")
-                        .HasColumnType("uuid");
-
                     b.Property<DateTime?>("ReadAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -86,10 +86,6 @@ namespace BeautyBookBackend.Migrations
 
                     b.HasIndex("CampaignId");
 
-                    b.HasIndex("MessageId")
-                        .IsUnique()
-                        .HasFilter("\"MessageId\" IS NOT NULL");
-
                     b.HasIndex("Status", "ScheduledAt");
 
                     b.HasIndex("BookingId", "UserId", "Type")
@@ -98,106 +94,6 @@ namespace BeautyBookBackend.Migrations
                     b.HasIndex("UserId", "ReadAt", "CreatedAt");
 
                     b.ToTable("AppNotifications");
-                });
-
-            modelBuilder.Entity("BeautyBookBackend.Models.BankAccount", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("AccountHolderName")
-                        .IsRequired()
-                        .HasMaxLength(150)
-                        .HasColumnType("character varying(150)");
-
-                    b.Property<string>("AccountNumber")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)");
-
-                    b.Property<DateTime?>("ActivatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("BankBin")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
-                    b.Property<string>("BankCode")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
-                    b.Property<string>("BankName")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<string>("CanonicalBankKey")
-                        .IsRequired()
-                        .HasMaxLength(40)
-                        .HasColumnType("character varying(40)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IsDefault")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Method")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)")
-                        .HasDefaultValue("BANK");
-
-                    b.Property<string>("NormalizedAccountNumber")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)");
-
-                    b.Property<string>("QrCodeUrl")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
-
-                    b.Property<DateTime?>("ReviewedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid?>("ReviewedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("VerificationStatus")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)")
-                        .HasDefaultValue("PENDING_ADMIN");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId")
-                        .IsUnique()
-                        .HasDatabaseName("UX_BankAccounts_Default")
-                        .HasFilter("\"IsDefault\" = TRUE AND \"IsActive\" = TRUE");
-
-                    b.HasIndex("UserId", "IsActive");
-
-                    b.HasIndex("UserId", "Method", "CanonicalBankKey", "NormalizedAccountNumber")
-                        .IsUnique()
-                        .HasDatabaseName("UX_BankAccounts_ActiveIdentity")
-                        .HasFilter("\"IsActive\" = TRUE");
-
-                    b.ToTable("BankAccounts");
                 });
 
             modelBuilder.Entity("BeautyBookBackend.Models.Booking", b =>
@@ -493,12 +389,90 @@ namespace BeautyBookBackend.Migrations
 
                     b.HasKey("ChatRoomId");
 
+                    b.HasIndex("CustomerId");
+
                     b.HasIndex("MakeupArtistProfileMUAId");
 
-                    b.HasIndex("CustomerId", "MUAId")
-                        .IsUnique();
-
                     b.ToTable("ChatRooms");
+                });
+
+            modelBuilder.Entity("BeautyBookBackend.Models.CustomerBankAccount", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AccountHolderName")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)");
+
+                    b.Property<string>("AccountNumber")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<DateTime?>("ActivatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("BankBin")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("BankName")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("CustomerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsDefault")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Method")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("BANK");
+
+                    b.Property<string>("QrCodeUrl")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTime?>("ReviewedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ReviewedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("VerificationStatus")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasDefaultValue("PENDING_ADMIN");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CustomerId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_CustomerBankAccounts_Default")
+                        .HasFilter("\"IsDefault\" = TRUE AND \"IsActive\" = TRUE");
+
+                    b.HasIndex("CustomerId", "IsActive");
+
+                    b.ToTable("CustomerBankAccounts");
                 });
 
             modelBuilder.Entity("BeautyBookBackend.Models.DevicePushToken", b =>
@@ -544,48 +518,6 @@ namespace BeautyBookBackend.Migrations
                     b.ToTable("DevicePushTokens");
                 });
 
-            modelBuilder.Entity("BeautyBookBackend.Models.EmailOtp", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("CodeHash")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Email")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("character varying(255)");
-
-                    b.Property<DateTime>("ExpiresAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("FailedAttempts")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Purpose")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)");
-
-                    b.Property<DateTime?>("UsedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ExpiresAt");
-
-                    b.HasIndex("Email", "Purpose", "CreatedAt");
-
-                    b.ToTable("EmailOtps");
-                });
-
             modelBuilder.Entity("BeautyBookBackend.Models.MUAStyle", b =>
                 {
                     b.Property<Guid>("MUAId")
@@ -606,20 +538,12 @@ namespace BeautyBookBackend.Migrations
                     b.Property<Guid>("MUAId")
                         .HasColumnType("uuid");
 
-                    b.Property<string>("Address")
-                        .HasMaxLength(300)
-                        .HasColumnType("character varying(300)");
-
                     b.Property<decimal>("AverageRating")
                         .HasPrecision(3, 2)
                         .HasColumnType("numeric(3,2)");
 
                     b.Property<string>("Bio")
                         .HasColumnType("text");
-
-                    b.Property<List<string>>("CertificateUrls")
-                        .IsRequired()
-                        .HasColumnType("text[]");
 
                     b.Property<string>("City")
                         .HasMaxLength(100)
@@ -631,14 +555,6 @@ namespace BeautyBookBackend.Migrations
                     b.Property<string>("FacebookUrl")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
-
-                    b.Property<string>("IdentityBackUrl")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
-
-                    b.Property<string>("IdentityFrontUrl")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
 
                     b.Property<string>("InstagramUrl")
                         .HasMaxLength(500)
@@ -653,18 +569,11 @@ namespace BeautyBookBackend.Migrations
                     b.Property<string>("PortfolioCoverUrl")
                         .HasColumnType("text");
 
-                    b.Property<string>("PortraitUrl")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
-
                     b.Property<int>("ProfileQualityScore")
                         .HasColumnType("integer");
 
                     b.Property<int>("RankScore")
                         .HasColumnType("integer");
-
-                    b.Property<string>("RejectionDetailsJson")
-                        .HasColumnType("text");
 
                     b.Property<string>("RejectionReason")
                         .HasMaxLength(1000)
@@ -747,8 +656,7 @@ namespace BeautyBookBackend.Migrations
                         .HasColumnType("uuid");
 
                     b.Property<string>("Content")
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)");
+                        .HasColumnType("text");
 
                     b.Property<string>("ImageUrl")
                         .HasMaxLength(1000)
@@ -756,9 +664,6 @@ namespace BeautyBookBackend.Migrations
 
                     b.Property<bool>("IsRead")
                         .HasColumnType("boolean");
-
-                    b.Property<DateTime?>("ReadAt")
-                        .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid?>("ReplyToMessageId")
                         .HasColumnType("uuid");
@@ -771,11 +676,11 @@ namespace BeautyBookBackend.Migrations
 
                     b.HasKey("MessageId");
 
+                    b.HasIndex("ChatRoomId");
+
                     b.HasIndex("ReplyToMessageId");
 
                     b.HasIndex("SenderId");
-
-                    b.HasIndex("ChatRoomId", "SentAt", "MessageId");
 
                     b.ToTable("Messages");
                 });
@@ -806,6 +711,85 @@ namespace BeautyBookBackend.Migrations
                         .IsUnique();
 
                     b.ToTable("MessageReactions");
+                });
+
+            modelBuilder.Entity("BeautyBookBackend.Models.MuaBankAccount", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AccountHolderName")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)");
+
+                    b.Property<string>("AccountNumber")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<DateTime?>("ActivatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("BankCode")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("BankName")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsDefault")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Method")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("BANK");
+
+                    b.Property<Guid>("MuaId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("QrCodeUrl")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTime?>("ReviewedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ReviewedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("VerificationStatus")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasDefaultValue("PENDING_ADMIN");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MuaId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_MuaBankAccounts_Default")
+                        .HasFilter("\"IsDefault\" = TRUE AND \"IsActive\" = TRUE");
+
+                    b.HasIndex("MuaId", "IsActive");
+
+                    b.ToTable("MuaBankAccounts");
                 });
 
             modelBuilder.Entity("BeautyBookBackend.Models.MuaReceivable", b =>
@@ -1001,12 +985,6 @@ namespace BeautyBookBackend.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)");
 
-                    b.Property<Guid?>("BankAccountId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("BankBinSnapshot")
-                        .HasColumnType("text");
-
                     b.Property<string>("BankCodeSnapshot")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -1071,8 +1049,6 @@ namespace BeautyBookBackend.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("BankAccountId");
 
                     b.HasIndex("LastHandledBy");
 
@@ -1334,10 +1310,6 @@ namespace BeautyBookBackend.Migrations
                         .HasColumnType("uuid");
 
                     b.Property<string>("DestinationBankBin")
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)");
-
-                    b.Property<string>("DestinationBankCode")
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
 
@@ -1723,11 +1695,6 @@ namespace BeautyBookBackend.Migrations
                         .HasForeignKey("CampaignId")
                         .OnDelete(DeleteBehavior.Cascade);
 
-                    b.HasOne("BeautyBookBackend.Models.Message", "Message")
-                        .WithMany()
-                        .HasForeignKey("MessageId")
-                        .OnDelete(DeleteBehavior.Cascade);
-
                     b.HasOne("BeautyBookBackend.Models.User", "User")
                         .WithMany()
                         .HasForeignKey("UserId")
@@ -1737,19 +1704,6 @@ namespace BeautyBookBackend.Migrations
                     b.Navigation("Booking");
 
                     b.Navigation("Campaign");
-
-                    b.Navigation("Message");
-
-                    b.Navigation("User");
-                });
-
-            modelBuilder.Entity("BeautyBookBackend.Models.BankAccount", b =>
-                {
-                    b.HasOne("BeautyBookBackend.Models.User", "User")
-                        .WithMany("BankAccounts")
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
 
                     b.Navigation("User");
                 });
@@ -1831,6 +1785,17 @@ namespace BeautyBookBackend.Migrations
                     b.Navigation("Customer");
 
                     b.Navigation("MakeupArtistProfile");
+                });
+
+            modelBuilder.Entity("BeautyBookBackend.Models.CustomerBankAccount", b =>
+                {
+                    b.HasOne("BeautyBookBackend.Models.User", "Customer")
+                        .WithMany()
+                        .HasForeignKey("CustomerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Customer");
                 });
 
             modelBuilder.Entity("BeautyBookBackend.Models.DevicePushToken", b =>
@@ -1916,6 +1881,17 @@ namespace BeautyBookBackend.Migrations
                     b.Navigation("Message");
                 });
 
+            modelBuilder.Entity("BeautyBookBackend.Models.MuaBankAccount", b =>
+                {
+                    b.HasOne("BeautyBookBackend.Models.MakeupArtistProfile", "Mua")
+                        .WithMany()
+                        .HasForeignKey("MuaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Mua");
+                });
+
             modelBuilder.Entity("BeautyBookBackend.Models.MuaReceivable", b =>
                 {
                     b.HasOne("BeautyBookBackend.Models.Booking", "Booking")
@@ -1970,11 +1946,6 @@ namespace BeautyBookBackend.Migrations
 
             modelBuilder.Entity("BeautyBookBackend.Models.Payout", b =>
                 {
-                    b.HasOne("BeautyBookBackend.Models.BankAccount", "BankAccount")
-                        .WithMany()
-                        .HasForeignKey("BankAccountId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.HasOne("BeautyBookBackend.Models.User", "LastHandledByUser")
                         .WithMany()
                         .HasForeignKey("LastHandledBy")
@@ -1991,8 +1962,6 @@ namespace BeautyBookBackend.Migrations
                         .HasForeignKey("RequestedBy")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
-
-                    b.Navigation("BankAccount");
 
                     b.Navigation("LastHandledByUser");
 
@@ -2111,7 +2080,7 @@ namespace BeautyBookBackend.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("BeautyBookBackend.Models.BankAccount", "DestinationBankAccount")
+                    b.HasOne("BeautyBookBackend.Models.CustomerBankAccount", null)
                         .WithMany()
                         .HasForeignKey("DestinationBankAccountId")
                         .OnDelete(DeleteBehavior.SetNull);
@@ -2129,8 +2098,6 @@ namespace BeautyBookBackend.Migrations
                     b.Navigation("Booking");
 
                     b.Navigation("BookingPayment");
-
-                    b.Navigation("DestinationBankAccount");
 
                     b.Navigation("LastHandledByUser");
 
@@ -2263,8 +2230,6 @@ namespace BeautyBookBackend.Migrations
 
             modelBuilder.Entity("BeautyBookBackend.Models.User", b =>
                 {
-                    b.Navigation("BankAccounts");
-
                     b.Navigation("MakeupArtistProfile");
                 });
 #pragma warning restore 612, 618

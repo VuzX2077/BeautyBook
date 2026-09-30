@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using BeautyBookBackend.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace BeautyBookBackend.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260930051339_UnifyUserBankAccounts")]
+    partial class UnifyUserBankAccounts
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -52,9 +55,6 @@ namespace BeautyBookBackend.Migrations
                     b.Property<string>("LastError")
                         .HasColumnType("text");
 
-                    b.Property<Guid?>("MessageId")
-                        .HasColumnType("uuid");
-
                     b.Property<DateTime?>("ReadAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -85,10 +85,6 @@ namespace BeautyBookBackend.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("CampaignId");
-
-                    b.HasIndex("MessageId")
-                        .IsUnique()
-                        .HasFilter("\"MessageId\" IS NOT NULL");
 
                     b.HasIndex("Status", "ScheduledAt");
 
@@ -493,10 +489,9 @@ namespace BeautyBookBackend.Migrations
 
                     b.HasKey("ChatRoomId");
 
-                    b.HasIndex("MakeupArtistProfileMUAId");
+                    b.HasIndex("CustomerId");
 
-                    b.HasIndex("CustomerId", "MUAId")
-                        .IsUnique();
+                    b.HasIndex("MakeupArtistProfileMUAId");
 
                     b.ToTable("ChatRooms");
                 });
@@ -544,48 +539,6 @@ namespace BeautyBookBackend.Migrations
                     b.ToTable("DevicePushTokens");
                 });
 
-            modelBuilder.Entity("BeautyBookBackend.Models.EmailOtp", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("CodeHash")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("character varying(64)");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Email")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("character varying(255)");
-
-                    b.Property<DateTime>("ExpiresAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("FailedAttempts")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Purpose")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)");
-
-                    b.Property<DateTime?>("UsedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ExpiresAt");
-
-                    b.HasIndex("Email", "Purpose", "CreatedAt");
-
-                    b.ToTable("EmailOtps");
-                });
-
             modelBuilder.Entity("BeautyBookBackend.Models.MUAStyle", b =>
                 {
                     b.Property<Guid>("MUAId")
@@ -606,20 +559,12 @@ namespace BeautyBookBackend.Migrations
                     b.Property<Guid>("MUAId")
                         .HasColumnType("uuid");
 
-                    b.Property<string>("Address")
-                        .HasMaxLength(300)
-                        .HasColumnType("character varying(300)");
-
                     b.Property<decimal>("AverageRating")
                         .HasPrecision(3, 2)
                         .HasColumnType("numeric(3,2)");
 
                     b.Property<string>("Bio")
                         .HasColumnType("text");
-
-                    b.Property<List<string>>("CertificateUrls")
-                        .IsRequired()
-                        .HasColumnType("text[]");
 
                     b.Property<string>("City")
                         .HasMaxLength(100)
@@ -631,14 +576,6 @@ namespace BeautyBookBackend.Migrations
                     b.Property<string>("FacebookUrl")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
-
-                    b.Property<string>("IdentityBackUrl")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
-
-                    b.Property<string>("IdentityFrontUrl")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
 
                     b.Property<string>("InstagramUrl")
                         .HasMaxLength(500)
@@ -653,18 +590,11 @@ namespace BeautyBookBackend.Migrations
                     b.Property<string>("PortfolioCoverUrl")
                         .HasColumnType("text");
 
-                    b.Property<string>("PortraitUrl")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
-
                     b.Property<int>("ProfileQualityScore")
                         .HasColumnType("integer");
 
                     b.Property<int>("RankScore")
                         .HasColumnType("integer");
-
-                    b.Property<string>("RejectionDetailsJson")
-                        .HasColumnType("text");
 
                     b.Property<string>("RejectionReason")
                         .HasMaxLength(1000)
@@ -747,8 +677,7 @@ namespace BeautyBookBackend.Migrations
                         .HasColumnType("uuid");
 
                     b.Property<string>("Content")
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)");
+                        .HasColumnType("text");
 
                     b.Property<string>("ImageUrl")
                         .HasMaxLength(1000)
@@ -756,9 +685,6 @@ namespace BeautyBookBackend.Migrations
 
                     b.Property<bool>("IsRead")
                         .HasColumnType("boolean");
-
-                    b.Property<DateTime?>("ReadAt")
-                        .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid?>("ReplyToMessageId")
                         .HasColumnType("uuid");
@@ -771,11 +697,11 @@ namespace BeautyBookBackend.Migrations
 
                     b.HasKey("MessageId");
 
+                    b.HasIndex("ChatRoomId");
+
                     b.HasIndex("ReplyToMessageId");
 
                     b.HasIndex("SenderId");
-
-                    b.HasIndex("ChatRoomId", "SentAt", "MessageId");
 
                     b.ToTable("Messages");
                 });
@@ -1723,11 +1649,6 @@ namespace BeautyBookBackend.Migrations
                         .HasForeignKey("CampaignId")
                         .OnDelete(DeleteBehavior.Cascade);
 
-                    b.HasOne("BeautyBookBackend.Models.Message", "Message")
-                        .WithMany()
-                        .HasForeignKey("MessageId")
-                        .OnDelete(DeleteBehavior.Cascade);
-
                     b.HasOne("BeautyBookBackend.Models.User", "User")
                         .WithMany()
                         .HasForeignKey("UserId")
@@ -1737,8 +1658,6 @@ namespace BeautyBookBackend.Migrations
                     b.Navigation("Booking");
 
                     b.Navigation("Campaign");
-
-                    b.Navigation("Message");
 
                     b.Navigation("User");
                 });

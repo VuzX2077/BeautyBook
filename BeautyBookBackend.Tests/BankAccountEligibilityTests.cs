@@ -1,0 +1,6 @@
+using BeautyBookBackend.Models;
+using BeautyBookBackend.Services;
+using Xunit;
+namespace BeautyBookBackend.Tests;
+public sealed class BankAccountEligibilityTests
+{private static readonly DateTime Now=new(2026,9,30,0,0,0,DateTimeKind.Utc);[Fact]public void Pending_and_cooldown_are_not_usable(){Assert.False(BankAccountEligibility.IsUsable(Account(BankAccountEligibility.Pending,null),Now));Assert.False(BankAccountEligibility.IsUsable(Account(BankAccountEligibility.Approved,Now.AddSeconds(1)),Now));}[Fact]public void Approved_after_cooldown_is_usable_for_refund_and_payout(){Assert.True(BankAccountEligibility.IsUsable(Account(BankAccountEligibility.Approved,Now),Now));}[Fact]public void Sensitive_snapshot_includes_code_bin_account_holder_and_qr(){var b=Account(BankAccountEligibility.Approved,Now);b.BankCode="VCB";b.BankBin="970436";b.AccountNumber="111111";b.AccountHolderName="A";var r=new Refund{DestinationBankCode="VCB",DestinationBankBin="970436",DestinationAccountNumber="111111",DestinationAccountName="A"};Assert.True(BankAccountEligibility.SnapshotMatches(r,b));b.BankBin="970999";Assert.False(BankAccountEligibility.SnapshotMatches(r,b));}private static BankAccount Account(string status,DateTime? activated)=>new(){UserId=Guid.NewGuid(),IsActive=true,VerificationStatus=status,ActivatedAt=activated};}

@@ -180,6 +180,7 @@ builder.Services.AddScoped<IBookingService, BookingService>();
 builder.Services.AddScoped<IBookingNotificationService, BookingNotificationService>();
 builder.Services.AddScoped<IAdminNotificationService, AdminNotificationService>();
 builder.Services.AddScoped<IRefundService, RefundService>();
+builder.Services.AddScoped<IBankAccountService, BankAccountService>();
 builder.Services.AddScoped<IRefundPayoutProvider, PayOsRefundPayoutProvider>();
 builder.Services.AddScoped<IBookingRefundPolicyService, BookingRefundPolicyService>();
 builder.Services.AddScoped<IMuaReceivableService, MuaReceivableService>();

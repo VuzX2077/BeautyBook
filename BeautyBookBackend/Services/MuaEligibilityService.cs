@@ -33,7 +33,7 @@ namespace BeautyBookBackend.Services
                 .SelectMany(x => x.ImageUrls ?? new List<string>())
                 .Count(IsValidPublicUrl);
             var activeServiceCount = profile.Services.Count(x => x.IsActive);
-            var hasActiveBankAccount = await _db.MuaBankAccounts.AnyAsync(x => x.MuaId == muaId && x.IsActive);
+            var hasActiveBankAccount = await _db.BankAccounts.AnyAsync(x => x.UserId == muaId && x.IsActive);
 
             var requirements = new List<MuaEligibilityRequirementDto>
             {
@@ -51,15 +51,16 @@ namespace BeautyBookBackend.Services
                 Requirement("publicPortfolioImages", "Có ít nhất 3 ảnh portfolio hợp lệ", publicImageCount >= 3, publicImageCount, 3)
             };
 
+            var canPublish = requirements.All(x => x.IsMet);
             var hasValidSchedule = await _scheduleService.HasValidScheduleAsync(muaId);
             if (updateStatus && profile.Status != MuaStatus.Suspended)
             {
-                if (profile.VerificationStatus == MuaVerificationStatus.Approved && profile.Status == MuaStatus.Draft)
+                if (canPublish && hasValidSchedule && profile.VerificationStatus == MuaVerificationStatus.Approved && profile.Status == MuaStatus.Draft)
                 {
                     profile.Status = MuaStatus.Listed;
                     profile.ListedAt = DateTime.UtcNow;
                 }
-                else if (profile.VerificationStatus != MuaVerificationStatus.Approved && profile.Status == MuaStatus.Listed)
+                else if ((!canPublish || !hasValidSchedule || profile.VerificationStatus != MuaVerificationStatus.Approved) && profile.Status == MuaStatus.Listed)
                 {
                     profile.Status = MuaStatus.Draft;
                 }
@@ -70,6 +71,10 @@ namespace BeautyBookBackend.Services
             }
 
             var operational = profile.User.IsActive && !profile.User.DeletedAt.HasValue && profile.Status != MuaStatus.Suspended;
+            var now = DateTime.UtcNow;
+            var hasUsableBankAccount = await _db.BankAccounts
+                .Where(BankAccountEligibility.UsableAt(now))
+                .AnyAsync(x => x.UserId == muaId);
             var availableBookingIds = await _db.MuaReceivables
                 .Where(x => x.MuaId == muaId && x.Status == MuaReceivableStatus.Available)
                 .Select(x => x.BookingId)
@@ -84,9 +89,9 @@ namespace BeautyBookBackend.Services
             {
                 CompletionPercentage = (int)Math.Round(requirements.Count(x => x.IsMet) * 100m / requirements.Count),
                 ProfileStatus = profile.Status.ToString(),
-                CanPublishProfile = operational && profile.Status == MuaStatus.Listed && profile.VerificationStatus == MuaVerificationStatus.Approved,
-                CanReceiveBookings = operational && profile.Status == MuaStatus.Listed && activeServiceCount > 0 && hasValidSchedule && profile.VerificationStatus == MuaVerificationStatus.Approved,
-                CanWithdraw = operational && hasActiveBankAccount && hasWithdrawableReceivable,
+                CanPublishProfile = operational && profile.Status == MuaStatus.Listed && canPublish && hasValidSchedule && profile.VerificationStatus == MuaVerificationStatus.Approved,
+                CanReceiveBookings = operational && profile.Status == MuaStatus.Listed && canPublish && hasValidSchedule && profile.VerificationStatus == MuaVerificationStatus.Approved,
+                CanWithdraw = operational && hasUsableBankAccount && hasWithdrawableReceivable,
                 VerificationStatus = profile.VerificationStatus.ToString(),
                 RejectionReason = profile.RejectionReason,
                 SubmittedAt = profile.SubmittedAt,
@@ -197,8 +202,6 @@ namespace BeautyBookBackend.Services
                         Id = Guid.NewGuid(), MUAId = muaId, DayOfWeek = day,
                         StartTime = TimeSpan.FromHours(8), EndTime = TimeSpan.FromHours(22), IsActive = true
                     }));
-                var banks = await _db.MuaBankAccounts.Where(x => x.MuaId == muaId && x.IsActive).ToListAsync();
-                foreach (var bank in banks) { bank.VerificationStatus = "APPROVED"; bank.ReviewedAt = now; bank.ReviewedBy = adminId; bank.ActivatedAt = now; }
                 var profile = await _db.MakeupArtistProfiles.FirstAsync(x => x.MUAId == muaId);
                 profile.Status = MuaStatus.Listed;
                 profile.ListedAt ??= now;

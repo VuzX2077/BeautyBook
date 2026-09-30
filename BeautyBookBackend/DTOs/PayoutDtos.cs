@@ -3,32 +3,6 @@ using BeautyBookBackend.Models.Enums;
 
 namespace BeautyBookBackend.DTOs
 {
-    public class UpsertMuaBankAccountRequest
-    {
-        [Required, StringLength(20, MinimumLength=2)] public string BankCode { get; set; } = string.Empty;
-        [StringLength(100)] public string? BankName { get; set; }
-        [Required, StringLength(30, MinimumLength=5)] public string AccountNumber { get; set; } = string.Empty;
-        [Required, StringLength(150, MinimumLength=2)] public string AccountHolderName { get; set; } = string.Empty;
-        public bool IsDefault { get; set; }
-        [Required] public string CurrentPassword { get; set; } = string.Empty;
-        public string Method { get; set; } = "BANK";
-        [Url, StringLength(1000)] public string? QrCodeUrl { get; set; }
-    }
-    public class MuaBankAccountDto
-    {
-        public Guid Id { get; set; }
-        public string BankCode { get; set; } = string.Empty;
-        public string? BankName { get; set; }
-        public string MaskedAccountNumber { get; set; } = string.Empty;
-        public string AccountHolderName { get; set; } = string.Empty;
-        public bool IsDefault { get; set; }
-        public bool IsActive { get; set; }
-        public string VerificationStatus { get; set; } = "Entered";
-        public string Method { get; set; } = "BANK";
-        public string? QrCodeUrl { get; set; }
-        public DateTime ActivatedAt { get; set; }
-        public bool IsCoolingDown { get; set; }
-    }
     public class CreatePayoutRequest
     {
         [Required] public Guid BankAccountId { get; set; }
@@ -46,10 +20,12 @@ namespace BeautyBookBackend.DTOs
     public class PayoutDto
     {
         public Guid Id { get; set; }
+        public Guid? BankAccountId { get; set; }
         public decimal Amount { get; set; }
         public PayoutStatus Status { get; set; }
         public PayoutProvider Provider { get; set; }
         public string BankCode { get; set; } = string.Empty;
+        public string? BankBin { get; set; }
         public string? BankName { get; set; }
         public string MaskedAccountNumber { get; set; } = string.Empty;
         public string AccountHolderName { get; set; } = string.Empty;

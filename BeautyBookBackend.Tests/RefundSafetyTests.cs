@@ -53,11 +53,11 @@ public class RefundSafetyTests
     }
 
     [Fact]
-    public void CustomerDefaultBankAccountIndex_IsUniqueAndFiltered()
+    public void UserDefaultBankAccountIndex_IsUniqueAndFiltered()
     {
         using var context = CreateContext();
-        var entity = context.Model.FindEntityType(typeof(CustomerBankAccount));
-        var index = Assert.Single(entity!.GetIndexes(), x => x.GetDatabaseName() == "UX_CustomerBankAccounts_Default");
+        var entity = context.Model.FindEntityType(typeof(BankAccount));
+        var index = Assert.Single(entity!.GetIndexes(), x => x.GetDatabaseName() == "UX_BankAccounts_Default");
         Assert.True(index.IsUnique);
         Assert.Contains("IsDefault", index.GetFilter());
         Assert.Contains("IsActive", index.GetFilter());

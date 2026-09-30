@@ -7,11 +7,13 @@ namespace BeautyBookBackend.Models
         public Guid Id { get; set; }
         public Guid MuaId { get; set; }
         public Guid RequestedBy { get; set; }
+        public Guid? BankAccountId { get; set; }
         public Guid? LastHandledBy { get; set; }
         public decimal Amount { get; set; }
         public PayoutStatus Status { get; set; }
         public PayoutProvider Provider { get; set; } = PayoutProvider.Manual;
         public string BankCodeSnapshot { get; set; } = string.Empty;
+        public string? BankBinSnapshot { get; set; }
         public string? BankNameSnapshot { get; set; }
         public string AccountNumberSnapshot { get; set; } = string.Empty;
         public string AccountHolderNameSnapshot { get; set; } = string.Empty;
@@ -29,6 +31,7 @@ namespace BeautyBookBackend.Models
         public MakeupArtistProfile? Mua { get; set; }
         public User? RequestedByUser { get; set; }
         public User? LastHandledByUser { get; set; }
+        public BankAccount? BankAccount { get; set; }
         public ICollection<PayoutItem> Items { get; set; } = new List<PayoutItem>();
     }
 }

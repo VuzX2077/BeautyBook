@@ -8,6 +8,7 @@ using BeautyBookBackend.Repositories;
 using BeautyBookBackend.Data;
 using Microsoft.EntityFrameworkCore;
 using BeautyBookBackend.Models.Enums;
+using Microsoft.Extensions.Logging;
 
 namespace BeautyBookBackend.Services
 {
@@ -16,12 +17,14 @@ namespace BeautyBookBackend.Services
         private readonly IChatRepository _chatRepository;
         private readonly ApplicationDbContext _context;
         private readonly IChatNotificationService _chatNotifications;
+        private readonly ILogger<ChatService> _logger;
 
-        public ChatService(IChatRepository chatRepository, ApplicationDbContext context, IChatNotificationService chatNotifications)
+        public ChatService(IChatRepository chatRepository, ApplicationDbContext context, IChatNotificationService chatNotifications, ILogger<ChatService> logger)
         {
             _chatRepository = chatRepository;
             _context = context;
             _chatNotifications = chatNotifications;
+            _logger = logger;
         }
 
         public async Task<ChatRoomDto> GetOrCreateChatRoomAsync(Guid customerId, Guid muaId)
@@ -138,7 +141,16 @@ namespace BeautyBookBackend.Services
             };
 
             var savedMessage = await _chatRepository.AddMessageAsync(message);
-            await _chatNotifications.QueueMessageAsync(room, savedMessage);
+            try
+            {
+                await _chatNotifications.QueueMessageAsync(room, savedMessage);
+            }
+            catch (Exception ex)
+            {
+                // Push is best-effort. A notification/storage outage must never make
+                // a successfully persisted chat message look failed to the sender.
+                _logger.LogWarning(ex, "Unable to queue push notification for chat message {MessageId}", savedMessage.MessageId);
+            }
             return MapToMessageDto(savedMessage, senderId);
         }
 

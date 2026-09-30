@@ -8,6 +8,7 @@ using BeautyBookBackend.Repositories;
 using BeautyBookBackend.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace BeautyBookBackend.Tests;
 
@@ -67,14 +68,31 @@ public sealed class ChatSafetyTests
     {
         var customerId = Guid.NewGuid(); var muaId = Guid.NewGuid(); var roomId = Guid.NewGuid();
         using var context = CreateContext();
-        var service = new ChatService(new FakeChatRepository(new ChatRoom { ChatRoomId = roomId, CustomerId = customerId, MUAId = muaId }), context, new FakeChatNotificationService());
+        var service = CreateService(context, new ChatRoom { ChatRoomId = roomId, CustomerId = customerId, MUAId = muaId });
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.SendMessageAsync(roomId, Guid.NewGuid(), "hello", null, null));
         await Assert.ThrowsAsync<ArgumentException>(() => service.ToggleReactionAsync(roomId, Guid.NewGuid(), customerId, "not-an-emoji"));
     }
 
-    private sealed class FakeChatNotificationService : IChatNotificationService
+    [Fact]
+    public async Task PushFailure_DoesNotFailPersistedMessage()
     {
-        public Task QueueMessageAsync(ChatRoom room, Message message, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        var customerId = Guid.NewGuid(); var muaId = Guid.NewGuid(); var roomId = Guid.NewGuid();
+        using var context = CreateContext();
+        var service = CreateService(context, new ChatRoom { ChatRoomId = roomId, CustomerId = customerId, MUAId = muaId }, true);
+
+        var result = await service.SendMessageAsync(roomId, customerId, "hello", null, null);
+
+        Assert.Equal("hello", result.Content);
+        Assert.Equal(roomId, result.ChatRoomId);
+    }
+
+    private static ChatService CreateService(ApplicationDbContext context, ChatRoom room, bool throwOnPush = false) =>
+        new(new FakeChatRepository(room), context, new FakeChatNotificationService(throwOnPush), NullLogger<ChatService>.Instance);
+
+    private sealed class FakeChatNotificationService(bool throwOnPush = false) : IChatNotificationService
+    {
+        public Task QueueMessageAsync(ChatRoom room, Message message, CancellationToken cancellationToken = default) =>
+            throwOnPush ? Task.FromException(new InvalidOperationException("Push unavailable")) : Task.CompletedTask;
     }
 
     private sealed class FakeChatRepository(ChatRoom room) : IChatRepository

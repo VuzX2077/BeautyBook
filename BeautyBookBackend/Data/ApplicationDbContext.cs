@@ -42,6 +42,7 @@ namespace BeautyBookBackend.Data
         public DbSet<DevicePushToken> DevicePushTokens { get; set; } = null!;
         public DbSet<AppNotification> AppNotifications { get; set; } = null!;
         public DbSet<NotificationCampaign> NotificationCampaigns { get; set; } = null!;
+        public DbSet<EmailOtp> EmailOtps { get; set; } = null!;
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -87,6 +88,16 @@ namespace BeautyBookBackend.Data
                 b.Property(s => s.Description).HasMaxLength(255);
                 b.Property(s => s.IsActive).HasDefaultValue(true);
                 b.HasIndex(s => s.Name).IsUnique();
+            });
+
+            modelBuilder.Entity<EmailOtp>(b =>
+            {
+                b.HasKey(x => x.Id);
+                b.Property(x => x.Email).HasMaxLength(255).IsRequired();
+                b.Property(x => x.Purpose).HasMaxLength(30).IsRequired();
+                b.Property(x => x.CodeHash).HasMaxLength(64).IsRequired();
+                b.HasIndex(x => new { x.Email, x.Purpose, x.CreatedAt });
+                b.HasIndex(x => x.ExpiresAt);
             });
 
             modelBuilder.Entity<MUAStyle>(b =>

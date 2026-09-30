@@ -23,27 +23,50 @@ namespace BeautyBookBackend.Services
         private readonly IUnitOfWork _unitOfWork;
         private readonly IConfiguration _configuration;
         private readonly ApplicationDbContext _dbContext;
+        private readonly IEmailSender _emailSender;
 
         public AuthService(
             IUserRepository userRepository,
             IMuaRepository muaRepository,
             IUnitOfWork unitOfWork,
             IConfiguration configuration,
-            ApplicationDbContext dbContext)
+            ApplicationDbContext dbContext,
+            IEmailSender emailSender)
         {
             _userRepository = userRepository;
             _muaRepository = muaRepository;
             _unitOfWork = unitOfWork;
             _configuration = configuration;
             _dbContext = dbContext;
+            _emailSender = emailSender;
+        }
+
+        public async Task<string?> SendRegistrationOtpAsync(string email)
+        {
+            email = NormalizeEmail(email);
+            if (await _userRepository.EmailExistsAsync(email)) return "EMAIL_EXISTS";
+            await IssueOtpAsync(email, "REGISTER");
+            return null;
+        }
+
+        public async Task SendPasswordResetOtpAsync(string email)
+        {
+            email = NormalizeEmail(email);
+            var user = await _userRepository.GetByEmailAsync(email);
+            if (user != null && user.IsActive && !user.DeletedAt.HasValue && !string.IsNullOrWhiteSpace(user.PasswordHash))
+                await IssueOtpAsync(email, "RESET_PASSWORD");
         }
 
         public async Task<UserDto?> RegisterAsync(RegisterDto registerDto)
         {
+            registerDto.Email = NormalizeEmail(registerDto.Email);
             if (await _userRepository.EmailExistsAsync(registerDto.Email))
             {
                 return null;
             }
+
+            var otp = await ConsumeOtpAsync(registerDto.Email, "REGISTER", registerDto.Otp);
+            if (!otp) return null;
 
             var user = new User
             {
@@ -63,6 +86,73 @@ namespace BeautyBookBackend.Services
 
             return ToUserDto(user, false);
         }
+
+        public async Task<bool> ResetPasswordAsync(ResetPasswordDto request)
+        {
+            var email = NormalizeEmail(request.Email);
+            var user = await _userRepository.GetByEmailAsync(email);
+            if (user == null || !user.IsActive || user.DeletedAt.HasValue || string.IsNullOrWhiteSpace(user.PasswordHash)) return false;
+            if (!await ConsumeOtpAsync(email, "RESET_PASSWORD", request.Otp)) return false;
+            user.PasswordHash = HashPassword(request.NewPassword);
+            await _unitOfWork.SaveChangesAsync();
+            return true;
+        }
+
+        public async Task<bool> ChangePasswordAsync(Guid userId, ChangePasswordDto request)
+        {
+            var user = await _userRepository.GetByIdAsync(userId);
+            if (user == null || !user.IsActive || user.DeletedAt.HasValue ||
+                !VerifyPasswordHash(request.CurrentPassword, user.PasswordHash)) return false;
+            user.PasswordHash = HashPassword(request.NewPassword);
+            await _unitOfWork.SaveChangesAsync();
+            return true;
+        }
+
+        private async Task IssueOtpAsync(string email, string purpose)
+        {
+            var now = DateTime.UtcNow;
+            var latest = await _dbContext.EmailOtps
+                .Where(x => x.Email == email && x.Purpose == purpose)
+                .OrderByDescending(x => x.CreatedAt).FirstOrDefaultAsync();
+            if (latest != null && latest.CreatedAt > now.AddSeconds(-60))
+                throw new InvalidOperationException("Vui lòng đợi 60 giây trước khi yêu cầu mã mới.");
+
+            var active = await _dbContext.EmailOtps
+                .Where(x => x.Email == email && x.Purpose == purpose && x.UsedAt == null).ToListAsync();
+            foreach (var item in active) item.UsedAt = now;
+
+            var code = RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6");
+            _dbContext.EmailOtps.Add(new EmailOtp
+            {
+                Id = Guid.NewGuid(), Email = email, Purpose = purpose,
+                CodeHash = HashOtp(email, purpose, code), CreatedAt = now, ExpiresAt = now.AddMinutes(5)
+            });
+            await _dbContext.SaveChangesAsync();
+            await _emailSender.SendOtpAsync(email, code, purpose);
+        }
+
+        private async Task<bool> ConsumeOtpAsync(string email, string purpose, string code)
+        {
+            var now = DateTime.UtcNow;
+            var otp = await _dbContext.EmailOtps.Where(x => x.Email == email && x.Purpose == purpose && x.UsedAt == null)
+                .OrderByDescending(x => x.CreatedAt).FirstOrDefaultAsync();
+            if (otp == null || otp.ExpiresAt <= now || otp.FailedAttempts >= 5) return false;
+            var valid = CryptographicOperations.FixedTimeEquals(
+                Encoding.UTF8.GetBytes(otp.CodeHash), Encoding.UTF8.GetBytes(HashOtp(email, purpose, code)));
+            if (!valid) { otp.FailedAttempts++; await _dbContext.SaveChangesAsync(); return false; }
+            otp.UsedAt = now;
+            await _dbContext.SaveChangesAsync();
+            return true;
+        }
+
+        private string HashOtp(string email, string purpose, string code)
+        {
+            var secret = _configuration["Otp:HashKey"] ?? _configuration["Jwt:Key"]
+                ?? throw new InvalidOperationException("Otp:HashKey is not configured.");
+            return Convert.ToHexString(HMACSHA256.HashData(Encoding.UTF8.GetBytes(secret), Encoding.UTF8.GetBytes($"{email}|{purpose}|{code}")));
+        }
+
+        private static string NormalizeEmail(string email) => email.Trim().ToLowerInvariant();
 
         public async Task<TokenDto?> LoginAsync(LoginDto loginDto)
         {

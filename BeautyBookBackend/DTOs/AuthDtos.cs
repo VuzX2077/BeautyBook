@@ -22,6 +22,34 @@ namespace BeautyBookBackend.DTOs
         [MaxLength(20)]
         public string? PhoneNumber { get; set; }
 
+        [Required]
+        [RegularExpression("^[0-9]{6}$")]
+        public string Otp { get; set; } = null!;
+
+    }
+
+    public class EmailDto
+    {
+        [Required, EmailAddress, MaxLength(255)]
+        public string Email { get; set; } = null!;
+    }
+
+    public class ResetPasswordDto : EmailDto
+    {
+        [Required, RegularExpression("^[0-9]{6}$")]
+        public string Otp { get; set; } = null!;
+
+        [Required, MinLength(6), MaxLength(100)]
+        public string NewPassword { get; set; } = null!;
+    }
+
+    public class ChangePasswordDto
+    {
+        [Required]
+        public string CurrentPassword { get; set; } = null!;
+
+        [Required, MinLength(6), MaxLength(100)]
+        public string NewPassword { get; set; } = null!;
     }
 
     public class LoginDto

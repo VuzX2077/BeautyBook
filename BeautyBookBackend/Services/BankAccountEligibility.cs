@@ -8,17 +8,12 @@ public static class BankAccountEligibility
     public const string Pending = "PENDING_ADMIN";
     public const string Approved = "APPROVED";
     public const string Rejected = "REJECTED";
-    public static readonly TimeSpan Cooldown = TimeSpan.FromHours(24);
-
     public static Expression<Func<BankAccount, bool>> UsableAt(DateTime utcNow) =>
         account => account.IsActive
-            && account.VerificationStatus == Approved
-            && account.ActivatedAt.HasValue
-            && account.ActivatedAt.Value <= utcNow;
+            && account.VerificationStatus == Approved;
 
     public static bool IsUsable(BankAccount account, DateTime utcNow) =>
-        account.IsActive && account.VerificationStatus == Approved
-        && account.ActivatedAt.HasValue && account.ActivatedAt.Value <= utcNow;
+        account.IsActive && account.VerificationStatus == Approved;
 
     public static bool IsUsableForOwner(BankAccount account, Guid userId, DateTime utcNow) =>
         account.UserId == userId && IsUsable(account, utcNow);
@@ -27,15 +22,13 @@ public static class BankAccountEligibility
         isActive && string.Equals(verificationStatus, Pending, StringComparison.Ordinal);
 
     public static bool IsCoolingDown(string verificationStatus, DateTime? activatedAt, DateTime utcNow) =>
-        string.Equals(verificationStatus, Approved, StringComparison.Ordinal)
-        && (!activatedAt.HasValue || activatedAt.Value > utcNow);
+        false;
 
     public static string? GetUnavailableReason(bool isActive, string verificationStatus, DateTime? activatedAt, DateTime utcNow)
     {
         if (string.Equals(verificationStatus, Rejected, StringComparison.Ordinal)) return "BANK_ACCOUNT_REJECTED";
         if (!isActive) return "BANK_ACCOUNT_NOT_FOUND";
         if (!string.Equals(verificationStatus, Approved, StringComparison.Ordinal)) return "BANK_ACCOUNT_PENDING_APPROVAL";
-        if (!activatedAt.HasValue || activatedAt.Value > utcNow) return "BANK_ACCOUNT_COOLDOWN";
         return null;
     }
 

@@ -19,16 +19,23 @@ public sealed class BrevoEmailSender(
             throw new EmailDeliveryException("Email provider is not configured.");
         }
 
-        var action = purpose == "REGISTER" ? "đăng ký tài khoản" : "đặt lại mật khẩu";
+        var (subject, action, warning) = purpose switch
+        {
+            "REGISTER" => ("Mã OTP đăng ký tài khoản", "đăng ký tài khoản", "Nếu bạn không yêu cầu mã, hãy bỏ qua email này."),
+            "RESET_PASSWORD" => ("Mã OTP đặt lại mật khẩu", "đặt lại mật khẩu", "Nếu bạn không yêu cầu mã, hãy bỏ qua email này."),
+            "BANK_ACCOUNT_ADD" => ("Mã OTP xác minh thêm tài khoản nhận tiền", "xác minh thêm tài khoản nhận tiền", "Đây là thao tác thay đổi nơi nhận tiền. Nếu bạn không thực hiện thao tác này, hãy bỏ qua email và đổi mật khẩu nếu nghi ngờ tài khoản bị truy cập."),
+            "BANK_ACCOUNT_UPDATE" => ("Mã OTP xác minh thay đổi tài khoản nhận tiền", "xác minh thay đổi tài khoản nhận tiền", "Đây là thao tác thay đổi nơi nhận tiền. Nếu bạn không thực hiện thao tác này, hãy bỏ qua email và đổi mật khẩu nếu nghi ngờ tài khoản bị truy cập."),
+            _ => throw new ArgumentOutOfRangeException(nameof(purpose), "Unsupported OTP purpose.")
+        };
         using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.brevo.com/v3/smtp/email");
         request.Headers.Add("api-key", apiKey.Trim());
         request.Content = JsonContent.Create(new
         {
             sender = new { name = configuration["Email:FromName"] ?? "BBook", email = fromEmail.Trim() },
             to = new[] { new { email } },
-            subject = $"Mã OTP BBook - {action}",
-            textContent = $"Mã OTP để {action} là: {otp}\n\nMã có hiệu lực trong 5 phút. Không chia sẻ mã này với bất kỳ ai.",
-            htmlContent = BuildOtpHtml(otp, action)
+            subject,
+            textContent = $"Mã OTP để {action} là: {otp}\n\nMã có hiệu lực trong 5 phút. Không chia sẻ OTP với bất kỳ ai.\n\n{warning}",
+            htmlContent = BuildOtpHtml(otp, action, warning)
         });
 
         try
@@ -64,10 +71,11 @@ public sealed class BrevoEmailSender(
         }
     }
 
-    private static string BuildOtpHtml(string otp, string action)
+    private static string BuildOtpHtml(string otp, string action, string warning)
     {
         var safeOtp = WebUtility.HtmlEncode(otp);
         var safeAction = WebUtility.HtmlEncode(action);
+        var safeWarning = WebUtility.HtmlEncode(warning);
         // Table layout and inline styles work across mobile email clients.
         // Keep the digits contiguous so the code is easy to select and copy.
         return $$"""
@@ -87,7 +95,7 @@ public sealed class BrevoEmailSender(
                       </table>
                     </td></tr>
                     <tr><td align="center" style="padding:20px 20px 8px;font-size:14px;line-height:22px;color:#5c5461;">Mã có hiệu lực trong <strong>5 phút</strong>.</td></tr>
-                    <tr><td align="center" style="padding:0 20px 28px;font-size:13px;line-height:21px;color:#5c5461;">Không chia sẻ mã này với bất kỳ ai.<br>Nếu bạn không yêu cầu mã, hãy bỏ qua email này.</td></tr>
+                    <tr><td align="center" style="padding:0 20px 28px;font-size:13px;line-height:21px;color:#5c5461;">Không chia sẻ OTP với bất kỳ ai.<br>{{safeWarning}}</td></tr>
                   </table>
                 </td></tr>
               </table>

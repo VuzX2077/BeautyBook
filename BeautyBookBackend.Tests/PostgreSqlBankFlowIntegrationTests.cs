@@ -36,6 +36,17 @@ public sealed class PostgreSqlBankFlowIntegrationTests
         await using var db=database.CreateContext();
         await db.Database.MigrateAsync();
         Assert.Contains("20260930051339_UnifyUserBankAccounts",await db.Database.GetAppliedMigrationsAsync());
+        Assert.Contains("20260930213632_AddEmailOtpContextHash",await db.Database.GetAppliedMigrationsAsync());
+    }
+
+    [PostgreSqlFact]
+    public async Task Concurrent_consumes_allow_the_same_otp_to_succeed_once()
+    {
+        await using var database=await PostgreSqlDatabase.CreateMigratedAsync();var sender=new CaptureSender();var config=OtpConfig();
+        await using(var issueDb=database.CreateContext()){await new EmailOtpService(issueDb,sender,config).IssueAsync("user@example.com",BankAccountService.AddPurpose,"payload");}
+        await using var firstDb=database.CreateContext();await using var secondDb=database.CreateContext();
+        var results=await Task.WhenAll(new EmailOtpService(firstDb,new CaptureSender(),config).ConsumeAsync("user@example.com",BankAccountService.AddPurpose,"payload",sender.Code!),new EmailOtpService(secondDb,new CaptureSender(),config).ConsumeAsync("user@example.com",BankAccountService.AddPurpose,"payload",sender.Code!));
+        Assert.Single(results,x=>x);
     }
 
     [PostgreSqlFact]
@@ -46,8 +57,11 @@ public sealed class PostgreSqlBankFlowIntegrationTests
         await using(var legacy=database.CreateContext())
         {
             await legacy.Database.GetService<IMigrator>().MigrateAsync("20260929201739_CleanupLegacyInvalidBankDefaults");
-            legacy.Users.Add(User(owner,UserRole.MUA));legacy.MakeupArtistProfiles.Add(new MakeupArtistProfile{MUAId=owner});await legacy.SaveChangesAsync();
             await legacy.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO "Users" ("UserId","FullName","Email","PasswordHash","AvatarUrl","PhoneNumber","PhoneVerified","Role","CreatedAt","IsActive","DeletedAt")
+                VALUES ({owner},{"Legacy MUA"},{"legacy-mua@example.com"},NULL,NULL,NULL,FALSE,{(byte)UserRole.MUA},{now.AddDays(-10)},TRUE,NULL);
+                INSERT INTO "MakeupArtistProfiles" ("MUAId","AverageRating","CertificateUrls","ExperienceYears","ProfileQualityScore","RankScore","Status","TotalBookings","VerificationStatus")
+                VALUES ({owner},{0m},ARRAY[]::text[],{0},{0},{0},{(byte)MuaStatus.Draft},{0},{(byte)MuaVerificationStatus.Draft});
                 INSERT INTO "CustomerBankAccounts" ("Id","CustomerId","BankBin","BankName","AccountNumber","AccountHolderName","Method","QrCodeUrl","VerificationStatus","ActivatedAt","IsDefault","IsActive","ReviewedAt","ReviewedBy","CreatedAt","UpdatedAt")
                 VALUES ({customerBankId},{owner},{"970436"},{"Vietcombank"},{" 123-456 "},{" Nguyen  Van A "},{"BANK"},NULL,{"APPROVED"},{now.AddDays(-2)},TRUE,TRUE,{now.AddDays(-3)},NULL,{now.AddDays(-5)},{now.AddDays(-2)});
                 INSERT INTO "MuaBankAccounts" ("Id","MuaId","BankCode","BankName","AccountNumber","AccountHolderName","Method","QrCodeUrl","VerificationStatus","ActivatedAt","IsDefault","IsActive","ReviewedAt","ReviewedBy","CreatedAt","UpdatedAt")
@@ -72,7 +86,7 @@ public sealed class PostgreSqlBankFlowIntegrationTests
         var owner=Guid.NewGuid();var first=Guid.NewGuid();var second=Guid.NewGuid();
         await SeedMuaAsync(database,owner,first,second);
         await using var db1=database.CreateContext();await using var db2=database.CreateContext();
-        var service1=new BankAccountService(db1);var service2=new BankAccountService(db2);
+        var service1=new BankAccountService(db1,new NeverOtp());var service2=new BankAccountService(db2,new NeverOtp());
         await Task.WhenAll(service1.SetDefaultAsync(owner,first),service2.SetDefaultAsync(owner,second));
         await using var verify=database.CreateContext();
         Assert.Single(await verify.BankAccounts.Where(x=>x.UserId==owner&&x.IsDefault&&x.IsActive).ToListAsync());
@@ -143,13 +157,13 @@ public sealed class PostgreSqlBankFlowIntegrationTests
     }
 
     [PostgreSqlFact]
-    public async Task Admin_pending_hides_role_and_approval_starts_24_hour_cooldown()
+    public async Task Admin_pending_hides_role_and_approval_activates_immediately()
     {
         await using var database=await PostgreSqlDatabase.CreateMigratedAsync();var owner=Guid.NewGuid();var admin=Guid.NewGuid();var bankId=Guid.NewGuid();
         await using(var seed=database.CreateContext()){seed.Users.AddRange(User(owner,UserRole.Customer),User(admin,UserRole.Admin));seed.MakeupArtistProfiles.Add(new MakeupArtistProfile{MUAId=owner});var bank=UsableBank(owner,bankId,false,"111111");bank.VerificationStatus=BankAccountEligibility.Pending;bank.ActivatedAt=null;seed.BankAccounts.Add(bank);await seed.SaveChangesAsync();}
         await using var db=database.CreateContext();var controller=new AdminBankAccountController(db){ControllerContext=new ControllerContext{HttpContext=new DefaultHttpContext{User=Principal(admin,UserRole.Admin)}}};
         var pending=Assert.IsType<OkObjectResult>(await controller.Pending());using var json=JsonDocument.Parse(JsonSerializer.Serialize(pending.Value));var item=Assert.Single(json.RootElement.EnumerateArray());Assert.Equal(owner,item.GetProperty("OwnerId").GetGuid());Assert.False(item.TryGetProperty("OwnerRole",out _));Assert.False(item.TryGetProperty("HasMuaProfile",out _));
-        var before=DateTime.UtcNow;Assert.IsType<OkObjectResult>(await controller.Approve(bankId));db.ChangeTracker.Clear();var approved=await db.BankAccounts.SingleAsync(x=>x.Id==bankId);Assert.Equal(BankAccountEligibility.Approved,approved.VerificationStatus);Assert.False(approved.IsDefault);Assert.InRange(approved.ActivatedAt!.Value,before.AddHours(24),DateTime.UtcNow.AddHours(24).AddSeconds(2));Assert.Equal(admin,approved.ReviewedBy);
+        var before=DateTime.UtcNow;var response=Assert.IsType<OkObjectResult>(await controller.Approve(bankId));using var responseJson=JsonDocument.Parse(JsonSerializer.Serialize(response.Value));Assert.True(responseJson.RootElement.GetProperty("IsUsable").GetBoolean());Assert.False(responseJson.RootElement.GetProperty("IsCoolingDown").GetBoolean());db.ChangeTracker.Clear();var approved=await db.BankAccounts.SingleAsync(x=>x.Id==bankId);Assert.Equal(BankAccountEligibility.Approved,approved.VerificationStatus);Assert.False(approved.IsDefault);Assert.InRange(approved.ActivatedAt!.Value,before,DateTime.UtcNow.AddSeconds(2));Assert.True(BankAccountEligibility.IsUsable(approved,DateTime.UtcNow));Assert.Equal(admin,approved.ReviewedBy);
     }
 
     [PostgreSqlFact]
@@ -201,10 +215,12 @@ public sealed class PostgreSqlBankFlowIntegrationTests
     private static User User(Guid id,UserRole role)=>new(){UserId=id,Role=role,FullName=role.ToString(),IsActive=true,CreatedAt=DateTime.UtcNow};
     private static BankAccount UsableBank(Guid owner,Guid id,bool isDefault,string number)=>new(){Id=id,UserId=owner,BankCode="VCB",BankBin="970436",BankName="VCB",CanonicalBankKey="BIN:970436",NormalizedAccountNumber=number,AccountNumber=number,AccountHolderName="NGUYEN VAN A",Method="BANK",QrCodeUrl="https://example.com/qr.png",IsActive=true,IsDefault=isDefault,VerificationStatus=BankAccountEligibility.Approved,ActivatedAt=DateTime.UtcNow.AddDays(-1),CreatedAt=DateTime.UtcNow.AddDays(-2),UpdatedAt=DateTime.UtcNow};
     private static ClaimsPrincipal Principal(Guid userId,UserRole role)=>new(new ClaimsIdentity(new[]{new Claim(ClaimTypes.NameIdentifier,userId.ToString()),new Claim(ClaimTypes.Role,role.ToString())},"test"));
+    private static IConfiguration OtpConfig()=>new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string,string?>{{"Otp:HashKey","integration-test-secret-at-least-32-characters"}}).Build();
 
     private sealed class EligibleMua:IMuaEligibilityService
     {
         public Task<MuaEligibilityDto?> EvaluateAsync(Guid muaId,bool updateStatus=true)=>Task.FromResult<MuaEligibilityDto?>(new MuaEligibilityDto{CanWithdraw=true});
+        public Task<MuaIdentityVerificationRequestDto?> GetIdentityVerificationAsync(Guid muaId)=>throw new NotSupportedException();
         public Task<bool> SetSuspendedAsync(Guid muaId,bool suspended)=>throw new NotSupportedException();public Task<bool> SetAccountActiveAsync(Guid userId,bool isActive)=>throw new NotSupportedException();public Task<(bool Success,string? Error)> SubmitForReviewAsync(Guid muaId)=>throw new NotSupportedException();public Task<(bool Success,string? Error)> UpdateIdentityVerificationAsync(Guid muaId,MuaIdentityVerificationRequestDto request)=>throw new NotSupportedException();public Task<bool> ReviewAsync(Guid muaId,Guid adminId,bool approved,string? reason=null,IReadOnlyList<string>? reasonCodes=null,IReadOnlyList<MuaApplicationRejectionItemDto>? items=null)=>throw new NotSupportedException();public Task<List<AdminMuaApplicationListItemDto>> GetApplicationsAsync(string? status,int page,int pageSize)=>throw new NotSupportedException();
     }
     private sealed class NoopReceivables:IMuaReceivableService
@@ -212,6 +228,8 @@ public sealed class PostgreSqlBankFlowIntegrationTests
         public Task<MuaReceivable> EnsureForCompletedBookingAsync(Booking booking)=>throw new NotSupportedException();public Task FreezeForDisputeAsync(Guid bookingId)=>Task.CompletedTask;public Task RestoreAfterMuaWinsAsync(Guid bookingId)=>Task.CompletedTask;public Task ReverseAsync(Guid bookingId)=>Task.CompletedTask;public Task<int> ReconcileStatesAsync()=>Task.FromResult(0);public Task<MuaEarningsDto> GetEarningsAsync(Guid muaId)=>throw new NotSupportedException();
     }
     private sealed class NoopProvider:IRefundPayoutProvider{public Task<RefundPayoutResult>CreateAsync(RefundPayoutRequest request,string idempotencyKey)=>throw new NotSupportedException();public Task<RefundPayoutResult>GetAsync(string payoutId)=>throw new NotSupportedException();}
+    private sealed class CaptureSender:IEmailSender{public string? Code{get;private set;}public Task SendOtpAsync(string email,string otp,string purpose,CancellationToken cancellationToken=default){Code=otp;return Task.CompletedTask;}}
+    private sealed class NeverOtp:IEmailOtpService{public Task IssueAsync(string email,string purpose,string? context=null,int resendCooldownSeconds=60,CancellationToken cancellationToken=default)=>throw new NotSupportedException();public Task<bool> ConsumeAsync(string email,string purpose,string? context,string otp,CancellationToken cancellationToken=default)=>throw new NotSupportedException();}
     private sealed class AlwaysAvailableSchedule:IMuaScheduleService
     {
         public Task<bool> HasValidScheduleAsync(Guid muaId)=>Task.FromResult(true);public Task<bool> IsAvailableAsync(Guid muaId,DateTime date,TimeSpan startTime,TimeSpan endTime)=>Task.FromResult(true);public Task<IReadOnlyList<TimeSpan>> GetAvailableStartsAsync(Guid muaId,DateTime date,int durationMinutes,int intervalMinutes=30)=>Task.FromResult<IReadOnlyList<TimeSpan>>(Array.Empty<TimeSpan>());public Task<IReadOnlyList<WorkingScheduleDto>> GetPublicScheduleAsync(Guid muaId)=>Task.FromResult<IReadOnlyList<WorkingScheduleDto>>(Array.Empty<WorkingScheduleDto>());public Task<MuaScheduleManagementDto?> GetManagementScheduleAsync(Guid muaId)=>Task.FromResult<MuaScheduleManagementDto?>(null);public Task ReplaceWorkingScheduleAsync(Guid muaId,IReadOnlyList<WorkingScheduleRequest> schedules)=>Task.CompletedTask;public Task<MuaTimeOffDto> AddTimeOffAsync(Guid muaId,CreateMuaTimeOffRequest request)=>throw new NotSupportedException();public Task<bool> DeleteTimeOffAsync(Guid muaId,Guid timeOffId)=>Task.FromResult(false);

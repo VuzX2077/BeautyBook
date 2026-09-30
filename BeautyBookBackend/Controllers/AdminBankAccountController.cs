@@ -36,10 +36,10 @@ public sealed class AdminBankAccountController(ApplicationDbContext db) : Contro
         var account=await db.BankAccounts.FirstOrDefaultAsync(x=>x.Id==id&&x.IsActive&&x.VerificationStatus==BankAccountEligibility.Pending);
         if(account==null)return ConflictResult();
         var now=DateTime.UtcNow;account.ReviewedAt=now;account.ReviewedBy=AdminId;account.UpdatedAt=now;account.IsDefault=false;
-        if(approve){account.VerificationStatus=BankAccountEligibility.Approved;account.ActivatedAt=now.Add(BankAccountEligibility.Cooldown);}
+        if(approve){account.VerificationStatus=BankAccountEligibility.Approved;account.ActivatedAt=now;}
         else{account.VerificationStatus=BankAccountEligibility.Rejected;account.ActivatedAt=null;account.IsActive=false;}
         await db.SaveChangesAsync();await tx.CommitAsync();
-        return approve?Ok(new{account.Id,account.VerificationStatus,account.ActivatedAt,IsUsable=false,CanReceiveMoney=false,IsCoolingDown=true,UnavailableReason="BANK_ACCOUNT_COOLDOWN"}):NoContent();
+        return approve?Ok(new{account.Id,account.VerificationStatus,account.ActivatedAt,IsUsable=true,CanReceiveMoney=true,IsCoolingDown=false,UnavailableReason=(string?)null}):NoContent();
     }
     private ConflictObjectResult ConflictResult()=>Conflict(new{Code="BANK_REVIEW_NOT_ALLOWED",Message="Tài khoản không còn chờ duyệt."});
 }

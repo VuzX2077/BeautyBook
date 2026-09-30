@@ -106,6 +106,7 @@ namespace BeautyBookBackend.Data
                 b.HasKey(x => x.Id);
                 b.Property(x => x.Email).HasMaxLength(255).IsRequired();
                 b.Property(x => x.Purpose).HasMaxLength(30).IsRequired();
+                b.Property(x => x.ContextHash).HasMaxLength(64);
                 b.Property(x => x.CodeHash).HasMaxLength(64).IsRequired();
                 b.HasIndex(x => new { x.Email, x.Purpose, x.CreatedAt });
                 b.HasIndex(x => x.ExpiresAt);

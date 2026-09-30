@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using BeautyBookBackend.DTOs;
 using BeautyBookBackend.Data;
 using BeautyBookBackend.Models;
@@ -14,95 +15,122 @@ namespace BeautyBookBackend.Services
     {
         private readonly ApplicationDbContext _dbContext;
 
-        public FeedService(ApplicationDbContext dbContext)
+        private readonly IMemoryCache _cache;
+        public FeedService(ApplicationDbContext dbContext, IMemoryCache cache)
         {
             _dbContext = dbContext;
+            _cache = cache;
         }
 
-        public async Task<List<FeedItemDto>> GetFeedAsync(int page = 1, int limit = 20, Guid? currentUserId = null)
+        private sealed record Snapshot(Guid? UserId, int Limit, Guid[] Ids, HashSet<Guid> Boosted, Dictionary<Guid, Guid> Authors, Guid? Last = null, int Run = 0);
+        private IQueryable<Portfolio> PublicPosts => _dbContext.Portfolios.AsNoTracking().Where(p =>
+            p.MakeupArtistProfile != null && p.MakeupArtistProfile.Status == MuaStatus.Listed &&
+            p.MakeupArtistProfile.VerificationStatus == MuaVerificationStatus.Approved &&
+            p.MakeupArtistProfile.User != null && p.MakeupArtistProfile.User.IsActive &&
+            p.MakeupArtistProfile.User.DeletedAt == null && !p.IsHidden);
+
+        private async Task<Snapshot> BuildSnapshot(Guid? userId, int limit)
         {
-            // 1. Fetch Candidates from Postgres
-            // We fetch top 100 to process in memory
-            var candidates = await _dbContext.Portfolios
-                .Include(p => p.MakeupArtistProfile)
-                    .ThenInclude(m => m.User)
-                .Include(p => p.Likes)
-                .Include(p => p.Saves)
-                .Include(p => p.Comments)
-                .Include(p => p.Service)
-                .Where(p => p.MakeupArtistProfile != null
-                    && p.MakeupArtistProfile.Status == MuaStatus.Listed
-                    && p.MakeupArtistProfile.VerificationStatus == MuaVerificationStatus.Approved
-                    && p.MakeupArtistProfile.User != null
-                    && p.MakeupArtistProfile.User.IsActive
-                    && p.MakeupArtistProfile.User.DeletedAt == null
-                    && !p.IsHidden)
-                .OrderByDescending(p => p.MakeupArtistProfile.ProfileQualityScore)
-                .ThenByDescending(p => p.CreatedAt)
-                .Take(100)
+            var now = DateTime.UtcNow;
+            var recentSince = now.Date.AddDays(-7);
+            var followed = userId.HasValue
+                ? await _dbContext.MuaFollows.Where(f => f.UserId == userId.Value).Select(f => f.MuaId).ToListAsync()
+                : new List<Guid>();
+            // Only ranking metadata is materialized here, not likes/comments/services.
+            // No total per-artist quota and no 100-post cutoff.
+            var rows = await PublicPosts
+                .OrderByDescending(p => p.MakeupArtistProfile!.ProfileQualityScore + (followed.Contains(p.MUAId) && p.CreatedAt >= recentSince ? 5 : 0))
+                .ThenByDescending(p => p.CreatedAt).ThenBy(p => p.PortfolioId)
+                .Select(p => new { p.PortfolioId, p.MUAId, p.ImageUrls, p.MakeupArtistProfile!.ProfileQualityScore, p.MakeupArtistProfile.ListedAt })
                 .ToListAsync();
+            var valid = rows.Where(p => p.ImageUrls.Any(MuaEligibilityService.IsValidPublicUrl)).ToList();
+            var promoted = valid.Where(p => p.ProfileQualityScore >= 80 && p.ListedAt > now.AddDays(-14)).Take(2).ToList();
+            var boosted = promoted.Select(p => p.PortfolioId).ToHashSet();
+            var ranked = valid.Where(p => !boosted.Contains(p.PortfolioId)).ToList();
+            for (var i = 0; i < promoted.Count; i++) ranked.Insert(Math.Min(i == 0 ? 2 : 7, ranked.Count), promoted[i]);
+            return new Snapshot(userId, limit, FeedOrdering.Interleave(ranked.Select(p => (p.PortfolioId, p.MUAId))), boosted, ranked.ToDictionary(p => p.PortfolioId, p => p.MUAId));
+        }
 
-            // 2. Filter & Anti-Monopoly
-            var finalFeed = new List<FeedItemDto>();
-            var muaAppearanceCount = new Dictionary<Guid, int>();
-            var newMuaCandidates = new List<FeedItemDto>();
-
-            foreach (var post in candidates)
+        private async Task<List<FeedItemDto>> LoadPosts(Guid[] ids, Guid? userId, HashSet<Guid> boosted)
+        {
+            var posts = await PublicPosts.Where(p => ids.Contains(p.PortfolioId))
+                .Include(p => p.MakeupArtistProfile).ThenInclude(m => m!.User)
+                .Include(p => p.Likes).Include(p => p.Saves).Include(p => p.Comments).Include(p => p.Service)
+                .AsSplitQuery().ToListAsync();
+            var byId = posts.ToDictionary(p => p.PortfolioId);
+            var result = new List<FeedItemDto>();
+            foreach (var id in ids)
             {
+                if (!byId.TryGetValue(id, out var post)) continue;
                 post.ImageUrls = post.ImageUrls.Where(MuaEligibilityService.IsValidPublicUrl).ToList();
                 if (post.ImageUrls.Count == 0) continue;
-                var muaId = post.MUAId;
-                if (!muaAppearanceCount.ContainsKey(muaId))
-                    muaAppearanceCount[muaId] = 0;
+                var item = MapToFeedItemDto(post, userId);
+                item.IsNewMuaBoost = boosted.Contains(id);
+                result.Add(item);
+            }
+            return result;
+        }
 
-                // Max 2 posts per MUA per feed request
-                if (muaAppearanceCount[muaId] >= 2)
-                    continue;
+        // Preserve the array response used by existing clients, including Explore.
+        public async Task<List<FeedItemDto>> GetFeedAsync(int page = 1, int limit = 20, Guid? currentUserId = null)
+        {
+            var size = Math.Clamp(limit, 1, 50);
+            var snapshot = await BuildSnapshot(currentUserId, size);
+            var offset = (long)(Math.Max(1, page) - 1) * size;
+            if (offset >= snapshot.Ids.Length) return new();
+            return await LoadPosts(snapshot.Ids.Skip((int)offset).Take(size).ToArray(), currentUserId, snapshot.Boosted);
+        }
 
-                var dto = MapToFeedItemDto(post, currentUserId);
-
-                // Identify New MUAs (Score >= 80, Listed in last 14 days)
-                bool isNewMua = post.MakeupArtistProfile.ProfileQualityScore >= 80 
-                    && post.MakeupArtistProfile.ListedAt > DateTime.UtcNow.AddDays(-14);
-
-                if (isNewMua && newMuaCandidates.Count < 2)
+        public async Task<FeedPageDto> GetFeedPageAsync(int limit, Guid? userId, string? cursor)
+        {
+            if (limit < 1 || limit > 50) throw new ArgumentException("Kích thước trang không hợp lệ.");
+            Snapshot snapshot;
+            if (string.IsNullOrEmpty(cursor)) snapshot = await BuildSnapshot(userId, limit);
+            else
+            {
+                if (!Guid.TryParseExact(cursor, "N", out _)) throw new ArgumentException("Cursor không hợp lệ.");
+                if (!_cache.TryGetValue<Snapshot>("feed-snapshot:" + cursor, out var cached) || cached == null)
+                    throw new FeedSnapshotExpiredException();
+                snapshot = cached;
+                if (snapshot.UserId != userId || snapshot.Limit != limit) throw new ArgumentException("Cursor không hợp lệ.");
+            }
+            // Recheck current visibility before choosing separators; hidden posts must
+            // not accidentally join three same-author posts across a page boundary.
+            var visible = await PublicPosts.Where(p => snapshot.Ids.Contains(p.PortfolioId))
+                .Select(p => new { p.PortfolioId, p.ImageUrls }).ToListAsync();
+            var valid = visible.Where(p => p.ImageUrls.Any(MuaEligibilityService.IsValidPublicUrl)).Select(p => p.PortfolioId).ToHashSet();
+            var remaining = snapshot.Ids.Where(valid.Contains).ToList();
+            var items = new List<FeedItemDto>();
+            var last = snapshot.Last; var run = snapshot.Run;
+            while (items.Count < limit && remaining.Count > 0)
+            {
+                var ordered = FeedOrdering.Interleave(remaining.Select(id => (id, snapshot.Authors[id])), last, run);
+                // Loading one batch normally suffices. Refill only if a post became
+                // unavailable between the visibility check and the detailed query.
+                var selected = ordered.Take(limit - items.Count).ToArray();
+                var loaded = await LoadPosts(selected, userId, snapshot.Boosted);
+                if (loaded.Count != selected.Length)
                 {
-                    dto.IsNewMuaBoost = true;
-                    newMuaCandidates.Add(dto);
-                    muaAppearanceCount[muaId]++;
-                    continue; // Skip adding to main feed for now, will inject later
+                    var loadedIds = loaded.Select(item => item.PortfolioId).ToHashSet();
+                    var missing = selected.Where(id => !loadedIds.Contains(id)).ToHashSet();
+                    remaining = ordered.Where(id => !missing.Contains(id)).ToList();
+                    continue;
                 }
-
-                finalFeed.Add(dto);
-                muaAppearanceCount[muaId]++;
-
+                var removed = selected.ToHashSet();
+                remaining = ordered.Where(id => !removed.Contains(id)).ToList();
+                foreach (var item in loaded)
+                {
+                    run = item.MuaId == last ? run + 1 : 1; last = item.MuaId;
+                    items.Add(item);
+                }
             }
-
-            // 3. Inject New MUAs at specific slots (Index 2 and 7)
-            if (newMuaCandidates.Count > 0 && finalFeed.Count >= 2)
+            string? next = null;
+            if (remaining.Count > 0)
             {
-                finalFeed.Insert(Math.Min(2, finalFeed.Count), newMuaCandidates[0]);
+                next = Guid.NewGuid().ToString("N");
+                _cache.Set("feed-snapshot:" + next, snapshot with { Ids = remaining.ToArray(), Last = last, Run = run }, TimeSpan.FromMinutes(30));
             }
-            else if (newMuaCandidates.Count > 0)
-            {
-                finalFeed.Add(newMuaCandidates[0]);
-            }
-
-            if (newMuaCandidates.Count > 1 && finalFeed.Count >= 7)
-            {
-                finalFeed.Insert(Math.Min(7, finalFeed.Count), newMuaCandidates[1]);
-            }
-            else if (newMuaCandidates.Count > 1)
-            {
-                finalFeed.Add(newMuaCandidates[1]);
-            }
-
-            // Apply pagination only after ranking, anti-monopoly and new-MUA
-            // injection. Applying the limit inside the loop returned page one
-            // repeatedly for every page number.
-            var safePage = Math.Max(1, page);
-            var safeLimit = Math.Clamp(limit, 1, 50);
-            return finalFeed.Skip((safePage - 1) * safeLimit).Take(safeLimit).ToList();
+            return new FeedPageDto { Items = items, NextCursor = next };
         }
 
         private FeedItemDto MapToFeedItemDto(Portfolio p, Guid? currentUserId)

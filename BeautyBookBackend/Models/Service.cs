@@ -12,6 +12,7 @@ namespace BeautyBookBackend.Models
         public decimal Price { get; set; }
         public int DurationMinutes { get; set; }
         public string? ImageUrl { get; set; }
+        public List<string> ImageUrls { get; set; } = new();
         public List<string> Tags { get; set; } = new();
         public bool IsActive { get; set; } = true;
 

@@ -184,7 +184,8 @@ namespace BeautyBookBackend.Services
                 Description = serviceDto.Description,
                 Price = serviceDto.Price,
                 DurationMinutes = serviceDto.DurationMinutes,
-                ImageUrl = serviceDto.ImageUrl,
+                ImageUrl = serviceDto.ImageUrls?.FirstOrDefault() ?? serviceDto.ImageUrl,
+                ImageUrls = serviceDto.ImageUrls ?? (string.IsNullOrWhiteSpace(serviceDto.ImageUrl) ? new() : new() { serviceDto.ImageUrl }),
                 Tags = serviceDto.Tags ?? new List<string>(),
                 IsActive = serviceDto.IsActive
             };
@@ -204,7 +205,8 @@ namespace BeautyBookBackend.Services
             service.Description = serviceDto.Description;
             service.Price = serviceDto.Price;
             service.DurationMinutes = serviceDto.DurationMinutes;
-            service.ImageUrl = serviceDto.ImageUrl;
+            service.ImageUrl = serviceDto.ImageUrls?.FirstOrDefault() ?? serviceDto.ImageUrl;
+            service.ImageUrls = serviceDto.ImageUrls ?? (string.IsNullOrWhiteSpace(serviceDto.ImageUrl) ? new() : new() { serviceDto.ImageUrl });
             service.Tags = serviceDto.Tags ?? new List<string>();
             service.IsActive = serviceDto.IsActive;
 
@@ -634,6 +636,7 @@ namespace BeautyBookBackend.Services
                 Price = service.Price,
                 DurationMinutes = service.DurationMinutes,
                 ImageUrl = service.ImageUrl,
+                ImageUrls = service.ImageUrls.Count > 0 ? service.ImageUrls : (string.IsNullOrWhiteSpace(service.ImageUrl) ? new() : new() { service.ImageUrl }),
                 Tags = service.Tags ?? new List<string>(),
                 IsActive = service.IsActive
             };

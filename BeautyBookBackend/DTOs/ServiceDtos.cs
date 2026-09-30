@@ -11,11 +11,12 @@ namespace BeautyBookBackend.DTOs
         public decimal Price { get; set; }
         public int DurationMinutes { get; set; }
         public string? ImageUrl { get; set; }
+        public List<string> ImageUrls { get; set; } = new();
         public List<string> Tags { get; set; } = new();
         public bool IsActive { get; set; }
     }
 
-    public class ServiceCreateDto
+    public class ServiceCreateDto : IValidatableObject
     {
         [Required]
         [MaxLength(100)]
@@ -33,8 +34,14 @@ namespace BeautyBookBackend.DTOs
         public int DurationMinutes { get; set; }
 
         public string? ImageUrl { get; set; }
+        [MaxLength(5)] public List<string>? ImageUrls { get; set; }
         public List<string> Tags { get; set; } = new();
         public bool IsActive { get; set; } = true;
+        public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+        {
+            if (ImageUrls?.Any(value => !Uri.TryCreate(value, UriKind.Absolute, out var uri) || (uri.Scheme != "https" && uri.Scheme != "http")) == true)
+                yield return new ValidationResult("Ảnh minh họa phải là URL hợp lệ.", new[] { nameof(ImageUrls) });
+        }
     }
 
     public sealed class SetServiceActiveRequest

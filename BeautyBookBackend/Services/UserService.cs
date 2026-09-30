@@ -199,6 +199,7 @@ namespace BeautyBookBackend.Services
                     service.ServiceName = "Dịch vụ không còn khả dụng";
                     service.Description = null;
                     service.ImageUrl = null;
+                    service.ImageUrls.Clear();
                     service.Tags.Clear();
                 }
             }

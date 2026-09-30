@@ -145,6 +145,18 @@ namespace BeautyBookBackend.Services
             return (true, null);
         }
 
+        public async Task<MuaIdentityVerificationRequestDto?> GetIdentityVerificationAsync(Guid muaId)
+        {
+            var profile = await _db.MakeupArtistProfiles.AsNoTracking().FirstOrDefaultAsync(x => x.MUAId == muaId);
+            return profile == null ? null : new MuaIdentityVerificationRequestDto
+            {
+                IdentityFrontUrl = profile.IdentityFrontUrl ?? "",
+                IdentityBackUrl = profile.IdentityBackUrl ?? "",
+                PortraitUrl = profile.PortraitUrl ?? "",
+                CertificateUrls = profile.CertificateUrls.ToList()
+            };
+        }
+
         public async Task<(bool Success, string? Error)> UpdateIdentityVerificationAsync(Guid muaId, MuaIdentityVerificationRequestDto request)
         {
             var profile = await _db.MakeupArtistProfiles.FirstOrDefaultAsync(x => x.MUAId == muaId);

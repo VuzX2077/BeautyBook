@@ -223,6 +223,14 @@ namespace BeautyBookBackend.Controllers
             return result.Success ? Ok(await _eligibilityService.EvaluateAsync(CurrentUserId)) : BadRequest(new { Message = result.Error });
         }
 
+        [Authorize(Roles = nameof(UserRole.MUA))]
+        [HttpGet("verification/identity")]
+        public async Task<IActionResult> GetIdentityVerification()
+        {
+            var data = await _eligibilityService.GetIdentityVerificationAsync(CurrentUserId);
+            return data == null ? NotFound() : Ok(data);
+        }
+
         [Authorize(Roles = nameof(UserRole.Admin))]
         [HttpPost("styles")]
         public async Task<IActionResult> CreateStyle([FromBody] CreateMakeupStyleRequest request)

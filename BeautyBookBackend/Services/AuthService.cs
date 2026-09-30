@@ -115,20 +115,32 @@ namespace BeautyBookBackend.Services
                 .Where(x => x.Email == email && x.Purpose == purpose)
                 .OrderByDescending(x => x.CreatedAt).FirstOrDefaultAsync();
             if (latest != null && latest.CreatedAt > now.AddSeconds(-60))
-                throw new InvalidOperationException("Vui lòng đợi 60 giây trước khi yêu cầu mã mới.");
+                throw new OtpCooldownException();
 
             var active = await _dbContext.EmailOtps
                 .Where(x => x.Email == email && x.Purpose == purpose && x.UsedAt == null).ToListAsync();
             foreach (var item in active) item.UsedAt = now;
 
             var code = RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6");
-            _dbContext.EmailOtps.Add(new EmailOtp
+            var issuedOtp = new EmailOtp
             {
                 Id = Guid.NewGuid(), Email = email, Purpose = purpose,
                 CodeHash = HashOtp(email, purpose, code), CreatedAt = now, ExpiresAt = now.AddMinutes(5)
-            });
+            };
+            _dbContext.EmailOtps.Add(issuedOtp);
             await _dbContext.SaveChangesAsync();
-            await _emailSender.SendOtpAsync(email, code, purpose);
+            try
+            {
+                await _emailSender.SendOtpAsync(email, code, purpose);
+            }
+            catch (EmailDeliveryException)
+            {
+                // A failed request must not leave a usable code or impose the
+                // successful-send cooldown. Previous codes stay invalidated.
+                _dbContext.EmailOtps.Remove(issuedOtp);
+                await _dbContext.SaveChangesAsync();
+                throw;
+            }
         }
 
         private async Task<bool> ConsumeOtpAsync(string email, string purpose, string code)

@@ -20,6 +20,12 @@ namespace BeautyBookBackend.DTOs
         [StringLength(100)] public string? District { get; set; }
         public int? ProvinceCode { get; set; }
         public int? DistrictCode { get; set; }
+        public int? OperatingProvinceCode { get; set; }
+        [MaxLength(100)] public List<string>? OperatingAreaIds { get; set; }
+        public bool OperatingLocationConfirmed { get; set; }
+        public bool PublicMeetingPoint { get; set; }
+        [StringLength(300)] public string? OperatingLocationLabel { get; set; }
+
         [RegularExpression("^(BEGINNER|UNDER_ONE|ONE_TO_THREE|THREE_TO_FIVE|OVER_FIVE)$")]
         public string? ExperienceLevel { get; set; }
         [Range(-90, 90)] public double? Latitude { get; set; }
@@ -43,8 +49,14 @@ namespace BeautyBookBackend.DTOs
 
         public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
         {
-            if (ProvinceCode.HasValue && !MuaOperatingAreaCatalog.IsValid(ProvinceCode.Value, DistrictCode, City, District))
+            if (OperatingAreaIds == null && ProvinceCode.HasValue && !MuaOperatingAreaCatalog.IsValid(ProvinceCode.Value, DistrictCode, City, District))
                 yield return new ValidationResult("Tỉnh/thành và quận/huyện không khớp danh mục khu vực.", new[] { nameof(ProvinceCode), nameof(DistrictCode) });
+            if (OperatingAreaIds != null && !OperatingAreas.IsValid(OperatingProvinceCode, OperatingAreaIds))
+                yield return new ValidationResult("Vui lòng chọn các khu vực thuộc tỉnh/thành đã chọn.", new[] { nameof(OperatingAreaIds) });
+            if (OperatingLocationConfirmed && (!Latitude.HasValue || !Longitude.HasValue))
+                yield return new ValidationResult("Vui lòng xác nhận điểm hoạt động trên bản đồ.", new[] { nameof(Latitude) });
+            if (PublicMeetingPoint && (!OperatingLocationConfirmed || string.IsNullOrWhiteSpace(OperatingLocationLabel)))
+                yield return new ValidationResult("Điểm hẹn công khai cần vị trí và tên địa điểm.", new[] { nameof(PublicMeetingPoint) });
             if (!ProvinceCode.HasValue && DistrictCode.HasValue)
                 yield return new ValidationResult("Vui lòng chọn tỉnh/thành.", new[] { nameof(ProvinceCode) });
             if (Latitude.HasValue != Longitude.HasValue)

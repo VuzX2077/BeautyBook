@@ -84,6 +84,10 @@ namespace BeautyBookBackend.Services
                 portfolio = portfolio.Where(x => x.ImageUrls.Count > 0).ToList();
             }
             var dto = ToMuaDetailDto(profile, styles, services, portfolio);
+            if (isOwner) {
+                dto.Latitude = profile.Latitude; dto.Longitude = profile.Longitude;
+                dto.OperatingLocationLabel = profile.OperatingLocationLabel;
+            }
             dto.ReviewCount = await _dbContext.Reviews.CountAsync(review => review.MUAId == muaId);
             return dto;
         }
@@ -96,7 +100,7 @@ namespace BeautyBookBackend.Services
             if (updateDto.Bio != null) profile.Bio = updateDto.Bio;
             if (updateDto.ExperienceYears > 0) profile.ExperienceYears = updateDto.ExperienceYears;
             if (updateDto.PortfolioCoverUrl != null) profile.PortfolioCoverUrl = updateDto.PortfolioCoverUrl;
-            if (updateDto.ProvinceCode.HasValue && !MuaOperatingAreaCatalog.IsValid(updateDto.ProvinceCode.Value, updateDto.DistrictCode, updateDto.City ?? profile.City ?? "", updateDto.District ?? profile.District)) return false;
+            if (updateDto.OperatingAreaIds == null && updateDto.ProvinceCode.HasValue && !MuaOperatingAreaCatalog.IsValid(updateDto.ProvinceCode.Value, updateDto.DistrictCode, updateDto.City ?? profile.City ?? "", updateDto.District ?? profile.District)) return false;
             if ((updateDto.City != null && updateDto.City != profile.City) || (updateDto.District != null && updateDto.District != profile.District))
             {
                 profile.Latitude = null;
@@ -108,6 +112,29 @@ namespace BeautyBookBackend.Services
             if (updateDto.District != null) profile.District = updateDto.District;
             if (updateDto.ProvinceCode.HasValue) profile.ProvinceCode = updateDto.ProvinceCode;
             if (updateDto.DistrictCode.HasValue) profile.DistrictCode = updateDto.DistrictCode;
+            if (updateDto.OperatingAreaIds != null)
+            {
+                if (!OperatingAreas.IsValid(updateDto.OperatingProvinceCode, updateDto.OperatingAreaIds)) return false;
+                if (profile.OperatingProvinceCode != updateDto.OperatingProvinceCode) {
+                    profile.OperatingLocationConfirmed = false; profile.PublicMeetingPoint = false;
+                    profile.Latitude = null; profile.Longitude = null; profile.OperatingLocationLabel = null;
+                }
+                profile.OperatingProvinceCode = updateDto.OperatingProvinceCode;
+                profile.City = OperatingAreas.Province(updateDto.OperatingProvinceCode)!.Name;
+                var wanted = updateDto.OperatingAreaIds.ToHashSet();
+                foreach (var old in profile.OperatingAreas.Where(a => !wanted.Contains(a.AreaId)).ToList()) profile.OperatingAreas.Remove(old);
+                foreach (var id in wanted.Where(id => !profile.OperatingAreas.Any(a => a.AreaId == id)))
+                    profile.OperatingAreas.Add(new MuaOperatingArea { MuaId = muaId, AreaId = id });
+            }
+            if (updateDto.ClearOperatingLocation) {
+                profile.Latitude = null; profile.Longitude = null; profile.OperatingLocationConfirmed = false;
+                profile.PublicMeetingPoint = false; profile.OperatingLocationLabel = null;
+            } else if (updateDto.Latitude.HasValue && updateDto.Longitude.HasValue) {
+                profile.Latitude = updateDto.Latitude; profile.Longitude = updateDto.Longitude;
+                profile.OperatingLocationConfirmed = updateDto.OperatingLocationConfirmed;
+                profile.PublicMeetingPoint = updateDto.PublicMeetingPoint;
+                profile.OperatingLocationLabel = updateDto.OperatingLocationLabel?.Trim();
+            }
             if (updateDto.ExperienceLevel != null) profile.ExperienceLevel = updateDto.ExperienceLevel;
             if (updateDto.Specialization != null) profile.Specialization = updateDto.Specialization;
             if (updateDto.SocialLinks != null) profile.SocialLinks = updateDto.SocialLinks;
@@ -567,6 +594,13 @@ namespace BeautyBookBackend.Services
                 District = profile.District,
                 ProvinceCode = profile.ProvinceCode,
                 DistrictCode = profile.DistrictCode,
+                OperatingProvinceCode = profile.OperatingProvinceCode ?? OperatingAreas.FromLegacyProvince(profile.ProvinceCode),
+                OperatingAreaIds = profile.OperatingAreas.Count > 0 ? profile.OperatingAreas.Select(a => a.AreaId).ToList() : profile.DistrictCode.HasValue ? new List<string> { $"legacy-district:{profile.DistrictCode}" } : new(),
+                OperatingLocationConfirmed = profile.OperatingLocationConfirmed,
+                PublicMeetingPoint = profile.PublicMeetingPoint,
+                OperatingLocationLabel = profile.PublicMeetingPoint ? profile.OperatingLocationLabel : null,
+                Latitude = profile.PublicMeetingPoint && profile.OperatingLocationConfirmed ? profile.Latitude : null,
+                Longitude = profile.PublicMeetingPoint && profile.OperatingLocationConfirmed ? profile.Longitude : null,
                 ExperienceLevel = profile.ExperienceLevel,
                 Specialization = profile.Specialization,
                 SocialLinks = profile.SocialLinks,
@@ -605,6 +639,13 @@ namespace BeautyBookBackend.Services
                 District = profile.District,
                 ProvinceCode = profile.ProvinceCode,
                 DistrictCode = profile.DistrictCode,
+                OperatingProvinceCode = profile.OperatingProvinceCode ?? OperatingAreas.FromLegacyProvince(profile.ProvinceCode),
+                OperatingAreaIds = profile.OperatingAreas.Count > 0 ? profile.OperatingAreas.Select(a => a.AreaId).ToList() : profile.DistrictCode.HasValue ? new List<string> { $"legacy-district:{profile.DistrictCode}" } : new(),
+                OperatingLocationConfirmed = profile.OperatingLocationConfirmed,
+                PublicMeetingPoint = profile.PublicMeetingPoint,
+                OperatingLocationLabel = profile.PublicMeetingPoint ? profile.OperatingLocationLabel : null,
+                Latitude = profile.PublicMeetingPoint && profile.OperatingLocationConfirmed ? profile.Latitude : null,
+                Longitude = profile.PublicMeetingPoint && profile.OperatingLocationConfirmed ? profile.Longitude : null,
                 ExperienceLevel = profile.ExperienceLevel,
                 Specialization = profile.Specialization,
                 SocialLinks = profile.SocialLinks,

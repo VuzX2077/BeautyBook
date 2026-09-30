@@ -44,9 +44,16 @@ namespace BeautyBookBackend.Data
         public DbSet<NotificationCampaign> NotificationCampaigns { get; set; } = null!;
         public DbSet<EmailOtp> EmailOtps { get; set; } = null!;
 
+        public DbSet<MuaOperatingArea> MuaOperatingAreas { get; set; } = null!;
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
+            modelBuilder.Entity<MuaOperatingArea>(b => {
+                b.HasKey(a => new { a.MuaId, a.AreaId });
+                b.Property(a => a.AreaId).HasMaxLength(60);
+                b.HasIndex(a => a.AreaId);
+                b.HasOne(a => a.Profile).WithMany(p => p.OperatingAreas).HasForeignKey(a => a.MuaId).OnDelete(DeleteBehavior.Cascade);
+            });
 
             modelBuilder.Entity<MuaFollow>(b =>
             {
@@ -78,6 +85,9 @@ namespace BeautyBookBackend.Data
                 b.Property(m => m.AverageRating).HasPrecision(3, 2);
                 b.Property(m => m.City).HasMaxLength(100);
                 b.Property(m => m.District).HasMaxLength(100);
+                b.Property(m => m.OperatingLocationLabel).HasMaxLength(300);
+                b.HasIndex(m => new { m.OperatingProvinceCode, m.Status, m.VerificationStatus });
+                b.Navigation(m => m.OperatingAreas).AutoInclude();
                 b.Property(m => m.ExperienceLevel).HasMaxLength(30);
                 b.Property(m => m.Specialization).HasMaxLength(255);
                 b.Property(m => m.SocialLinks).HasMaxLength(1000);

@@ -172,6 +172,11 @@ namespace BeautyBookBackend.Services
                 muaProfile.Bio = null;
                 muaProfile.PortfolioCoverUrl = null;
                 muaProfile.City = null;
+                muaProfile.OperatingAreas.Clear();
+                muaProfile.OperatingProvinceCode = null;
+                muaProfile.OperatingLocationConfirmed = false;
+                muaProfile.PublicMeetingPoint = false;
+                muaProfile.OperatingLocationLabel = null;
                 muaProfile.District = null;
                 muaProfile.ProvinceCode = null;
                 muaProfile.DistrictCode = null;

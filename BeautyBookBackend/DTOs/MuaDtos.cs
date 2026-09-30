@@ -30,6 +30,13 @@ namespace BeautyBookBackend.DTOs
         public string? District { get; set; }
         public int? ProvinceCode { get; set; }
         public int? DistrictCode { get; set; }
+        public int? OperatingProvinceCode { get; set; }
+        public List<string> OperatingAreaIds { get; set; } = new();
+        public bool OperatingLocationConfirmed { get; set; }
+        public bool PublicMeetingPoint { get; set; }
+        public string? OperatingLocationLabel { get; set; }
+        public double? Latitude { get; set; }
+        public double? Longitude { get; set; }
         public string? ExperienceLevel { get; set; }
         public string? Specialization { get; set; }
         public string? SocialLinks { get; set; }
@@ -87,11 +94,29 @@ namespace BeautyBookBackend.DTOs
         public string? Description { get; set; }
     }
 
-    public class MuaUpdateDto
+    public class MuaUpdateDto : IValidatableObject
     {
         [StringLength(100)] public string? District { get; set; }
         public int? ProvinceCode { get; set; }
         public int? DistrictCode { get; set; }
+        public int? OperatingProvinceCode { get; set; }
+        [MaxLength(100)] public List<string>? OperatingAreaIds { get; set; }
+        public bool OperatingLocationConfirmed { get; set; }
+        public bool PublicMeetingPoint { get; set; }
+        [StringLength(300)] public string? OperatingLocationLabel { get; set; }
+
+        [Range(-90,90)] public double? Latitude { get; set; }
+        [Range(-180,180)] public double? Longitude { get; set; }
+        public bool ClearOperatingLocation { get; set; }
+        public IEnumerable<ValidationResult> Validate(ValidationContext context)
+        {
+            if (OperatingAreaIds != null && !OperatingAreas.IsValid(OperatingProvinceCode, OperatingAreaIds))
+                yield return new ValidationResult("Khu vực không thuộc tỉnh/thành đã chọn.", new[] { nameof(OperatingAreaIds) });
+            if (Latitude.HasValue != Longitude.HasValue || (OperatingLocationConfirmed && !Latitude.HasValue))
+                yield return new ValidationResult("Điểm hoạt động không đầy đủ.", new[] { nameof(Latitude) });
+            if (PublicMeetingPoint && (!OperatingLocationConfirmed || string.IsNullOrWhiteSpace(OperatingLocationLabel)))
+                yield return new ValidationResult("Điểm hẹn công khai cần vị trí và tên địa điểm.", new[] { nameof(PublicMeetingPoint) });
+        }
         [RegularExpression("^(BEGINNER|UNDER_ONE|ONE_TO_THREE|THREE_TO_FIVE|OVER_FIVE)$")]
         public string? ExperienceLevel { get; set; }
         [StringLength(500)]

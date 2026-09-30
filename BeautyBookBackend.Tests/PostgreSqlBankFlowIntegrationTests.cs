@@ -204,6 +204,7 @@ public sealed class PostgreSqlBankFlowIntegrationTests
 
     private sealed class EligibleMua:IMuaEligibilityService
     {
+        public Task<MuaIdentityVerificationRequestDto?> GetIdentityVerificationAsync(Guid muaId)=>Task.FromResult<MuaIdentityVerificationRequestDto?>(null);
         public Task<MuaEligibilityDto?> EvaluateAsync(Guid muaId,bool updateStatus=true)=>Task.FromResult<MuaEligibilityDto?>(new MuaEligibilityDto{CanWithdraw=true});
         public Task<bool> SetSuspendedAsync(Guid muaId,bool suspended)=>throw new NotSupportedException();public Task<bool> SetAccountActiveAsync(Guid userId,bool isActive)=>throw new NotSupportedException();public Task<(bool Success,string? Error)> SubmitForReviewAsync(Guid muaId)=>throw new NotSupportedException();public Task<(bool Success,string? Error)> UpdateIdentityVerificationAsync(Guid muaId,MuaIdentityVerificationRequestDto request)=>throw new NotSupportedException();public Task<bool> ReviewAsync(Guid muaId,Guid adminId,bool approved,string? reason=null,IReadOnlyList<string>? reasonCodes=null,IReadOnlyList<MuaApplicationRejectionItemDto>? items=null)=>throw new NotSupportedException();public Task<List<AdminMuaApplicationListItemDto>> GetApplicationsAsync(string? status,int page,int pageSize)=>throw new NotSupportedException();
     }

@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using BeautyBookBackend.Data;
 using Npgsql;
@@ -55,6 +56,12 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 
 // Add services to the container.
 builder.Services.AddControllers();
+builder.Logging.AddFilter("System.Net.Http.HttpClient.LocationService", LogLevel.None);
+builder.Services.AddHttpClient<LocationService>(client => client.Timeout = TimeSpan.FromSeconds(8));
+builder.Services.AddRateLimiter(options => { options.RejectionStatusCode = StatusCodes.Status429TooManyRequests; options.AddPolicy("location-lookup", context =>
+    System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+        context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions { PermitLimit = 60, Window = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true })); });
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
     options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
@@ -282,6 +289,7 @@ if (!string.Equals(uploadStoragePath, defaultUploadPath, StringComparison.Ordina
 
 app.UseAuthentication(); // Must be called before UseAuthorization
 app.UseAuthorization();
+app.UseRateLimiter();
 
 app.MapGet("/health", () => Results.Ok(new { Status = "Healthy" }));
 app.MapControllers();
@@ -294,3 +302,4 @@ if (!string.IsNullOrWhiteSpace(port))
 }
 
 app.Run();
+

@@ -160,6 +160,7 @@ builder.Services.AddAuthentication(options =>
 
 // Register Application Services (Dependency Injection)
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IMuaService, MuaService>();
 builder.Services.AddScoped<IMuaEligibilityService, MuaEligibilityService>();

@@ -36,17 +36,32 @@ namespace BeautyBookBackend.Services
                 .FirstOrDefaultAsync(x => x.MUAId == muaId && x.User != null && x.User.IsActive && x.User.DeletedAt == null);
             if (mua == null) throw new ArgumentException("Không tìm thấy chuyên gia trang điểm hợp lệ.");
             var room = await _chatRepository.GetOrCreateChatRoomAsync(customerId, muaId);
-            return MapToChatRoomDto(room);
+            var dto = MapToChatRoomDto(room, customerId);
+            dto.CustomerName = DisplayName(customer.FullName);
+            dto.CustomerAvatar = customer.AvatarUrl;
+            dto.MUAName = DisplayName(mua.User?.FullName);
+            dto.MUAAvatar = mua.User?.AvatarUrl;
+            SetOtherParticipant(dto, customerId);
+            return dto;
         }
 
         public async Task<IEnumerable<ChatRoomDto>> GetChatRoomsByUserIdAsync(Guid userId)
         {
-            var rooms = await _chatRepository.GetChatRoomsByUserIdAsync(userId);
+            var rooms = (await _chatRepository.GetChatRoomsByUserIdAsync(userId)).ToList();
+            var participantIds = rooms.SelectMany(r => new[] { r.CustomerId, r.MUAId }).Distinct().ToArray();
+            // Authoritative user identity, independent of role or optional profile navigation.
+            var identities = await _context.Users.AsNoTracking().Where(u => participantIds.Contains(u.UserId) && u.DeletedAt == null)
+                .Select(u => new { u.UserId, u.FullName, u.AvatarUrl }).ToDictionaryAsync(u => u.UserId);
             var dtos = new List<ChatRoomDto>();
 
             foreach (var room in rooms)
             {
-                var dto = MapToChatRoomDto(room);
+                var dto = MapToChatRoomDto(room, userId);
+                dto.CustomerName = identities.TryGetValue(room.CustomerId, out var customer) ? DisplayName(customer.FullName) : "Người dùng B-Book";
+                dto.CustomerAvatar = customer?.AvatarUrl;
+                dto.MUAName = identities.TryGetValue(room.MUAId, out var artist) ? DisplayName(artist.FullName) : "Người dùng B-Book";
+                dto.MUAAvatar = artist?.AvatarUrl;
+                SetOtherParticipant(dto, userId);
                 // Get last message
                 var lastMsg = await _chatRepository.GetLastMessageAsync(room.ChatRoomId);
                 if (lastMsg != null)
@@ -174,19 +189,31 @@ namespace BeautyBookBackend.Services
             return MapToMessageDto(message, userId);
         }
 
-        private ChatRoomDto MapToChatRoomDto(ChatRoom room)
+        private static string DisplayName(string? name) => string.IsNullOrWhiteSpace(name) ? "Người dùng B-Book" : name.Trim();
+
+        private static void SetOtherParticipant(ChatRoomDto dto, Guid viewerId)
         {
-            return new ChatRoomDto
+            var isCustomer = dto.CustomerId == viewerId;
+            dto.OtherUserId = isCustomer ? dto.MUAId : dto.CustomerId;
+            dto.OtherUserName = isCustomer ? dto.MUAName : dto.CustomerName;
+            dto.OtherUserAvatar = isCustomer ? dto.MUAAvatar : dto.CustomerAvatar;
+        }
+
+        private ChatRoomDto MapToChatRoomDto(ChatRoom room, Guid viewerId)
+        {
+            var dto = new ChatRoomDto
             {
                 ChatRoomId = room.ChatRoomId,
                 CustomerId = room.CustomerId,
-                CustomerName = room.Customer?.FullName ?? "Khách Hàng",
+                CustomerName = DisplayName(room.Customer?.FullName),
                 CustomerAvatar = room.Customer?.AvatarUrl,
                 MUAId = room.MUAId,
-                MUAName = room.MakeupArtistProfile?.User?.FullName ?? "Chuyên Gia Trang Điểm",
+                MUAName = DisplayName(room.MakeupArtistProfile?.User?.FullName),
                 MUAAvatar = room.MakeupArtistProfile?.User?.AvatarUrl,
                 CreatedAt = room.CreatedAt
             };
+            SetOtherParticipant(dto, viewerId);
+            return dto;
         }
 
         private MessageDto MapToMessageDto(Message message, Guid? currentUserId = null)

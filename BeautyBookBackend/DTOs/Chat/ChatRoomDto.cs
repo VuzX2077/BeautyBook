@@ -13,6 +13,10 @@ namespace BeautyBookBackend.DTOs.Chat
         public string? MUAName { get; set; }
         public string? MUAAvatar { get; set; }
         
+        public Guid? OtherUserId { get; set; }
+        public string? OtherUserName { get; set; }
+        public string? OtherUserAvatar { get; set; }
+
         public DateTime CreatedAt { get; set; }
         
         public MessageDto? LastMessage { get; set; }

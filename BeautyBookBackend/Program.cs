@@ -142,6 +142,13 @@ builder.Services.AddAuthentication(options =>
     };
     options.Events = new JwtBearerEvents
     {
+        OnMessageReceived = context =>
+        {
+            var accessToken = context.Request.Query["access_token"];
+            if (!string.IsNullOrEmpty(accessToken) && context.HttpContext.Request.Path.StartsWithSegments("/chathub"))
+                context.Token = accessToken;
+            return Task.CompletedTask;
+        },
         OnTokenValidated = async context =>
         {
             var userIdValue = context.Principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
@@ -184,6 +191,7 @@ builder.Services.AddScoped<IWalletService, WalletService>();
 builder.Services.AddHttpClient<IImageStorage, SupabaseImageStorage>();
 builder.Services.AddScoped<IFeedService, FeedService>();
 builder.Services.AddScoped<IChatService, ChatService>();
+builder.Services.AddScoped<IChatNotificationService, ChatNotificationService>();
 builder.Services.AddHttpClient<IPayOsService, PayOsService>(client =>
 {
     var baseUrl = builder.Configuration["PayOS:BaseUrl"] ?? "https://api-merchant.payos.vn";

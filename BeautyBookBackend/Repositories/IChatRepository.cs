@@ -9,7 +9,9 @@ namespace BeautyBookBackend.Repositories
     {
         Task<ChatRoom> GetOrCreateChatRoomAsync(Guid customerId, Guid muaId);
         Task<IEnumerable<ChatRoom>> GetChatRoomsByUserIdAsync(Guid userId);
-        Task<IEnumerable<Message>> GetMessagesByRoomIdAsync(Guid roomId);
+        Task<IEnumerable<Message>> GetMessagesByRoomIdAsync(Guid roomId, DateTime? before = null, int limit = 50);
+        Task<Message?> GetLastMessageAsync(Guid roomId);
+        Task<int> GetUnreadCountAsync(Guid roomId, Guid userId);
         Task<Message> AddMessageAsync(Message message);
         Task<ChatRoom?> GetChatRoomByIdAsync(Guid roomId);
         Task SaveChangesAsync();

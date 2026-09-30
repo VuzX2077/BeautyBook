@@ -87,6 +87,7 @@ namespace BeautyBookBackend.Data
                 b.Property(m => m.District).HasMaxLength(100);
                 b.Property(m => m.OperatingLocationLabel).HasMaxLength(300);
                 b.HasIndex(m => new { m.OperatingProvinceCode, m.Status, m.VerificationStatus });
+                b.HasIndex(m => new { m.Status, m.VerificationStatus, m.MUAId });
                 b.Navigation(m => m.OperatingAreas).AutoInclude();
                 b.Property(m => m.ExperienceLevel).HasMaxLength(30);
                 b.Property(m => m.Specialization).HasMaxLength(255);
@@ -140,6 +141,7 @@ namespace BeautyBookBackend.Data
             modelBuilder.Entity<Portfolio>(b =>
             {
                 b.HasKey(p => p.PortfolioId);
+                b.HasIndex(p => new { p.IsHidden, p.CreatedAt, p.PortfolioId }).IsDescending(false, true, false);
                 b.Property(p => p.Description).HasMaxLength(2000);
                 b.HasOne(p => p.MakeupArtistProfile)
                  .WithMany(m => m.Portfolios)
@@ -188,6 +190,7 @@ namespace BeautyBookBackend.Data
             modelBuilder.Entity<Service>(b =>
             {
                 b.HasKey(s => s.ServiceId);
+                b.HasIndex(s => new { s.IsActive, s.Price, s.ServiceId });
                 b.Property(s => s.IsActive).HasDefaultValue(true);
                 b.Property(s => s.ServiceName).HasMaxLength(100);
                 b.Property(s => s.Description).HasMaxLength(500);

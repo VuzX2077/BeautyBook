@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using BeautyBookBackend.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace BeautyBookBackend.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260930020019_HardenRealtimeChat")]
+    partial class HardenRealtimeChat
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -52,9 +55,6 @@ namespace BeautyBookBackend.Migrations
                     b.Property<string>("LastError")
                         .HasColumnType("text");
 
-                    b.Property<Guid?>("MessageId")
-                        .HasColumnType("uuid");
-
                     b.Property<DateTime?>("ReadAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -85,10 +85,6 @@ namespace BeautyBookBackend.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("CampaignId");
-
-                    b.HasIndex("MessageId")
-                        .IsUnique()
-                        .HasFilter("\"MessageId\" IS NOT NULL");
 
                     b.HasIndex("Status", "ScheduledAt");
 
@@ -1764,11 +1760,6 @@ namespace BeautyBookBackend.Migrations
                         .HasForeignKey("CampaignId")
                         .OnDelete(DeleteBehavior.Cascade);
 
-                    b.HasOne("BeautyBookBackend.Models.Message", "Message")
-                        .WithMany()
-                        .HasForeignKey("MessageId")
-                        .OnDelete(DeleteBehavior.Cascade);
-
                     b.HasOne("BeautyBookBackend.Models.User", "User")
                         .WithMany()
                         .HasForeignKey("UserId")
@@ -1778,8 +1769,6 @@ namespace BeautyBookBackend.Migrations
                     b.Navigation("Booking");
 
                     b.Navigation("Campaign");
-
-                    b.Navigation("Message");
 
                     b.Navigation("User");
                 });

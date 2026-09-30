@@ -10,6 +10,7 @@ namespace BeautyBookBackend.DTOs.Chat
         public string? Content { get; set; }
         public DateTime SentAt { get; set; }
         public bool IsRead { get; set; }
+        public DateTime? ReadAt { get; set; }
         public string? ImageUrl { get; set; }
         public Guid? ReplyToMessageId { get; set; }
         public string? ReplyToContent { get; set; }
@@ -22,5 +23,6 @@ namespace BeautyBookBackend.DTOs.Chat
         public string Emoji { get; set; } = string.Empty;
         public int Count { get; set; }
         public bool ReactedByMe { get; set; }
+        public List<Guid> UserIds { get; set; } = new();
     }
 }

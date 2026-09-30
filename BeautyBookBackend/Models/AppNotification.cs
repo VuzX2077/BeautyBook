@@ -5,6 +5,7 @@ public class AppNotification
     public Guid Id { get; set; }
     public Guid UserId { get; set; }
     public Guid? BookingId { get; set; }
+    public Guid? MessageId { get; set; }
     public Guid? CampaignId { get; set; }
     public string Type { get; set; } = string.Empty;
     public string Title { get; set; } = string.Empty;
@@ -19,5 +20,6 @@ public class AppNotification
     public DateTime CreatedAt { get; set; }
     public User? User { get; set; }
     public Booking? Booking { get; set; }
+    public Message? Message { get; set; }
     public NotificationCampaign? Campaign { get; set; }
 }

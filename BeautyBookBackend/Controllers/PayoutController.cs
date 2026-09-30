@@ -7,20 +7,25 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace BeautyBookBackend.Controllers
 {
-    [Authorize(Roles=nameof(UserRole.MUA))]
+    // Payout authorization is enforced against the persisted MUA profile and
+    // receivables in PayoutService, so a MUA can use the feature in either UI mode.
+    [Authorize]
     [ApiController]
     [Route("api/mua")]
     public class PayoutController : ControllerBase
     {
-        private readonly IPayoutService _service;private readonly IAuthService _auth;public PayoutController(IPayoutService service,IAuthService auth){_service=service;_auth=auth;}
+        private readonly IPayoutService _service;private readonly IBankAccountService _banks;private readonly IAuthService _auth;public PayoutController(IPayoutService service,IAuthService auth,IBankAccountService banks){_service=service;_auth=auth;_banks=banks;}
         private Guid CurrentUserId=>Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value??Guid.Empty.ToString());
-        [HttpGet("bank-accounts")]public async Task<IActionResult> Banks()=>Ok(await _service.GetBankAccountsAsync(CurrentUserId));
-        [HttpPost("bank-accounts")]public async Task<IActionResult> AddBank(UpsertMuaBankAccountRequest r){if(!await _auth.VerifyPasswordAsync(CurrentUserId,r.CurrentPassword))return StatusCode(403,new{Code="SENSITIVE_AUTH_REQUIRED",Message="Mật khẩu xác nhận không đúng."});try{return Ok(await _service.AddBankAccountAsync(CurrentUserId,r));}catch(InvalidOperationException e){return BadRequest(new{Message=e.Message});}}
-        [HttpPut("bank-accounts/{id:guid}")]public async Task<IActionResult> UpdateBank(Guid id,UpsertMuaBankAccountRequest r){if(!await _auth.VerifyPasswordAsync(CurrentUserId,r.CurrentPassword))return StatusCode(403,new{Code="SENSITIVE_AUTH_REQUIRED",Message="Mật khẩu xác nhận không đúng."});try{var x=await _service.UpdateBankAccountAsync(CurrentUserId,id,r);return x==null?NotFound():Ok(x);}catch(InvalidOperationException e){return BadRequest(new{Message=e.Message});}}
-        [HttpDelete("bank-accounts/{id:guid}")]public async Task<IActionResult> DeleteBank(Guid id)=>await _service.DeactivateBankAccountAsync(CurrentUserId,id)?NoContent():NotFound();
-        [HttpPost("payouts")]public async Task<IActionResult> Create(CreatePayoutRequest r){try{return Ok(await _service.CreateAsync(CurrentUserId,r));}catch(InvalidOperationException e){return Conflict(new{Code="PAYOUT_NOT_ALLOWED",Message=e.Message});}}
+        // Legacy compatibility adapters. New clients use /api/bank-accounts.
+        [HttpGet("bank-accounts")]public async Task<IActionResult> Banks()=>Ok(await _banks.GetAsync(CurrentUserId));
+        [HttpPost("bank-accounts")]public async Task<IActionResult> AddBank(UpsertBankAccountRequest r)=>await BankPassword(r.CurrentPassword,()=>_banks.AddAsync(CurrentUserId,r));
+        [HttpPut("bank-accounts/{id:guid}")]public async Task<IActionResult> UpdateBank(Guid id,UpsertBankAccountRequest r)=>await BankPassword(r.CurrentPassword,()=>_banks.UpdateAsync(CurrentUserId,id,r),true);
+        [HttpPost("bank-accounts/{id:guid}/set-default")]public async Task<IActionResult> SetDefaultBank(Guid id,SetBankAccountDefaultRequest r)=>await BankPassword(r.CurrentPassword,()=>_banks.SetDefaultAsync(CurrentUserId,id),true);
+        [HttpDelete("bank-accounts/{id:guid}")]public async Task<IActionResult> DeleteBank(Guid id)=>await _banks.DeactivateAsync(CurrentUserId,id)?NoContent():NotFound();
+        [HttpPost("payouts")]public async Task<IActionResult> Create(CreatePayoutRequest r){try{return Ok(await _service.CreateAsync(CurrentUserId,r));}catch(BookingRuleException e){return StatusCode(e.StatusCode,new{e.Code,Message=e.Message});}catch(InvalidOperationException e){return Conflict(new{Code="PAYOUT_NOT_ALLOWED",Message=e.Message});}}
         [HttpGet("payouts")]public async Task<IActionResult> Mine()=>Ok(await _service.GetOwnAsync(CurrentUserId));
         [HttpGet("payouts/{id:guid}")]public async Task<IActionResult> MineById(Guid id){var payout=await _service.GetOwnByIdAsync(CurrentUserId,id);return payout==null?NotFound():Ok(payout);}
+        private async Task<IActionResult> BankPassword<T>(string password,Func<Task<T>> action,bool nullable=false){if(!await _auth.VerifyPasswordAsync(CurrentUserId,password))return StatusCode(403,new{Code="SENSITIVE_AUTH_REQUIRED",Message="Mật khẩu xác nhận không đúng."});try{var result=await action();return nullable&&result is null?NotFound(new{Code="BANK_ACCOUNT_NOT_FOUND",Message="Không tìm thấy tài khoản ngân hàng."}):Ok(result);}catch(BookingRuleException e){return StatusCode(e.StatusCode,new{e.Code,Message=e.Message});}}
     }
 
     [Authorize(Roles=nameof(UserRole.Admin))]

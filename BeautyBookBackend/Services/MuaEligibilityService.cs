@@ -68,7 +68,10 @@ namespace BeautyBookBackend.Services
             }
 
             var operational = profile.User.IsActive && !profile.User.DeletedAt.HasValue && profile.Status != MuaStatus.Suspended;
-            var hasActiveBankAccount = await _db.MuaBankAccounts.AnyAsync(x => x.MuaId == muaId && x.IsActive);
+            var now = DateTime.UtcNow;
+            var hasUsableBankAccount = await _db.BankAccounts
+                .Where(BankAccountEligibility.UsableAt(now))
+                .AnyAsync(x => x.UserId == muaId);
             var availableBookingIds = await _db.MuaReceivables
                 .Where(x => x.MuaId == muaId && x.Status == MuaReceivableStatus.Available)
                 .Select(x => x.BookingId)
@@ -85,7 +88,7 @@ namespace BeautyBookBackend.Services
                 ProfileStatus = profile.Status.ToString(),
                 CanPublishProfile = canPublish && hasValidSchedule && profile.VerificationStatus == MuaVerificationStatus.Approved && profile.Status != MuaStatus.Suspended,
                 CanReceiveBookings = operational && profile.Status == MuaStatus.Listed && canPublish && hasValidSchedule && profile.VerificationStatus == MuaVerificationStatus.Approved,
-                CanWithdraw = operational && hasActiveBankAccount && hasWithdrawableReceivable,
+                CanWithdraw = operational && hasUsableBankAccount && hasWithdrawableReceivable,
                 VerificationStatus = profile.VerificationStatus.ToString(),
                 RejectionReason = profile.RejectionReason,
                 SubmittedAt = profile.SubmittedAt,

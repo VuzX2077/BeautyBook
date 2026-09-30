@@ -3,7 +3,6 @@ using BeautyBookBackend.DTOs;
 using BeautyBookBackend.Models;
 using BeautyBookBackend.Models.Enums;
 using Microsoft.EntityFrameworkCore;
-using System.Text.RegularExpressions;
 
 namespace BeautyBookBackend.Services
 {
@@ -12,34 +11,6 @@ namespace BeautyBookBackend.Services
         private readonly ApplicationDbContext _context;
         private readonly IMuaEligibilityService _eligibility;
         public PayoutService(ApplicationDbContext context, IMuaEligibilityService eligibility) { _context=context; _eligibility=eligibility; }
-
-        public async Task<IReadOnlyList<MuaBankAccountDto>> GetBankAccountsAsync(Guid muaId) =>
-            (await _context.MuaBankAccounts.AsNoTracking().Where(x=>x.MuaId==muaId&&x.IsActive).OrderByDescending(x=>x.IsDefault).ThenBy(x=>x.CreatedAt).ToListAsync()).Select(ToBankDto).ToList();
-
-        public async Task<MuaBankAccountDto> AddBankAccountAsync(Guid muaId, UpsertMuaBankAccountRequest request)
-        {
-            ValidateBank(request); var now=DateTime.UtcNow;
-            await using var tx=await _context.Database.BeginTransactionAsync();
-            var lockKey="bank-account:"+muaId.ToString("N");
-            await _context.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({lockKey}, 0))");
-            var hasAny=await _context.MuaBankAccounts.AnyAsync(x=>x.MuaId==muaId&&x.IsActive);
-            if(request.IsDefault||!hasAny) await ClearDefaultsAsync(muaId);
-            var entity=new MuaBankAccount{Id=Guid.NewGuid(),MuaId=muaId,BankCode=request.BankCode.Trim().ToUpperInvariant(),BankName=Clean(request.BankName),AccountNumber=request.AccountNumber.Trim(),AccountHolderName=request.AccountHolderName.Trim().ToUpperInvariant(),Method=NormalizeMethod(request.Method),QrCodeUrl=ResolveQrUrl(request.BankCode,request.AccountNumber,request.Method,request.QrCodeUrl),ActivatedAt=now.AddHours(24),VerificationStatus=hasAny?"APPROVED":"PENDING_ADMIN",IsDefault=request.IsDefault||!hasAny,IsActive=true,CreatedAt=now,UpdatedAt=now};
-            _context.MuaBankAccounts.Add(entity);await _context.SaveChangesAsync();await tx.CommitAsync();return ToBankDto(entity);
-        }
-
-        public async Task<MuaBankAccountDto?> UpdateBankAccountAsync(Guid muaId,Guid id,UpsertMuaBankAccountRequest request)
-        {
-            ValidateBank(request);await using var tx=await _context.Database.BeginTransactionAsync();
-            var entity=await _context.MuaBankAccounts.FromSqlInterpolated($"SELECT * FROM \"MuaBankAccounts\" WHERE \"Id\"={id} FOR UPDATE").FirstOrDefaultAsync();
-            if(entity==null||entity.MuaId!=muaId||!entity.IsActive)return null;
-            if(request.IsDefault)await ClearDefaultsAsync(muaId);
-            entity.BankCode=request.BankCode.Trim().ToUpperInvariant();entity.BankName=Clean(request.BankName);entity.AccountNumber=request.AccountNumber.Trim();entity.AccountHolderName=request.AccountHolderName.Trim().ToUpperInvariant();entity.Method=NormalizeMethod(request.Method);entity.QrCodeUrl=ResolveQrUrl(request.BankCode,request.AccountNumber,request.Method,request.QrCodeUrl);entity.ActivatedAt=DateTime.UtcNow.AddHours(24);entity.IsDefault=request.IsDefault;entity.UpdatedAt=DateTime.UtcNow;
-            await _context.SaveChangesAsync();await tx.CommitAsync();return ToBankDto(entity);
-        }
-
-        public async Task<bool> DeactivateBankAccountAsync(Guid muaId,Guid id)
-        {var entity=await _context.MuaBankAccounts.FirstOrDefaultAsync(x=>x.Id==id&&x.MuaId==muaId&&x.IsActive);if(entity==null)return false;entity.IsActive=false;entity.IsDefault=false;entity.UpdatedAt=DateTime.UtcNow;await _context.SaveChangesAsync();return true;}
 
         public async Task<PayoutDto> CreateAsync(Guid muaId,CreatePayoutRequest request)
         {
@@ -50,11 +21,12 @@ namespace BeautyBookBackend.Services
             await _context.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({lockKey}, 0))");
             var existing=await _context.Payouts.Include(x=>x.Items).FirstOrDefaultAsync(x=>x.MuaId==muaId&&x.IdempotencyKey==key);
             if(existing!=null){await tx.CommitAsync();return ToDto(existing);}
+            var bank=await _context.BankAccounts.FromSqlInterpolated($"SELECT * FROM \"BankAccounts\" WHERE \"Id\"={request.BankAccountId} FOR UPDATE").AsNoTracking().FirstOrDefaultAsync();
+            if(bank==null||bank.UserId!=muaId)throw BankUnavailable("BANK_ACCOUNT_NOT_FOUND");
+            var bankReason=BankAccountEligibility.GetUnavailableReason(bank.IsActive,bank.VerificationStatus,bank.ActivatedAt,DateTime.UtcNow);
+            if(bankReason!=null)throw BankUnavailable(bankReason);
             var eligibility = await _eligibility.EvaluateAsync(muaId);
-            if (eligibility?.CanWithdraw != true) throw new InvalidOperationException("Hồ sơ hiện không đủ điều kiện rút tiền.");
-            var bank=await _context.MuaBankAccounts.FirstOrDefaultAsync(x=>x.Id==request.BankAccountId&&x.MuaId==muaId&&x.IsActive)??throw new InvalidOperationException("Tài khoản ngân hàng không hợp lệ.");
-            if(bank.VerificationStatus!="APPROVED")throw new InvalidOperationException("Tài khoản nhận tiền đang chờ admin duyệt.");
-            if(bank.ActivatedAt>DateTime.UtcNow)throw new InvalidOperationException("Tài khoản nhận tiền mới hoặc vừa thay đổi đang trong thời gian bảo vệ 24 giờ.");
+            if (eligibility?.CanWithdraw != true) throw new InvalidOperationException("Hồ sơ hiện không đủ điều kiện rút tiền hoặc không có khoản phải thu khả dụng.");
             var requested=(request.ReceivableIds??Array.Empty<Guid>()).Distinct().OrderBy(x=>x).ToList();
             var identities=await _context.MuaReceivables.AsNoTracking().Where(x=>x.MuaId==muaId&&x.Status==MuaReceivableStatus.Available&&(requested.Count==0||requested.Contains(x.Id))).Select(x=>new{x.Id,x.BookingId}).OrderBy(x=>x.BookingId).ToListAsync();
             if(requested.Count>0&&identities.Count!=requested.Count)throw new InvalidOperationException("Có khoản phải thu không tồn tại hoặc không thuộc tài khoản hiện tại.");
@@ -67,7 +39,7 @@ namespace BeautyBookBackend.Services
             var blockedBooking=await _context.Bookings.AnyAsync(x=>bookingIds.Contains(x.BookingId)&&(x.Status==BookingStatus.Disputed||x.PaymentStatus==PaymentStatus.Frozen||x.PaymentStatus==PaymentStatus.RefundPending));
             var blockedRefund=await _context.Refunds.AnyAsync(x=>bookingIds.Contains(x.BookingId)&&x.Status!=RefundStatus.Completed);
             if(blockedBooking||blockedRefund)throw new InvalidOperationException("Khoản thu nhập đang có dispute/refund hoặc nghĩa vụ tài chính chưa xử lý.");
-            var now=DateTime.UtcNow;var payout=new Payout{Id=Guid.NewGuid(),MuaId=muaId,RequestedBy=muaId,Amount=locked.Sum(x=>x.NetAmount),Status=PayoutStatus.Pending,Provider=PayoutProvider.Manual,BankCodeSnapshot=bank.BankCode,BankNameSnapshot=bank.BankName,AccountNumberSnapshot=bank.AccountNumber,AccountHolderNameSnapshot=bank.AccountHolderName,QrCodeUrlSnapshot=bank.QrCodeUrl,IdempotencyKey=key,CreatedAt=now,UpdatedAt=now};
+            var now=DateTime.UtcNow;var payout=new Payout{Id=Guid.NewGuid(),MuaId=muaId,RequestedBy=muaId,BankAccountId=bank.Id,Amount=locked.Sum(x=>x.NetAmount),Status=PayoutStatus.Pending,Provider=PayoutProvider.Manual,BankCodeSnapshot=bank.BankCode,BankBinSnapshot=bank.BankBin,BankNameSnapshot=bank.BankName,AccountNumberSnapshot=bank.AccountNumber,AccountHolderNameSnapshot=bank.AccountHolderName,QrCodeUrlSnapshot=bank.QrCodeUrl,IdempotencyKey=key,CreatedAt=now,UpdatedAt=now};
             foreach(var r in locked){payout.Items.Add(new PayoutItem{Id=Guid.NewGuid(),MuaReceivableId=r.Id,Amount=r.NetAmount,IsActive=true});r.Status=MuaReceivableStatus.PayoutPending;r.UpdatedAt=now;}
             _context.Payouts.Add(payout);await _context.SaveChangesAsync();await tx.CommitAsync();
             await MoveOnePendingToManualAsync(payout.Id);return ToDto((await GetPayoutAsync(payout.Id))!);
@@ -101,14 +73,9 @@ namespace BeautyBookBackend.Services
         private async Task<bool> MoveOnePendingToManualAsync(Guid id){await using var tx=await _context.Database.BeginTransactionAsync();var p=await _context.Payouts.FromSqlInterpolated($"SELECT * FROM \"Payouts\" WHERE \"Id\"={id} FOR UPDATE").FirstOrDefaultAsync();if(p?.Status!=PayoutStatus.Pending)return false;p.Status=PayoutStatus.ManualActionRequired;p.UpdatedAt=DateTime.UtcNow;await _context.SaveChangesAsync();await tx.CommitAsync();return true;}
         public Task<bool> HasPendingForBookingAsync(Guid bookingId)=>_context.PayoutItems.AnyAsync(x=>x.IsActive&&x.MuaReceivable!.BookingId==bookingId&&x.MuaReceivable.Status==MuaReceivableStatus.PayoutPending);
         private Task<Payout?> GetPayoutAsync(Guid id)=>_context.Payouts.AsNoTracking().Include(x=>x.Items).FirstOrDefaultAsync(x=>x.Id==id);
-        private Task ClearDefaultsAsync(Guid muaId)=>_context.MuaBankAccounts.Where(x=>x.MuaId==muaId&&x.IsDefault).ExecuteUpdateAsync(x=>x.SetProperty(y=>y.IsDefault,false));
-        private static string? Clean(string? x)=>string.IsNullOrWhiteSpace(x)?null:x.Trim();
-        private static void ValidateBank(UpsertMuaBankAccountRequest r){var method=NormalizeMethod(r.Method);if(method=="MOMO"&&!string.Equals(r.BankCode,"MOMO",StringComparison.OrdinalIgnoreCase))throw new InvalidOperationException("Mã phương thức MoMo không hợp lệ.");if(method=="BANK"&&!Regex.IsMatch(r.BankCode?.Trim()??"","^[A-Za-z0-9]{2,20}$"))throw new InvalidOperationException("BankCode không hợp lệ.");var pattern=method=="MOMO"?"^(0|84)[0-9]{8,10}$":"^[A-Za-z0-9]{5,30}$";if(!Regex.IsMatch(r.AccountNumber?.Trim()??"",pattern))throw new InvalidOperationException("Số tài khoản không hợp lệ.");if(string.IsNullOrWhiteSpace(r.AccountHolderName))throw new InvalidOperationException("Tên chủ tài khoản là bắt buộc.");}
-        private static string NormalizeMethod(string? value)=>string.Equals(value,"MOMO",StringComparison.OrdinalIgnoreCase)?"MOMO":"BANK";
-        private static string? ResolveQrUrl(string code,string account,string? method,string? supplied)=>!string.IsNullOrWhiteSpace(supplied)?supplied.Trim():NormalizeMethod(method)=="MOMO"?null:$"https://img.vietqr.io/image/{Uri.EscapeDataString(code.Trim())}-{Uri.EscapeDataString(account.Trim())}-compact2.png";
         private static string Mask(string x)=>x.Length<=4?new string('*',x.Length):new string('*',x.Length-4)+x[^4..];
-        private static MuaBankAccountDto ToBankDto(MuaBankAccount x)=>new(){Id=x.Id,BankCode=x.BankCode,BankName=x.BankName,MaskedAccountNumber=Mask(x.AccountNumber),AccountHolderName=x.AccountHolderName,IsDefault=x.IsDefault,IsActive=x.IsActive,VerificationStatus=x.VerificationStatus,Method=x.Method,QrCodeUrl=x.QrCodeUrl,ActivatedAt=x.ActivatedAt,IsCoolingDown=x.ActivatedAt>DateTime.UtcNow};
-        private static PayoutDto ToDto(Payout x)=>new(){Id=x.Id,Amount=x.Amount,Status=x.Status,Provider=x.Provider,BankCode=x.BankCodeSnapshot,BankName=x.BankNameSnapshot,MaskedAccountNumber=Mask(x.AccountNumberSnapshot),AccountHolderName=x.AccountHolderNameSnapshot,QrCodeUrl=x.QrCodeUrlSnapshot,ProviderReference=x.ProviderReference,IdempotencyKey=x.IdempotencyKey,ReceivableIds=x.Items.Select(i=>i.MuaReceivableId).ToList(),CreatedAt=x.CreatedAt,ProcessingAt=x.ProcessingAt,PaidAt=x.PaidAt,FailedAt=x.FailedAt,ReconciledAt=x.ReconciledAt,FailureCode=x.FailureCode,FailureMessage=x.FailureMessage};
-        private static AdminPayoutDto ToAdminDto(Payout x)=>new(){Id=x.Id,Amount=x.Amount,Status=x.Status,Provider=x.Provider,BankCode=x.BankCodeSnapshot,BankName=x.BankNameSnapshot,MaskedAccountNumber=Mask(x.AccountNumberSnapshot),AccountNumber=x.AccountNumberSnapshot,AccountHolderName=x.AccountHolderNameSnapshot,QrCodeUrl=x.QrCodeUrlSnapshot,ProviderReference=x.ProviderReference,IdempotencyKey=x.IdempotencyKey,ReceivableIds=x.Items.Select(i=>i.MuaReceivableId).ToList(),CreatedAt=x.CreatedAt,ProcessingAt=x.ProcessingAt,PaidAt=x.PaidAt,FailedAt=x.FailedAt,ReconciledAt=x.ReconciledAt,FailureCode=x.FailureCode,FailureMessage=x.FailureMessage};
+        private static BookingRuleException BankUnavailable(string code)=>new(code,code switch{"BANK_ACCOUNT_PENDING_APPROVAL"=>"Tài khoản nhận tiền đang chờ admin duyệt.","BANK_ACCOUNT_REJECTED"=>"Tài khoản nhận tiền đã bị từ chối.","BANK_ACCOUNT_COOLDOWN"=>"Tài khoản nhận tiền đã được duyệt nhưng vẫn đang trong thời gian bảo vệ 24 giờ.",_=>"Không tìm thấy tài khoản nhận tiền đang hoạt động."},409);
+        private static PayoutDto ToDto(Payout x)=>new(){Id=x.Id,BankAccountId=x.BankAccountId,Amount=x.Amount,Status=x.Status,Provider=x.Provider,BankCode=x.BankCodeSnapshot,BankBin=x.BankBinSnapshot,BankName=x.BankNameSnapshot,MaskedAccountNumber=Mask(x.AccountNumberSnapshot),AccountHolderName=x.AccountHolderNameSnapshot,QrCodeUrl=x.QrCodeUrlSnapshot,ProviderReference=x.ProviderReference,IdempotencyKey=x.IdempotencyKey,ReceivableIds=x.Items.Select(i=>i.MuaReceivableId).ToList(),CreatedAt=x.CreatedAt,ProcessingAt=x.ProcessingAt,PaidAt=x.PaidAt,FailedAt=x.FailedAt,ReconciledAt=x.ReconciledAt,FailureCode=x.FailureCode,FailureMessage=x.FailureMessage};
+        private static AdminPayoutDto ToAdminDto(Payout x)=>new(){Id=x.Id,BankAccountId=x.BankAccountId,Amount=x.Amount,Status=x.Status,Provider=x.Provider,BankCode=x.BankCodeSnapshot,BankBin=x.BankBinSnapshot,BankName=x.BankNameSnapshot,MaskedAccountNumber=Mask(x.AccountNumberSnapshot),AccountNumber=x.AccountNumberSnapshot,AccountHolderName=x.AccountHolderNameSnapshot,QrCodeUrl=x.QrCodeUrlSnapshot,ProviderReference=x.ProviderReference,IdempotencyKey=x.IdempotencyKey,ReceivableIds=x.Items.Select(i=>i.MuaReceivableId).ToList(),CreatedAt=x.CreatedAt,ProcessingAt=x.ProcessingAt,PaidAt=x.PaidAt,FailedAt=x.FailedAt,ReconciledAt=x.ReconciledAt,FailureCode=x.FailureCode,FailureMessage=x.FailureMessage};
     }
 }

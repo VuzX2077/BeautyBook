@@ -3,7 +3,6 @@ using BeautyBookBackend.DTOs;
 using BeautyBookBackend.Models;
 using BeautyBookBackend.Models.Enums;
 using Microsoft.EntityFrameworkCore;
-using System.Text.RegularExpressions;
 
 namespace BeautyBookBackend.Services
 {
@@ -45,8 +44,12 @@ namespace BeautyBookBackend.Services
             }
 
             var now = DateTime.UtcNow;
-            var destination = await _context.CustomerBankAccounts.AsNoTracking()
-                .Where(x => x.CustomerId == booking.CustomerId && x.IsActive && x.IsDefault)
+            var destination = await _context.BankAccounts.AsNoTracking()
+                .Where(BankAccountEligibility.UsableAt(now))
+                .Where(x => x.UserId == booking.CustomerId)
+                .OrderByDescending(x => x.IsDefault)
+                .ThenBy(x => x.CreatedAt)
+                .ThenBy(x => x.Id)
                 .FirstOrDefaultAsync();
             var refund = new Refund
             {
@@ -54,18 +57,14 @@ namespace BeautyBookBackend.Services
                 BookingId = booking.BookingId,
                 BookingPaymentId = payment.PaymentId,
                 Amount = amount,
-                Status = destination == null || destination.ActivatedAt > now ? RefundStatus.AwaitingDestination : RefundStatus.Pending,
+                Status = destination == null ? RefundStatus.AwaitingDestination : RefundStatus.Pending,
                 ReasonCode = reasonCode,
                 Reason = reason,
                 RequestedBy = requestedBy,
                 CreatedAt = now,
                 UpdatedAt = now
             };
-            if (destination != null)
-            {
-                CaptureDestination(refund, destination, now);
-                if (destination.ActivatedAt > now) refund.DestinationCapturedAt = destination.ActivatedAt;
-            }
+            if (destination != null) CaptureDestination(refund, destination, now);
             await _context.Refunds.AddAsync(refund);
             return refund;
         }
@@ -79,80 +78,6 @@ namespace BeautyBookBackend.Services
             return refund == null ? null : ToDto(refund);
         }
 
-        public async Task<IReadOnlyList<CustomerBankAccountDto>> GetBankAccountsAsync(Guid customerId) =>
-            (await _context.CustomerBankAccounts.AsNoTracking()
-                .Where(x => x.CustomerId == customerId && x.IsActive)
-                .OrderByDescending(x => x.IsDefault).ThenBy(x => x.CreatedAt)
-                .ToListAsync()).Select(ToBankDto).ToList();
-
-        public async Task<CustomerBankAccountDto> AddBankAccountAsync(Guid customerId, UpsertCustomerBankAccountRequest request)
-        {
-            ValidateBank(request);
-            await using var transaction = await _context.Database.BeginTransactionAsync();
-            var lockKey = "customer-bank:" + customerId.ToString("N");
-            await _context.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({lockKey}, 0))");
-            var hasAny = await _context.CustomerBankAccounts.AnyAsync(x => x.CustomerId == customerId && x.IsActive);
-            if (request.IsDefault || !hasAny) await ClearDefaultsAsync(customerId);
-            var now = DateTime.UtcNow;
-            var entity = new CustomerBankAccount
-            {
-                Id = Guid.NewGuid(), CustomerId = customerId, BankBin = request.BankBin.Trim(),
-                BankName = Clean(request.BankName), AccountNumber = request.AccountNumber.Trim(),
-                AccountHolderName = request.AccountHolderName.Trim().ToUpperInvariant(), Method = NormalizeMethod(request.Method),
-                QrCodeUrl = ResolveQrUrl(request.BankBin, request.AccountNumber, request.Method, request.QrCodeUrl), ActivatedAt = now.AddHours(24), VerificationStatus = hasAny ? "APPROVED" : "PENDING_ADMIN",
-                IsDefault = request.IsDefault || !hasAny, IsActive = true, CreatedAt = now, UpdatedAt = now
-            };
-            _context.CustomerBankAccounts.Add(entity);
-            await _context.SaveChangesAsync();
-            if (entity.IsDefault && entity.ActivatedAt <= now)
-            {
-                await AttachAwaitingRefundsAsync(customerId, entity, now);
-                await _context.SaveChangesAsync();
-            }
-            await transaction.CommitAsync();
-            return ToBankDto(entity);
-        }
-
-        public async Task<CustomerBankAccountDto?> UpdateBankAccountAsync(Guid customerId, Guid id, UpsertCustomerBankAccountRequest request)
-        {
-            ValidateBank(request);
-            await using var transaction = await _context.Database.BeginTransactionAsync();
-            var entity = await _context.CustomerBankAccounts
-                .FromSqlInterpolated($"SELECT * FROM \"CustomerBankAccounts\" WHERE \"Id\"={id} FOR UPDATE")
-                .FirstOrDefaultAsync();
-            if (entity == null || entity.CustomerId != customerId || !entity.IsActive) return null;
-            if (request.IsDefault) await ClearDefaultsAsync(customerId);
-            entity.BankBin = request.BankBin.Trim();
-            entity.BankName = Clean(request.BankName);
-            entity.AccountNumber = request.AccountNumber.Trim();
-            entity.AccountHolderName = request.AccountHolderName.Trim().ToUpperInvariant();
-            entity.Method = NormalizeMethod(request.Method);
-            entity.QrCodeUrl = ResolveQrUrl(request.BankBin, request.AccountNumber, request.Method, request.QrCodeUrl);
-            entity.ActivatedAt = DateTime.UtcNow.AddHours(24);
-            entity.IsDefault = request.IsDefault;
-            var now = DateTime.UtcNow;
-            entity.UpdatedAt = now;
-            await _context.SaveChangesAsync();
-            if (entity.IsDefault && entity.ActivatedAt <= now)
-            {
-                await AttachAwaitingRefundsAsync(customerId, entity, now);
-                await _context.SaveChangesAsync();
-            }
-            await transaction.CommitAsync();
-            return ToBankDto(entity);
-        }
-
-        public async Task<bool> DeactivateBankAccountAsync(Guid customerId, Guid id)
-        {
-            var entity = await _context.CustomerBankAccounts.FirstOrDefaultAsync(x => x.Id == id && x.CustomerId == customerId && x.IsActive);
-            if (entity == null) return false;
-            entity.IsActive = false;
-            entity.IsDefault = false;
-            entity.UpdatedAt = DateTime.UtcNow;
-            await _context.SaveChangesAsync();
-            return true;
-        }
-
         public async Task<RefundSummaryDto?> SetDestinationAsync(Guid refundId, Guid customerId, Guid bankAccountId)
         {
             await using var transaction = await _context.Database.BeginTransactionAsync();
@@ -160,13 +85,16 @@ namespace BeautyBookBackend.Services
             if (refund == null) return null;
             var ownsRefund = await _context.Bookings.AnyAsync(x => x.BookingId == refund.BookingId && x.CustomerId == customerId);
             if (!ownsRefund || refund.Status != RefundStatus.AwaitingDestination) return null;
-            var bank = await _context.CustomerBankAccounts.AsNoTracking()
-                .FirstOrDefaultAsync(x => x.Id == bankAccountId && x.CustomerId == customerId && x.IsActive);
-            if (bank == null) return null;
+            var bank = await _context.BankAccounts
+                .FromSqlInterpolated($"SELECT * FROM \"BankAccounts\" WHERE \"Id\"={bankAccountId} FOR UPDATE")
+                .AsNoTracking()
+                .FirstOrDefaultAsync();
+            if (bank == null || bank.UserId != customerId) throw BankUnavailable("BANK_ACCOUNT_NOT_FOUND");
             var now = DateTime.UtcNow;
+            var reason=BankAccountEligibility.GetUnavailableReason(bank.IsActive,bank.VerificationStatus,bank.ActivatedAt,now);
+            if(reason!=null)throw BankUnavailable(reason);
             CaptureDestination(refund, bank, now);
-            refund.Status = bank.ActivatedAt <= now ? RefundStatus.Pending : RefundStatus.AwaitingDestination;
-            if (bank.ActivatedAt > now) refund.DestinationCapturedAt = bank.ActivatedAt;
+            refund.Status = RefundStatus.Pending;
             refund.UpdatedAt = now;
             await _context.SaveChangesAsync();
             await transaction.CommitAsync();
@@ -204,18 +132,25 @@ namespace BeautyBookBackend.Services
         {
             var automated = _configuration.GetValue<bool>("Refunds:AutomatedPayoutEnabled");
             var now = DateTime.UtcNow;
-            var protectedDestinations = await _context.Refunds
-                .Where(x => x.Status == RefundStatus.AwaitingDestination
-                    && x.DestinationAccountNumber != null
-                    && x.DestinationCapturedAt != null
-                    && x.DestinationCapturedAt <= now)
+            var awaitingIds = await _context.Refunds.AsNoTracking()
+                .Where(x => x.Status == RefundStatus.AwaitingDestination)
+                .OrderBy(x=>x.CreatedAt)
+                .Select(x=>x.RefundId)
                 .ToListAsync();
-            foreach (var refund in protectedDestinations)
+            foreach (var refundId in awaitingIds)
             {
-                refund.Status = RefundStatus.Pending;
-                refund.UpdatedAt = now;
+                await using var destinationTransaction=await _context.Database.BeginTransactionAsync();
+                var refund=await GetRefundForUpdateAsync(refundId);
+                if(refund?.Status!=RefundStatus.AwaitingDestination)continue;
+                var customerId=await _context.Bookings.Where(x=>x.BookingId==refund.BookingId).Select(x=>x.CustomerId).FirstOrDefaultAsync();
+                var bank=await GetUsableCustomerBankForUpdateAsync(customerId,now);
+                if(bank==null){await destinationTransaction.CommitAsync();continue;}
+                CaptureDestination(refund,bank,now);
+                refund.Status=RefundStatus.Pending;
+                refund.UpdatedAt=now;
+                await _context.SaveChangesAsync();
+                await destinationTransaction.CommitAsync();
             }
-            if (protectedDestinations.Count > 0) await _context.SaveChangesAsync();
             var items = await _context.Refunds.AsNoTracking()
                 .Where(x => x.Status == RefundStatus.Pending
                     || (x.Status == RefundStatus.Processing && x.ProviderReferenceId != null))
@@ -234,9 +169,13 @@ namespace BeautyBookBackend.Services
                 await using var transaction = await _context.Database.BeginTransactionAsync();
                 var refund = await GetRefundForUpdateAsync(item.RefundId);
                 if (refund?.Status != RefundStatus.Pending) continue;
-                refund.Status = string.IsNullOrWhiteSpace(refund.DestinationAccountNumber)
-                    ? RefundStatus.AwaitingDestination
-                    : RefundStatus.ManualActionRequired;
+                var customerId=await _context.Bookings.Where(x=>x.BookingId==refund.BookingId).Select(x=>x.CustomerId).FirstOrDefaultAsync();
+                if(refund.Status==RefundStatus.Pending&&!await DestinationIsStillUsableAsync(refund,customerId,DateTime.UtcNow))
+                {
+                    ClearDestination(refund);
+                    refund.Status=RefundStatus.AwaitingDestination;
+                }
+                else refund.Status = RefundStatus.ManualActionRequired;
                 refund.UpdatedAt = DateTime.UtcNow;
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
@@ -254,6 +193,16 @@ namespace BeautyBookBackend.Services
             {
                 var refund = await GetRefundForUpdateAsync(refundId);
                 if (refund == null || refund.Status is not (RefundStatus.Pending or RefundStatus.Processing)) return false;
+                var customerId=await _context.Bookings.Where(x=>x.BookingId==refund.BookingId).Select(x=>x.CustomerId).FirstOrDefaultAsync();
+                if(refund.Status==RefundStatus.Pending&&!await DestinationIsStillUsableAsync(refund,customerId,DateTime.UtcNow))
+                {
+                    ClearDestination(refund);
+                    refund.Status=RefundStatus.AwaitingDestination;
+                    refund.UpdatedAt=DateTime.UtcNow;
+                    await _context.SaveChangesAsync();
+                    await transaction.CommitAsync();
+                    return true;
+                }
                 if (string.IsNullOrWhiteSpace(refund.DestinationBankBin)
                     || string.IsNullOrWhiteSpace(refund.DestinationAccountNumber)
                     || string.IsNullOrWhiteSpace(refund.DestinationAccountName))
@@ -380,6 +329,15 @@ namespace BeautyBookBackend.Services
                     || string.IsNullOrWhiteSpace(refund.DestinationAccountNumber)
                     || string.IsNullOrWhiteSpace(refund.DestinationAccountName)))
                 return null;
+            if(target==RefundStatus.Processing&&!await DestinationIsStillUsableAsync(refund,booking.CustomerId,DateTime.UtcNow))
+            {
+                ClearDestination(refund);
+                refund.Status=RefundStatus.AwaitingDestination;
+                refund.UpdatedAt=DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+                return null;
+            }
             if (target == RefundStatus.Completed && await _context.PayoutItems.AnyAsync(x => x.IsActive
                 && x.MuaReceivable!.BookingId == booking.BookingId
                 && (x.MuaReceivable.Status == MuaReceivableStatus.PayoutPending
@@ -455,28 +413,45 @@ namespace BeautyBookBackend.Services
             FailureMessage = refund.FailureMessage
         };
 
-        private Task ClearDefaultsAsync(Guid customerId) => _context.CustomerBankAccounts
-            .Where(x => x.CustomerId == customerId && x.IsDefault)
-            .ExecuteUpdateAsync(x => x.SetProperty(y => y.IsDefault, false));
-
-        private async Task AttachAwaitingRefundsAsync(Guid customerId, CustomerBankAccount bank, DateTime now)
+        private async Task<BankAccount?> GetUsableCustomerBankForUpdateAsync(Guid customerId,DateTime now)
         {
-            var refunds = await _context.Refunds
-                .Where(x => x.Status == RefundStatus.AwaitingDestination
-                    && _context.Bookings.Any(b => b.BookingId == x.BookingId && b.CustomerId == customerId))
-                .ToListAsync();
-
-            foreach (var refund in refunds)
-            {
-                CaptureDestination(refund, bank, now);
-                refund.Status = RefundStatus.Pending;
-                refund.UpdatedAt = now;
-            }
+            var candidateId=await _context.BankAccounts.AsNoTracking()
+                .Where(BankAccountEligibility.UsableAt(now))
+                .Where(x=>x.UserId==customerId)
+                .OrderByDescending(x=>x.IsDefault)
+                .ThenBy(x=>x.CreatedAt)
+                .ThenBy(x=>x.Id)
+                .Select(x=>x.Id)
+                .FirstOrDefaultAsync();
+            if(candidateId==Guid.Empty)return null;
+            var bank=await _context.BankAccounts.FromSqlInterpolated($"SELECT * FROM \"BankAccounts\" WHERE \"Id\"={candidateId} FOR UPDATE").AsNoTracking().FirstOrDefaultAsync();
+            return bank!=null&&bank.UserId==customerId&&BankAccountEligibility.IsUsable(bank,now)?bank:null;
         }
 
-        private static void CaptureDestination(Refund refund, CustomerBankAccount bank, DateTime now)
+        private async Task<bool> DestinationIsStillUsableAsync(Refund refund,Guid customerId,DateTime now)
         {
+            if(!refund.DestinationBankAccountId.HasValue)return false;
+            var bank=await _context.BankAccounts.FromSqlInterpolated($"SELECT * FROM \"BankAccounts\" WHERE \"Id\"={refund.DestinationBankAccountId.Value} FOR UPDATE").AsNoTracking().FirstOrDefaultAsync();
+            return bank!=null&&bank.UserId==customerId&&BankAccountEligibility.IsUsable(bank,now)&&BankAccountEligibility.SnapshotMatches(refund,bank);
+        }
+
+        private static void ClearDestination(Refund refund)
+        {
+            refund.DestinationBankAccountId=null;
+            refund.DestinationBankBin=null;
+            refund.DestinationBankCode=null;
+            refund.DestinationBankName=null;
+            refund.DestinationAccountNumber=null;
+            refund.DestinationAccountName=null;
+            refund.DestinationQrCodeUrl=null;
+            refund.DestinationCapturedAt=null;
+        }
+
+        private static void CaptureDestination(Refund refund, BankAccount bank, DateTime now)
+        {
+            refund.DestinationBankAccountId = bank.Id;
             refund.DestinationBankBin = bank.BankBin;
+            refund.DestinationBankCode = bank.BankCode;
             refund.DestinationBankName = bank.BankName;
             refund.DestinationAccountNumber = bank.AccountNumber;
             refund.DestinationAccountName = bank.AccountHolderName;
@@ -484,32 +459,8 @@ namespace BeautyBookBackend.Services
             refund.DestinationCapturedAt = now;
         }
 
-        private static void ValidateBank(UpsertCustomerBankAccountRequest request)
-        {
-            var method = NormalizeMethod(request.Method);
-            if (method == "MOMO" && !string.Equals(request.BankBin?.Trim(), "MOMO", StringComparison.OrdinalIgnoreCase))
-                throw new BookingRuleException("INVALID_MOMO_ACCOUNT", "Phương thức MoMo phải dùng mã MOMO.");
-            if (method == "BANK" && !Regex.IsMatch(request.BankBin?.Trim() ?? string.Empty, "^[0-9]{6}$"))
-                throw new BookingRuleException("INVALID_BANK_BIN", "Mã BIN ngân hàng không hợp lệ.");
-            var accountPattern = method == "MOMO" ? "^(0|84)[0-9]{8,10}$" : "^[A-Za-z0-9]{5,30}$";
-            if (!Regex.IsMatch(request.AccountNumber?.Trim() ?? string.Empty, accountPattern))
-                throw new BookingRuleException("INVALID_BANK_ACCOUNT", "Số tài khoản không hợp lệ.");
-            if (string.IsNullOrWhiteSpace(request.AccountHolderName))
-                throw new BookingRuleException("INVALID_ACCOUNT_HOLDER", "Tên chủ tài khoản là bắt buộc.");
-        }
-
-        private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
-        private static string NormalizeMethod(string? value) => string.Equals(value, "MOMO", StringComparison.OrdinalIgnoreCase) ? "MOMO" : "BANK";
-        private static string? ResolveQrUrl(string bankBin, string account, string? method, string? supplied) =>
-            !string.IsNullOrWhiteSpace(supplied) ? supplied.Trim() : NormalizeMethod(method) == "MOMO" ? null
-            : $"https://img.vietqr.io/image/{Uri.EscapeDataString(bankBin.Trim())}-{Uri.EscapeDataString(account.Trim())}-compact2.png";
         private static string Mask(string value) => value.Length <= 4 ? new string('*', value.Length) : new string('*', value.Length - 4) + value[^4..];
-        private static CustomerBankAccountDto ToBankDto(CustomerBankAccount bank) => new()
-        {
-            Id = bank.Id, BankBin = bank.BankBin, BankName = bank.BankName,
-            MaskedAccountNumber = Mask(bank.AccountNumber), AccountHolderName = bank.AccountHolderName,
-            IsDefault = bank.IsDefault, Method = bank.Method, QrCodeUrl = bank.QrCodeUrl, ActivatedAt = bank.ActivatedAt, IsCoolingDown = bank.ActivatedAt > DateTime.UtcNow, VerificationStatus = bank.VerificationStatus
-        };
+        private static BookingRuleException BankUnavailable(string code)=>new(code,code switch{"BANK_ACCOUNT_PENDING_APPROVAL"=>"Tài khoản nhận tiền đang chờ admin duyệt.","BANK_ACCOUNT_REJECTED"=>"Tài khoản nhận tiền đã bị từ chối.","BANK_ACCOUNT_COOLDOWN"=>"Tài khoản nhận tiền đã được duyệt nhưng vẫn đang trong thời gian bảo vệ 24 giờ.",_=>"Không tìm thấy tài khoản nhận tiền đang hoạt động."},409);
 
         private static AdminRefundDto ToAdminDto(Refund refund) => new()
         {
@@ -518,7 +469,7 @@ namespace BeautyBookBackend.Services
             Amount = refund.Amount, Status = refund.Status, ReasonCode = refund.ReasonCode, Reason = refund.Reason,
             ProviderReference = refund.ProviderReference, ProviderPayoutId = refund.ProviderPayoutId,
             LastProviderState = refund.LastProviderState, AttemptCount = refund.AttemptCount,
-            DestinationBankBin = refund.DestinationBankBin, DestinationBankName = refund.DestinationBankName,
+            DestinationBankBin = refund.DestinationBankBin, DestinationBankCode = refund.DestinationBankCode, DestinationBankName = refund.DestinationBankName,
             DestinationAccountNumber = refund.DestinationAccountNumber,
             DestinationQrCodeUrl = refund.DestinationQrCodeUrl,
             MaskedDestinationAccountNumber = refund.DestinationAccountNumber == null ? null : Mask(refund.DestinationAccountNumber),

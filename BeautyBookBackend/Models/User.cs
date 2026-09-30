@@ -20,5 +20,6 @@ namespace BeautyBookBackend.Models
 
         // Navigation
         public MakeupArtistProfile? MakeupArtistProfile { get; set; }
+        public ICollection<BankAccount> BankAccounts { get; set; } = new List<BankAccount>();
     }
 }

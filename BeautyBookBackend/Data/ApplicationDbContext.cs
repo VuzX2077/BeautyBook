@@ -22,9 +22,8 @@ namespace BeautyBookBackend.Data
         public DbSet<BookingService> BookingServices { get; set; } = null!;
         public DbSet<BookingPayment> BookingPayments { get; set; } = null!;
         public DbSet<Refund> Refunds { get; set; } = null!;
-        public DbSet<CustomerBankAccount> CustomerBankAccounts { get; set; } = null!;
+        public DbSet<BankAccount> BankAccounts { get; set; } = null!;
         public DbSet<MuaReceivable> MuaReceivables { get; set; } = null!;
-        public DbSet<MuaBankAccount> MuaBankAccounts { get; set; } = null!;
         public DbSet<Payout> Payouts { get; set; } = null!;
         public DbSet<PayoutItem> PayoutItems { get; set; } = null!;
         public DbSet<Review> Reviews { get; set; } = null!;
@@ -279,20 +278,25 @@ namespace BeautyBookBackend.Data
                     .OnDelete(DeleteBehavior.Restrict);
             });
 
-            modelBuilder.Entity<CustomerBankAccount>(b =>
+            modelBuilder.Entity<BankAccount>(b =>
             {
                 b.HasKey(x => x.Id);
+                b.Property(x => x.BankCode).HasMaxLength(20).IsRequired();
                 b.Property(x => x.BankBin).HasMaxLength(20).IsRequired();
-                b.Property(x => x.BankName).HasMaxLength(100);
+                b.Property(x => x.BankName).HasMaxLength(100).IsRequired();
                 b.Property(x => x.AccountNumber).HasMaxLength(30).IsRequired();
+                b.Property(x => x.NormalizedAccountNumber).HasMaxLength(30).IsRequired();
+                b.Property(x => x.CanonicalBankKey).HasMaxLength(40).IsRequired();
                 b.Property(x => x.AccountHolderName).HasMaxLength(150).IsRequired();
                 b.Property(x => x.Method).HasMaxLength(20).HasDefaultValue("BANK");
                 b.Property(x => x.QrCodeUrl).HasMaxLength(1000);
-                b.Property(x => x.VerificationStatus).HasMaxLength(30).HasDefaultValue("APPROVED");
-                b.HasIndex(x => new { x.CustomerId, x.IsActive });
-                b.HasIndex(x => x.CustomerId).HasDatabaseName("UX_CustomerBankAccounts_Default")
+                b.Property(x => x.VerificationStatus).HasMaxLength(30).HasDefaultValue("PENDING_ADMIN");
+                b.HasIndex(x => new { x.UserId, x.IsActive });
+                b.HasIndex(x => new { x.UserId, x.Method, x.CanonicalBankKey, x.NormalizedAccountNumber })
+                    .HasDatabaseName("UX_BankAccounts_ActiveIdentity").IsUnique().HasFilter("\"IsActive\" = TRUE");
+                b.HasIndex(x => x.UserId).HasDatabaseName("UX_BankAccounts_Default")
                     .IsUnique().HasFilter("\"IsDefault\" = TRUE AND \"IsActive\" = TRUE");
-                b.HasOne(x => x.Customer).WithMany().HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.Restrict);
+                b.HasOne(x => x.User).WithMany(x => x.BankAccounts).HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
             });
 
             modelBuilder.Entity<Refund>(b =>
@@ -332,6 +336,11 @@ namespace BeautyBookBackend.Data
                     .WithMany()
                     .HasForeignKey(x => x.LastHandledBy)
                     .OnDelete(DeleteBehavior.SetNull);
+                b.Property(x => x.DestinationBankCode).HasMaxLength(20);
+                b.HasOne(x => x.DestinationBankAccount)
+                    .WithMany()
+                    .HasForeignKey(x => x.DestinationBankAccountId)
+                    .OnDelete(DeleteBehavior.SetNull);
             });
 
             modelBuilder.Entity<MuaReceivable>(b =>
@@ -346,17 +355,11 @@ namespace BeautyBookBackend.Data
                 b.HasOne(x => x.Mua).WithMany().HasForeignKey(x => x.MuaId).OnDelete(DeleteBehavior.Restrict);
             });
 
-            modelBuilder.Entity<MuaBankAccount>(b =>
-            {
-                b.HasKey(x=>x.Id);b.Property(x=>x.BankCode).HasMaxLength(20).IsRequired();b.Property(x=>x.BankName).HasMaxLength(100);b.Property(x=>x.AccountNumber).HasMaxLength(30).IsRequired();b.Property(x=>x.AccountHolderName).HasMaxLength(150).IsRequired();b.Property(x=>x.Method).HasMaxLength(20).HasDefaultValue("BANK");b.Property(x=>x.QrCodeUrl).HasMaxLength(1000);b.Property(x=>x.VerificationStatus).HasMaxLength(30).HasDefaultValue("APPROVED");
-                b.HasIndex(x=>new{x.MuaId,x.IsActive});b.HasIndex(x=>x.MuaId).HasDatabaseName("UX_MuaBankAccounts_Default").IsUnique().HasFilter("\"IsDefault\" = TRUE AND \"IsActive\" = TRUE");
-                b.HasOne(x=>x.Mua).WithMany().HasForeignKey(x=>x.MuaId).OnDelete(DeleteBehavior.Restrict);
-            });
             modelBuilder.Entity<Payout>(b =>
             {
                 b.HasKey(x=>x.Id);b.Property(x=>x.Amount).HasPrecision(18,2);b.Property(x=>x.BankCodeSnapshot).HasMaxLength(20).IsRequired();b.Property(x=>x.BankNameSnapshot).HasMaxLength(100);b.Property(x=>x.AccountNumberSnapshot).HasMaxLength(30).IsRequired();b.Property(x=>x.AccountHolderNameSnapshot).HasMaxLength(150).IsRequired();b.Property(x=>x.QrCodeUrlSnapshot).HasMaxLength(1000);b.Property(x=>x.ProviderReference).HasMaxLength(255);b.Property(x=>x.IdempotencyKey).HasMaxLength(100).IsRequired();b.Property(x=>x.FailureCode).HasMaxLength(100);b.Property(x=>x.FailureMessage).HasMaxLength(1000);
                 b.HasIndex(x=>new{x.MuaId,x.IdempotencyKey}).IsUnique();b.HasIndex(x=>new{x.MuaId,x.Status});
-                b.HasOne(x=>x.Mua).WithMany().HasForeignKey(x=>x.MuaId).OnDelete(DeleteBehavior.Restrict);b.HasOne(x=>x.RequestedByUser).WithMany().HasForeignKey(x=>x.RequestedBy).OnDelete(DeleteBehavior.Restrict);b.HasOne(x=>x.LastHandledByUser).WithMany().HasForeignKey(x=>x.LastHandledBy).OnDelete(DeleteBehavior.SetNull);
+                b.HasOne(x=>x.Mua).WithMany().HasForeignKey(x=>x.MuaId).OnDelete(DeleteBehavior.Restrict);b.HasOne(x=>x.RequestedByUser).WithMany().HasForeignKey(x=>x.RequestedBy).OnDelete(DeleteBehavior.Restrict);b.HasOne(x=>x.LastHandledByUser).WithMany().HasForeignKey(x=>x.LastHandledBy).OnDelete(DeleteBehavior.SetNull);b.HasOne(x=>x.BankAccount).WithMany().HasForeignKey(x=>x.BankAccountId).OnDelete(DeleteBehavior.SetNull);
             });
             modelBuilder.Entity<PayoutItem>(b =>
             {

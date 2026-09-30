@@ -18,10 +18,17 @@ namespace BeautyBookBackend.Controllers
         [HttpPost("{id:guid}/destination")]
         public async Task<IActionResult> SetDestination(Guid id, [FromBody] RefundDestinationRequest request)
         {
-            var result = await _refunds.SetDestinationAsync(id, CurrentUserId, request.BankAccountId);
-            return result == null
-                ? Conflict(new { Code = "REFUND_DESTINATION_NOT_ALLOWED", Message = "Không thể cập nhật tài khoản nhận tiền cho refund này." })
-                : Ok(result);
+            try
+            {
+                var result = await _refunds.SetDestinationAsync(id, CurrentUserId, request.BankAccountId);
+                return result == null
+                    ? Conflict(new { Code = "REFUND_DESTINATION_NOT_ALLOWED", Message = "Không thể cập nhật tài khoản nhận tiền cho refund này." })
+                    : Ok(result);
+            }
+            catch(BookingRuleException error)
+            {
+                return StatusCode(error.StatusCode,new { error.Code,Message=error.Message });
+            }
         }
     }
 }

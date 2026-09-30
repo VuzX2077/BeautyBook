@@ -18,10 +18,12 @@ namespace BeautyBookBackend.Models
         public string? ProviderReferenceId { get; set; }
         public string? LastProviderState { get; set; }
         public string? DestinationBankBin { get; set; }
+        public string? DestinationBankCode { get; set; }
         public string? DestinationBankName { get; set; }
         public string? DestinationAccountNumber { get; set; }
         public string? DestinationAccountName { get; set; }
         public string? DestinationQrCodeUrl { get; set; }
+        public Guid? DestinationBankAccountId { get; set; }
         public DateTime? DestinationCapturedAt { get; set; }
         public int AttemptCount { get; set; }
         public DateTime? LastAttemptAt { get; set; }
@@ -38,5 +40,6 @@ namespace BeautyBookBackend.Models
         public BookingPayment? BookingPayment { get; set; }
         public User? RequestedByUser { get; set; }
         public User? LastHandledByUser { get; set; }
+        public BankAccount? DestinationBankAccount { get; set; }
     }
 }

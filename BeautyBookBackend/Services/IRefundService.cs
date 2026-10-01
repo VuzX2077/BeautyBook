@@ -8,6 +8,8 @@ namespace BeautyBookBackend.Services
     {
         Task<Refund> EnsureRefundAsync(Booking booking, BookingPayment payment, decimal amount, RefundReasonCode reasonCode, string reason, Guid? requestedBy);
         Task<RefundSummaryDto?> GetByBookingAsync(Guid bookingId);
+        Task<PagedResultDto<RefundSummaryDto>> GetCustomerRefundsAsync(Guid customerId, int page, int pageSize);
+        Task<RefundSummaryDto?> GetCustomerRefundAsync(Guid refundId, Guid customerId);
         Task<RefundSummaryDto?> SetDestinationAsync(Guid refundId, Guid customerId, Guid bankAccountId);
         Task<IReadOnlyList<AdminRefundDto>> GetAdminQueueAsync(RefundStatus? status = null);
         Task<AdminRefundDto?> GetAdminByIdAsync(Guid refundId);

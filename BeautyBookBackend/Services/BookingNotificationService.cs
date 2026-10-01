@@ -56,7 +56,7 @@ public class BookingNotificationService : IBookingNotificationService
             .ToListAsync();
 
         return items.Select(x => new AppNotificationDto(
-            x.Id, x.Type, x.Title, x.Body, ReadUrl(x.DataJson), x.CreatedAt, x.ReadAt)).ToList();
+            x.Id, PublicType(x.Type), x.Title, x.Body, ReadUrl(x.DataJson), x.CreatedAt, x.ReadAt)).ToList();
     }
 
     public Task<int> GetUnreadCountAsync(Guid userId) => _db.AppNotifications
@@ -85,6 +85,11 @@ public class BookingNotificationService : IBookingNotificationService
         }
         catch (JsonException) { return null; }
     }
+
+    public static string PublicType(string storedType) =>
+        storedType.StartsWith("REFUND_STATUS_CHANGED_", StringComparison.Ordinal)
+            ? "REFUND_STATUS_CHANGED"
+            : storedType;
 
     public async Task ScheduleRemindersAsync(Booking booking)
     {

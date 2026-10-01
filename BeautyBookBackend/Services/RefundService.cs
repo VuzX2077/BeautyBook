@@ -3,6 +3,8 @@ using BeautyBookBackend.DTOs;
 using BeautyBookBackend.Models;
 using BeautyBookBackend.Models.Enums;
 using Microsoft.EntityFrameworkCore;
+using System.Globalization;
+using System.Text.Json;
 
 namespace BeautyBookBackend.Services
 {
@@ -66,6 +68,7 @@ namespace BeautyBookBackend.Services
             };
             if (destination != null) CaptureDestination(refund, destination, now);
             await _context.Refunds.AddAsync(refund);
+            QueueStatusNotification(refund, booking.CustomerId, refund.Status, now);
             return refund;
         }
 
@@ -75,6 +78,29 @@ namespace BeautyBookBackend.Services
                 .Where(x => x.BookingId == bookingId)
                 .OrderByDescending(x => x.CreatedAt)
                 .FirstOrDefaultAsync();
+            return refund == null ? null : ToDto(refund);
+        }
+
+        public async Task<PagedResultDto<RefundSummaryDto>> GetCustomerRefundsAsync(Guid customerId, int page, int pageSize)
+        {
+            page = Math.Max(1, page);
+            pageSize = Math.Clamp(pageSize, 1, 100);
+            var query = _context.Refunds.AsNoTracking()
+                .Where(x => x.Booking != null && x.Booking.CustomerId == customerId);
+            var total = await query.CountAsync();
+            var items = await query.OrderByDescending(x => x.CreatedAt)
+                .ThenByDescending(x => x.RefundId)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+            return new PagedResultDto<RefundSummaryDto>(items.Select(ToDto).ToList(), total, page, pageSize);
+        }
+
+        public async Task<RefundSummaryDto?> GetCustomerRefundAsync(Guid refundId, Guid customerId)
+        {
+            var refund = await _context.Refunds.AsNoTracking()
+                .FirstOrDefaultAsync(x => x.RefundId == refundId
+                    && x.Booking != null && x.Booking.CustomerId == customerId);
             return refund == null ? null : ToDto(refund);
         }
 
@@ -96,6 +122,7 @@ namespace BeautyBookBackend.Services
             CaptureDestination(refund, bank, now);
             refund.Status = RefundStatus.Pending;
             refund.UpdatedAt = now;
+            QueueStatusNotification(refund, customerId, RefundStatus.Pending, now);
             await _context.SaveChangesAsync();
             await transaction.CommitAsync();
             return ToDto(refund);
@@ -148,6 +175,7 @@ namespace BeautyBookBackend.Services
                 CaptureDestination(refund,bank,now);
                 refund.Status=RefundStatus.Pending;
                 refund.UpdatedAt=now;
+                QueueStatusNotification(refund,customerId,RefundStatus.Pending,now);
                 await _context.SaveChangesAsync();
                 await destinationTransaction.CommitAsync();
             }
@@ -177,6 +205,7 @@ namespace BeautyBookBackend.Services
                 }
                 else refund.Status = RefundStatus.ManualActionRequired;
                 refund.UpdatedAt = DateTime.UtcNow;
+                QueueStatusNotification(refund,customerId,refund.Status,refund.UpdatedAt);
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
                 count++;
@@ -199,6 +228,7 @@ namespace BeautyBookBackend.Services
                     ClearDestination(refund);
                     refund.Status=RefundStatus.AwaitingDestination;
                     refund.UpdatedAt=DateTime.UtcNow;
+                    QueueStatusNotification(refund,customerId,RefundStatus.AwaitingDestination,refund.UpdatedAt);
                     await _context.SaveChangesAsync();
                     await transaction.CommitAsync();
                     return true;
@@ -209,18 +239,22 @@ namespace BeautyBookBackend.Services
                 {
                     refund.Status = RefundStatus.AwaitingDestination;
                     refund.UpdatedAt = DateTime.UtcNow;
+                    QueueStatusNotification(refund,customerId,RefundStatus.AwaitingDestination,refund.UpdatedAt);
                     await _context.SaveChangesAsync();
                     await transaction.CommitAsync();
                     return true;
                 }
 
                 referenceId = refund.ProviderReferenceId ?? $"refund_{refund.RefundId:N}";
+                var enteredProcessing = refund.Status != RefundStatus.Processing;
                 refund.ProviderReferenceId = referenceId;
                 refund.Status = RefundStatus.Processing;
                 refund.ProcessingAt ??= DateTime.UtcNow;
                 refund.LastAttemptAt = DateTime.UtcNow;
                 refund.AttemptCount += 1;
                 refund.UpdatedAt = DateTime.UtcNow;
+                if (enteredProcessing)
+                    QueueStatusNotification(refund,customerId,RefundStatus.Processing,refund.UpdatedAt);
                 payoutId = refund.ProviderPayoutId;
                 if (payoutId == null)
                     request = new RefundPayoutRequest(referenceId, decimal.ToInt64(refund.Amount),
@@ -256,6 +290,8 @@ namespace BeautyBookBackend.Services
             {
                 RefundLifecycle.MarkFailed(current, DateTime.UtcNow,
                     result.FailureCode ?? "PAYOS_PAYOUT_FAILED", result.FailureMessage ?? $"payOS payout state: {result.State}");
+                var customerId = await _context.Bookings.Where(x => x.BookingId == current.BookingId).Select(x => x.CustomerId).FirstAsync();
+                QueueStatusNotification(current,customerId,RefundStatus.Failed,current.UpdatedAt);
             }
             else if (result.Completed)
             {
@@ -274,6 +310,7 @@ namespace BeautyBookBackend.Services
                 booking.PaymentStatus = full ? PaymentStatus.Refunded : PaymentStatus.PartiallyRefunded;
                 booking.UpdatedAt = current.CompletedAt.Value;
                 await ApplyComplaintRefundAsync(booking, current, payment.Amount);
+                QueueStatusNotification(current,booking.CustomerId,RefundStatus.Completed,current.CompletedAt.Value);
             }
             await _context.SaveChangesAsync();
             await finalizeTransaction.CommitAsync();
@@ -334,6 +371,7 @@ namespace BeautyBookBackend.Services
                 ClearDestination(refund);
                 refund.Status=RefundStatus.AwaitingDestination;
                 refund.UpdatedAt=DateTime.UtcNow;
+                QueueStatusNotification(refund,booking.CustomerId,RefundStatus.AwaitingDestination,refund.UpdatedAt);
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
                 return null;
@@ -367,7 +405,6 @@ namespace BeautyBookBackend.Services
                 booking.PaymentStatus = isFullRefund ? PaymentStatus.Refunded : PaymentStatus.PartiallyRefunded;
                 booking.UpdatedAt = now;
                 await ApplyComplaintRefundAsync(booking, refund, payment.Amount);
-                _context.AppNotifications.Add(new AppNotification { Id = Guid.NewGuid(), UserId = booking.CustomerId, Type = "REFUND_COMPLETED", Title = "Hoàn tiền thành công", Body = $"B-Book đã xác nhận hoàn {refund.Amount:N0}đ. Mã giao dịch: {refund.ProviderReference}.", DataJson = System.Text.Json.JsonSerializer.Serialize(new { url = $"/booking/{booking.BookingId}/cancel-success" }), ScheduledAt = now, Status = "Pending", CreatedAt = now });
             }
             else if (target == RefundStatus.Failed)
             {
@@ -383,6 +420,8 @@ namespace BeautyBookBackend.Services
                 refund.FailureCode = null;
                 refund.FailureMessage = null;
             }
+
+            QueueStatusNotification(refund, booking.CustomerId, target, now);
 
             await _context.SaveChangesAsync();
             await transaction.CommitAsync();
@@ -419,6 +458,7 @@ namespace BeautyBookBackend.Services
         private static RefundSummaryDto ToDto(Refund refund) => new()
         {
             RefundId = refund.RefundId,
+            BookingId = refund.BookingId,
             Amount = refund.Amount,
             Status = refund.Status,
             ReasonCode = refund.ReasonCode,
@@ -482,6 +522,49 @@ namespace BeautyBookBackend.Services
         }
 
         private static string Mask(string value) => value.Length <= 4 ? new string('*', value.Length) : new string('*', value.Length - 4) + value[^4..];
+
+        private void QueueStatusNotification(Refund refund, Guid customerId, RefundStatus status, DateTime now)
+        {
+            var amount = refund.Amount.ToString("N0", CultureInfo.GetCultureInfo("vi-VN")) + "đ";
+            var bankSuffix = string.IsNullOrWhiteSpace(refund.DestinationAccountNumber)
+                ? null
+                : $"{refund.DestinationBankName} ••••{refund.DestinationAccountNumber[^Math.Min(4, refund.DestinationAccountNumber.Length)..]}".Trim();
+            var content = status switch
+            {
+                RefundStatus.AwaitingDestination => ("Cần bổ sung tài khoản nhận tiền", $"Vui lòng thêm tài khoản ngân hàng để nhận khoản hoàn {amount}."),
+                RefundStatus.Pending => ("Đã tiếp nhận yêu cầu hoàn tiền", $"Yêu cầu hoàn {amount} cho booking của bạn đã được ghi nhận."),
+                RefundStatus.ManualActionRequired => ("Yêu cầu hoàn tiền đang chờ xử lý", $"Bộ phận hỗ trợ sẽ tiếp tục xử lý khoản hoàn {amount} của bạn."),
+                RefundStatus.Processing => ("Đang xử lý hoàn tiền", $"Khoản hoàn {amount} đang được xử lý."),
+                RefundStatus.Completed => ("Hoàn tiền thành công", bankSuffix == null
+                    ? $"Khoản tiền {amount} đã được hoàn."
+                    : $"Khoản tiền {amount} đã được hoàn đến tài khoản {bankSuffix}."),
+                RefundStatus.Failed => ("Hoàn tiền chưa thành công", $"Khoản hoàn {amount} chưa thể hoàn tất. Vui lòng mở chi tiết để kiểm tra."),
+                _ => throw new ArgumentOutOfRangeException(nameof(status), status, null)
+            };
+            _context.AppNotifications.Add(new AppNotification
+            {
+                Id = Guid.NewGuid(),
+                UserId = customerId,
+                BookingId = refund.BookingId,
+                // AppNotifications has a unique (BookingId, UserId, Type) index.
+                // UpdatedAt identifies this concrete transition deterministically, while
+                // still allowing a later retry cycle to enter the same status again.
+                Type = $"REFUND_STATUS_CHANGED_{status.ToString().ToUpperInvariant()}_{refund.UpdatedAt.Ticks:X16}",
+                Title = content.Item1,
+                Body = content.Item2,
+                DataJson = JsonSerializer.Serialize(new
+                {
+                    url = $"/refund/{refund.RefundId}",
+                    type = "REFUND_STATUS_CHANGED",
+                    refundId = refund.RefundId,
+                    bookingId = refund.BookingId,
+                    refundStatus = status.ToString()
+                }),
+                ScheduledAt = now,
+                Status = "Pending",
+                CreatedAt = now
+            });
+        }
         private static BookingRuleException BankUnavailable(string code)=>new(code,code switch{"BANK_ACCOUNT_PENDING_APPROVAL"=>"Tài khoản nhận tiền đang chờ admin duyệt.","BANK_ACCOUNT_REJECTED"=>"Tài khoản nhận tiền đã bị từ chối.",_=>"Không tìm thấy tài khoản nhận tiền đang hoạt động."},409);
 
         private static AdminRefundDto ToAdminDto(Refund refund) => new()

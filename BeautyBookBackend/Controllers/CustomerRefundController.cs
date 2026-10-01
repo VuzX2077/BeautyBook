@@ -15,6 +15,17 @@ namespace BeautyBookBackend.Controllers
         public CustomerRefundController(IRefundService refunds) => _refunds = refunds;
         private Guid CurrentUserId => Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString());
 
+        [HttpGet]
+        public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 20) =>
+            Ok(await _refunds.GetCustomerRefundsAsync(CurrentUserId, page, pageSize));
+
+        [HttpGet("{id:guid}")]
+        public async Task<IActionResult> GetById(Guid id)
+        {
+            var result = await _refunds.GetCustomerRefundAsync(id, CurrentUserId);
+            return result == null ? NotFound() : Ok(result);
+        }
+
         [HttpPost("{id:guid}/destination")]
         public async Task<IActionResult> SetDestination(Guid id, [FromBody] RefundDestinationRequest request)
         {

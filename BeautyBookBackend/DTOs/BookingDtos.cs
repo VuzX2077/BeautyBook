@@ -67,6 +67,7 @@ namespace BeautyBookBackend.DTOs
         public DateTime? CancellationAppointmentAtUtc { get; set; }
         public DateTime? DisputedAt { get; set; }
         public string? DisputeReason { get; set; }
+        public bool HasOpenComplaint { get; set; }
         public DateTime? PaymentExpiresAt { get; set; }
         public RefundSummaryDto? Refund { get; set; }
     }

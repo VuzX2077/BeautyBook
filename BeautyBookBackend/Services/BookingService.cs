@@ -481,10 +481,16 @@ namespace BeautyBookBackend.Services
             }
             if (IsFinalStatus(booking.Status)
                 || !IsValidStatusTransition(booking.Status, newStatus, userId, booking.MUAId, booking.CustomerId)) return null;
+            if (await _context.BookingComplaints.AnyAsync(c => c.BookingId == bookingId && c.IsOpen)
+                && newStatus is BookingStatus.Completed or BookingStatus.Cancelled or BookingStatus.Rejected or BookingStatus.Disputed)
+                throw new BookingRuleException("COMPLAINT_OPEN", "Booking đang có khiếu nại. Vui lòng chờ admin xử lý.", 409);
+            if (newStatus == BookingStatus.Disputed)
+                throw new BookingRuleException("USE_COMPLAINT_FLOW", "Vui lòng gửi khiếu nại trong mục Báo vấn đề của booking.", 409);
             if (RequiresHeldDeposit(newStatus)
                 && booking.PaymentStatus != PaymentStatus.DepositHeld
                 && booking.PaymentStatus != PaymentStatus.Paid
-                && booking.PaymentStatus != PaymentStatus.Frozen) return null;
+                && booking.PaymentStatus != PaymentStatus.Frozen
+                && !(newStatus == BookingStatus.Completed && booking.PaymentStatus == PaymentStatus.PartiallyRefunded)) return null;
 
             if (newStatus == BookingStatus.Completed)
             {
@@ -575,6 +581,8 @@ namespace BeautyBookBackend.Services
             var booking = await GetBookingForUpdateAsync(bookingId);
             if (booking == null || booking.Status != BookingStatus.Disputed || booking.PaymentStatus != PaymentStatus.Frozen)
                 return null;
+            if (await _context.BookingComplaints.AnyAsync(c => c.BookingId == bookingId))
+                throw new BookingRuleException("USE_COMPLAINT_FLOW", "Vui lòng xử lý trong hồ sơ khiếu nại để lưu quyết định và lịch sử.", 409);
             if (refundCustomer)
             {
                 var paymentId = await _context.BookingPayments.AsNoTracking()
@@ -618,6 +626,7 @@ namespace BeautyBookBackend.Services
                     || booking.CustomerConfirmationDeadline == null
                     || booking.CustomerConfirmationDeadline > DateTime.UtcNow)
                     continue;
+                if (await _context.BookingComplaints.AnyAsync(c => c.BookingId == booking.BookingId && c.IsOpen)) continue;
                 if (!await CompleteBookingAsync(booking)) continue;
                 booking.Status = BookingStatus.AutoCompleted;
                 booking.CompletedAt = DateTime.UtcNow;
@@ -737,19 +746,17 @@ namespace BeautyBookBackend.Services
         {
             if ((booking.PaymentStatus != PaymentStatus.DepositHeld
                     && booking.PaymentStatus != PaymentStatus.Paid
-                    && booking.PaymentStatus != PaymentStatus.Frozen)
+                    && booking.PaymentStatus != PaymentStatus.Frozen
+                    && booking.PaymentStatus != PaymentStatus.PartiallyRefunded)
                 || !await _context.BookingPayments.AnyAsync(x => x.BookingId == booking.BookingId
-                    && x.Status == BookingPaymentStatus.Paid)
+                    && (x.Status == BookingPaymentStatus.Paid || x.Status == BookingPaymentStatus.PartiallyRefunded))
                 )
             {
                 return false;
             }
 
             var hasUnresolvedRefund = await _context.Refunds.AnyAsync(x => x.BookingId == booking.BookingId
-                && (x.Status == RefundStatus.Pending
-                    || x.Status == RefundStatus.ManualActionRequired
-                    || x.Status == RefundStatus.Processing
-                    || x.Status == RefundStatus.Failed));
+                && x.Status != RefundStatus.Completed);
             if (hasUnresolvedRefund) return false;
 
             await _receivableService.EnsureForCompletedBookingAsync(booking);
@@ -763,7 +770,7 @@ namespace BeautyBookBackend.Services
                     + (muaProfile.TotalBookings * 3);
             }
 
-            booking.PaymentStatus = PaymentStatus.Released;
+            if (booking.PaymentStatus != PaymentStatus.PartiallyRefunded) booking.PaymentStatus = PaymentStatus.Released;
 
             return true;
         }
@@ -854,6 +861,7 @@ namespace BeautyBookBackend.Services
                 CancellationAppointmentAtUtc = booking.CancellationAppointmentAtUtc,
                 DisputedAt = booking.DisputedAt,
                 DisputeReason = booking.DisputeReason,
+                HasOpenComplaint = await _context.BookingComplaints.AnyAsync(c => c.BookingId == booking.BookingId && c.IsOpen),
                 PaymentExpiresAt = booking.PaymentExpiresAt,
                 Refund = refund,
                 Services = new List<BookingServiceDto>()

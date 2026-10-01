@@ -36,6 +36,9 @@ namespace BeautyBookBackend.Services
             foreach(var rid in identities.Select(x=>x.Id).OrderBy(x=>x)) {var row=await _context.MuaReceivables.FromSqlInterpolated($"SELECT * FROM \"MuaReceivables\" WHERE \"Id\"={rid} FOR UPDATE").FirstAsync();locked.Add(row);}
             if(locked.Any(x=>x.MuaId!=muaId||x.Status!=MuaReceivableStatus.Available))throw new InvalidOperationException("Tất cả khoản được chọn phải đang Available.");
             var bookingIds=locked.Select(x=>x.BookingId).ToList();
+            if (await _context.BookingComplaints.AnyAsync(c => bookingIds.Contains(c.BookingId) && c.IsOpen)
+                || locked.Any(r => r.AvailableAt > DateTime.UtcNow))
+                throw new InvalidOperationException("Khoản thu nhập đang trong thời hạn khiếu nại hoặc có hồ sơ chưa xử lý.");
             var blockedBooking=await _context.Bookings.AnyAsync(x=>bookingIds.Contains(x.BookingId)&&(x.Status==BookingStatus.Disputed||x.PaymentStatus==PaymentStatus.Frozen||x.PaymentStatus==PaymentStatus.RefundPending));
             var blockedRefund=await _context.Refunds.AnyAsync(x=>bookingIds.Contains(x.BookingId)&&x.Status!=RefundStatus.Completed);
             if(blockedBooking||blockedRefund)throw new InvalidOperationException("Khoản thu nhập đang có dispute/refund hoặc nghĩa vụ tài chính chưa xử lý.");
@@ -59,12 +62,18 @@ namespace BeautyBookBackend.Services
             await _context.Entry(p).Collection(x=>x.Items).LoadAsync();
             if(p.Status==target){await tx.CommitAsync();return ToDto(p);}
             var allowed=target switch{PayoutStatus.Processing=>p.Status is PayoutStatus.Pending or PayoutStatus.ManualActionRequired,PayoutStatus.Paid=>p.Status==PayoutStatus.Processing&&!string.IsNullOrWhiteSpace(reference),PayoutStatus.Failed=>p.Status==PayoutStatus.Processing&&confirmedFailure,PayoutStatus.ManualActionRequired=>p.Status==PayoutStatus.Processing,_=>false};if(!allowed)return null;
+            var receivableIds = p.Items.Where(i => i.IsActive).Select(i => i.MuaReceivableId).ToList();
+            var identities = await _context.MuaReceivables.AsNoTracking().Where(r => receivableIds.Contains(r.Id)).Select(r => new { r.Id, r.BookingId }).ToListAsync();
+            foreach (var bid in identities.Select(r => r.BookingId).Distinct().OrderBy(b => b))
+                await _context.Bookings.FromSqlInterpolated($"SELECT * FROM \"Bookings\" WHERE \"BookingId\"={bid} FOR UPDATE").LoadAsync();
             var receivables=new List<MuaReceivable>();foreach(var item in p.Items.Where(x=>x.IsActive).OrderBy(x=>x.MuaReceivableId)){receivables.Add(await _context.MuaReceivables.FromSqlInterpolated($"SELECT * FROM \"MuaReceivables\" WHERE \"Id\"={item.MuaReceivableId} FOR UPDATE").FirstAsync());}
-            if(target==PayoutStatus.Processing){var bookingIds=receivables.Select(x=>x.BookingId).ToList();var blocked=await _context.Bookings.AnyAsync(x=>bookingIds.Contains(x.BookingId)&&(x.Status==BookingStatus.Disputed||x.PaymentStatus==PaymentStatus.Frozen||x.PaymentStatus==PaymentStatus.RefundPending))||await _context.Refunds.AnyAsync(x=>bookingIds.Contains(x.BookingId)&&x.Status!=RefundStatus.Completed);if(blocked)return null;}
+            if(target is PayoutStatus.Processing or PayoutStatus.Paid){var bookingIds=receivables.Select(x=>x.BookingId).ToList();var blocked=await _context.Bookings.AnyAsync(x=>bookingIds.Contains(x.BookingId)&&(x.Status==BookingStatus.Disputed||x.PaymentStatus==PaymentStatus.Frozen||x.PaymentStatus==PaymentStatus.RefundPending))||await _context.Refunds.AnyAsync(x=>bookingIds.Contains(x.BookingId)&&x.Status!=RefundStatus.Completed)
+                || await _context.BookingComplaints.AnyAsync(c => bookingIds.Contains(c.BookingId) && c.IsOpen)
+                || receivables.Any(r => r.AvailableAt > DateTime.UtcNow);if(blocked)return null;}
             var now=DateTime.UtcNow;p.Status=target;p.LastHandledBy=admin;p.UpdatedAt=now;if(!string.IsNullOrWhiteSpace(reference))p.ProviderReference=reference.Trim();
             if(target==PayoutStatus.Processing){p.ProcessingAt=now;p.FailureCode=null;p.FailureMessage=null;}
             else if(target==PayoutStatus.Paid){p.PaidAt=now;foreach(var r in receivables){r.Status=MuaReceivableStatus.PaidOut;r.PaidOutAt=now;r.UpdatedAt=now;}_context.AppNotifications.Add(new AppNotification{Id=Guid.NewGuid(),UserId=p.MuaId,Type="PAYOUT_PAID",Title="Khoản chi trả đã hoàn tất",Body=$"B-Book đã xác nhận chuyển {p.Amount:N0}đ tới tài khoản ••••{p.AccountNumberSnapshot[^Math.Min(4,p.AccountNumberSnapshot.Length)..]}.",DataJson=System.Text.Json.JsonSerializer.Serialize(new{url=$"/(mua)/payouts/{p.Id}"}),ScheduledAt=now,Status="Pending",CreatedAt=now});}
-            else if(target==PayoutStatus.Failed){p.FailedAt=now;p.ReconciledAt=now;p.FailureCode=code;p.FailureMessage=message;foreach(var r in receivables){r.Status=MuaReceivableStatus.Available;r.UpdatedAt=now;}foreach(var i in p.Items)i.IsActive=false;}
+            else if(target==PayoutStatus.Failed){p.FailedAt=now;p.ReconciledAt=now;p.FailureCode=code;p.FailureMessage=message;foreach(var r in receivables){r.Status=await _context.BookingComplaints.AnyAsync(c=>c.BookingId==r.BookingId&&c.IsOpen)?MuaReceivableStatus.Frozen:r.AvailableAt>now?MuaReceivableStatus.OnHold:MuaReceivableStatus.Available;r.UpdatedAt=now;}foreach(var i in p.Items)i.IsActive=false;}
             else {p.FailureCode=code;p.FailureMessage=message;}
             await _context.SaveChangesAsync();await tx.CommitAsync();return ToDto(p);
         }

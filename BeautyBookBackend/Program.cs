@@ -229,6 +229,7 @@ builder.Services.AddSignalR();
 
 builder.Services.AddDataProtection();
 builder.Services.AddScoped<ExploreService>();
+builder.Services.AddScoped<ComplaintService>();
 
 var app = builder.Build();
 

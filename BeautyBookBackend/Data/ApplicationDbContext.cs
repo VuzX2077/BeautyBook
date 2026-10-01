@@ -20,6 +20,8 @@ namespace BeautyBookBackend.Data
         public DbSet<MuaWorkingSchedule> MuaWorkingSchedules { get; set; } = null!;
         public DbSet<MuaTimeOff> MuaTimeOffs { get; set; } = null!;
         public DbSet<Booking> Bookings { get; set; } = null!;
+        public DbSet<BookingComplaint> BookingComplaints { get; set; } = null!;
+        public DbSet<ComplaintMessage> ComplaintMessages { get; set; } = null!;
         public DbSet<BookingService> BookingServices { get; set; } = null!;
         public DbSet<BookingPayment> BookingPayments { get; set; } = null!;
         public DbSet<Refund> Refunds { get; set; } = null!;
@@ -48,6 +50,27 @@ namespace BeautyBookBackend.Data
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
+            modelBuilder.Entity<BookingComplaint>(b => {
+                b.HasKey(c => c.Id);
+                b.HasOne(c => c.Booking).WithMany().HasForeignKey(c => c.BookingId).OnDelete(DeleteBehavior.Restrict);
+                b.HasIndex(c => c.BookingId).IsUnique().HasFilter("\"IsOpen\" = TRUE");
+                b.HasIndex(c => new { c.Status, c.CreatedAt });
+                b.Property(c => c.Category).HasMaxLength(40);
+                b.Property(c => c.Status).HasMaxLength(40);
+                b.Property(c => c.RequestedOutcome).HasMaxLength(40);
+                b.Property(c => c.Description).HasMaxLength(2000);
+                b.Property(c => c.DecisionReason).HasMaxLength(2000);
+                b.Property(c => c.RequestedAmount).HasPrecision(18, 2);
+                b.Property(c => c.ApprovedRefundAmount).HasPrecision(18, 2);
+            });
+            modelBuilder.Entity<ComplaintMessage>(b => {
+                b.HasKey(m => m.Id);
+                b.HasOne(m => m.Complaint).WithMany(c => c.Messages).HasForeignKey(m => m.ComplaintId).OnDelete(DeleteBehavior.Cascade);
+                b.HasIndex(m => new { m.ComplaintId, m.CreatedAt });
+                b.Property(m => m.Body).HasMaxLength(2000);
+                b.Property(m => m.AuthorRole).HasMaxLength(20);
+                b.Property(m => m.Kind).HasMaxLength(40);
+            });
             modelBuilder.Entity<MuaOperatingArea>(b => {
                 b.HasKey(a => new { a.MuaId, a.AreaId });
                 b.Property(a => a.AreaId).HasMaxLength(60);

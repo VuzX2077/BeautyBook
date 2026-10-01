@@ -15,10 +15,12 @@ namespace BeautyBookBackend.Controllers
     public class BookingController : ControllerBase
     {
         private readonly IBookingService _bookingService;
+        private readonly ComplaintService _complaints;
 
-        public BookingController(IBookingService bookingService)
+        public BookingController(IBookingService bookingService, ComplaintService complaints)
         {
             _bookingService = bookingService;
+            _complaints = complaints;
         }
 
         private Guid CurrentUserId => Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString());
@@ -134,6 +136,11 @@ namespace BeautyBookBackend.Controllers
 
             try
             {
+                // Older app builds used the status endpoint to submit a dispute.
+                if (updateDto.Status == BookingStatus.Disputed) {
+                    await _complaints.Create(id, CurrentUserId, new CreateComplaintRequest { Category = "Other", Description = updateDto.Reason ?? "", RequestedOutcome = "Support" });
+                    return Ok(await _bookingService.GetBookingByIdAsync(id, CurrentUserId));
+                }
                 var updated = await _bookingService.UpdateBookingStatusAsync(id, CurrentUserId, updateDto.Status, updateDto.Reason);
                 if (updated == null)
                     return BadRequest(new { Message = "Chuyển trạng thái không hợp lệ hoặc không đúng quyền." });
@@ -157,10 +164,12 @@ namespace BeautyBookBackend.Controllers
         [HttpPost("{id}/resolve-dispute")]
         public async Task<IActionResult> ResolveDispute(Guid id, [FromBody] DisputeResolutionDto dto)
         {
+            try {
             var booking = await _bookingService.ResolveDisputeAsync(id, dto.RefundCustomer);
             return booking == null
                 ? BadRequest(new { Message = "Booking không ở trạng thái tranh chấp." })
                 : Ok(booking);
+            } catch (BookingRuleException ex) { return StatusCode(ex.StatusCode, new { ex.Code, Message = ex.Message }); }
         }
 
         [Authorize(Roles = "Admin")]

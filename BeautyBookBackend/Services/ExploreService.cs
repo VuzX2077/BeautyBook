@@ -14,7 +14,7 @@ public sealed class ExploreService(ApplicationDbContext db, IDataProtectionProvi
 {
     private readonly IDataProtector protector = protection.CreateProtector("BBook.Explore.Cursor.v1");
     private sealed record CursorState(string Filter, DateTime Cutoff, DateTime Expires,
-        Guid Id, DateTime? CreatedAt = null, decimal? Value = null);
+        Guid Id, DateTime? CreatedAt = null, decimal? Value = null, double? Score = null);
     public IQueryable<MakeupArtistProfile> PublicArtists => db.MakeupArtistProfiles.AsNoTracking().IgnoreAutoIncludes()
         .Where(p => p.Status == MuaStatus.Listed && p.VerificationStatus == MuaVerificationStatus.Approved &&
             p.User != null && p.User.IsActive && p.User.DeletedAt == null);
@@ -55,8 +55,10 @@ public sealed class ExploreService(ApplicationDbContext db, IDataProtectionProvi
             ReviewCount = db.Reviews.Count(r => r.MUAId == p.MUAId),
             MinPrice = p.Services.Where(s => s.IsActive).Select(s => (decimal?)s.Price).Min(),
             // Ratings with only one review don't automatically outrank established artists.
-            Score = p.ProfileQualityScore + p.AverageRating * 10 * db.Reviews.Count(r => r.MUAId == p.MUAId) /
-                (db.Reviews.Count(r => r.MUAId == p.MUAId) + 5)
+            // Convert the rating BEFORE arithmetic. Otherwise Npgsql propagates
+            // its numeric(3,2) mapping to casts of quality scores/review counts.
+            Score = p.ProfileQualityScore + (double)p.AverageRating * 10d * db.Reviews.Count(r => r.MUAId == p.MUAId) /
+                (db.Reviews.Count(r => r.MUAId == p.MUAId) + 5d)
         });
     }
 
@@ -150,15 +152,20 @@ public sealed class ExploreService(ApplicationDbContext db, IDataProtectionProvi
         }
         var cutoff = cursor?.Cutoff ?? DateTime.UtcNow;
         var expires = cursor?.Expires ?? DateTime.UtcNow.AddMinutes(30);
-        string Encode(Guid id, DateTime? date = null, decimal? value = null) => protector.Protect(JsonSerializer.Serialize(new CursorState(fingerprint, cutoff, expires, id, date, value)));
+        string Encode(Guid id, DateTime? date = null, decimal? value = null, double? score = null) => protector.Protect(JsonSerializer.Serialize(new CursorState(fingerprint, cutoff, expires, id, date, value, score)));
         if (request.Kind == "artists")
         {
             var query = ArtistQuery(request);
-            if (cursor != null) query = query.Where(p => p.Score < cursor.Value || (p.Score == cursor.Value && p.Id.CompareTo(cursor.Id) > 0));
+            if (cursor != null)
+            {
+                if (!cursor.Score.HasValue || !double.IsFinite(cursor.Score.Value))
+                    throw new ArgumentException("Phiên khám phá không hợp lệ. Vui lòng làm mới.");
+                query = query.Where(p => p.Score < cursor.Score || (p.Score == cursor.Score && p.Id.CompareTo(cursor.Id) > 0));
+            }
             var rows = await query.OrderByDescending(p => p.Score).ThenBy(p => p.Id).Take(request.Limit + 1).ToListAsync(ct);
             var items = rows.Take(request.Limit).ToList();
             await FillStyles(items, ct);
-            return new ExplorePage<ExploreArtist>(items, rows.Count > request.Limit ? Encode(items[^1].Id, value: items[^1].Score) : null);
+            return new ExplorePage<ExploreArtist>(items, rows.Count > request.Limit ? Encode(items[^1].Id, score: items[^1].Score) : null);
         }
         if (request.Kind == "services")
         {

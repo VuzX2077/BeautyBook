@@ -53,7 +53,7 @@ public sealed class ExploreArtist
     public int ReviewCount { get; set; }
     public decimal? MinPrice { get; set; }
     public List<string> Styles { get; set; } = new();
-    [System.Text.Json.Serialization.JsonIgnore] public decimal Score { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore] public double Score { get; set; }
 }
 public sealed class ExploreServiceItem
 {

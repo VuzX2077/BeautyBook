@@ -18,8 +18,8 @@ namespace BeautyBookBackend.Services
             {
                 if (existing.Status == MuaReceivableStatus.OnHold)
                 {
-                    var availableAt = DateTime.UtcNow;
-                    existing.Status = MuaReceivableStatus.Available;
+                    var availableAt = (booking.CompletedAt ?? DateTime.UtcNow).AddHours(ComplaintPolicy.WindowHours);
+                    existing.Status = MuaReceivableStatus.OnHold;
                     existing.AvailableAt ??= availableAt;
                     existing.UpdatedAt = availableAt;
                 }
@@ -31,8 +31,8 @@ namespace BeautyBookBackend.Services
             {
                 Id = Guid.NewGuid(), BookingId = booking.BookingId, MuaId = booking.MUAId,
                 GrossAmount = booking.DepositAmount, PlatformFeeAmount = booking.PlatformFeeAmount,
-                NetAmount = booking.MuaPayoutAmount, Status = MuaReceivableStatus.Available,
-                CreatedAt = now, AvailableAt = now, UpdatedAt = now
+                NetAmount = booking.MuaPayoutAmount, Status = MuaReceivableStatus.OnHold,
+                CreatedAt = now, AvailableAt = (booking.CompletedAt ?? now).AddHours(ComplaintPolicy.WindowHours), UpdatedAt = now
             };
             await _context.MuaReceivables.AddAsync(receivable);
             return receivable;
@@ -54,39 +54,51 @@ namespace BeautyBookBackend.Services
             if (target == MuaReceivableStatus.Frozen) receivable.FrozenAt = now;
             if (target == MuaReceivableStatus.Available)
             {
+                var booking = await _context.Bookings.FindAsync(bookingId);
+                if (booking != null && ComplaintPolicy.HasHold(booking, now))
+                    receivable.Status = MuaReceivableStatus.OnHold;
                 receivable.FrozenAt = null;
-                receivable.AvailableAt ??= now;
+                receivable.AvailableAt = booking?.CompletedAt?.AddHours(ComplaintPolicy.WindowHours) ?? receivable.AvailableAt;
             }
             if (target == MuaReceivableStatus.Reversed) receivable.ReversedAt = now;
         }
 
         public async Task<int> ReconcileStatesAsync()
         {
-            var candidates = await _context.MuaReceivables
+            var candidates = await _context.MuaReceivables.AsNoTracking()
                 .Where(x => x.Status == MuaReceivableStatus.OnHold || x.Status == MuaReceivableStatus.Frozen)
-                .Include(x => x.Booking).ThenInclude(x => x!.Payments)
+                .Select(x => new { x.Id, x.BookingId })
                 .ToListAsync();
             var changed = 0;
-            foreach (var item in candidates)
+            foreach (var candidate in candidates)
             {
+                await using var tx = await _context.Database.BeginTransactionAsync();
+                var booking = await _context.Bookings.FromSqlInterpolated($"SELECT * FROM \"Bookings\" WHERE \"BookingId\"={candidate.BookingId} FOR UPDATE").FirstAsync();
+                var item = await _context.MuaReceivables.FromSqlInterpolated($"SELECT * FROM \"MuaReceivables\" WHERE \"Id\"={candidate.Id} FOR UPDATE").FirstAsync();
+                // A payout may have claimed the row since the initial scan.
+                if (item.Status is not (MuaReceivableStatus.OnHold or MuaReceivableStatus.Frozen)) { await tx.CommitAsync(); continue; }
+                item.Booking = booking;
                 var refunds = await _context.Refunds.Where(x => x.BookingId == item.BookingId).Select(x => x.Status).ToListAsync();
-                var target = refunds.Contains(RefundStatus.Completed)
+                var openComplaint = await _context.BookingComplaints.AnyAsync(c => c.BookingId == item.BookingId && c.IsOpen);
+                var target = item.NetAmount <= 0 || (refunds.Contains(RefundStatus.Completed) && item.Booking!.PaymentStatus == PaymentStatus.Refunded)
                     ? MuaReceivableStatus.Reversed
-                    : item.Booking!.Status == BookingStatus.Disputed
+                    : openComplaint || item.Booking!.Status == BookingStatus.Disputed
                       || item.Booking.PaymentStatus is PaymentStatus.Frozen or PaymentStatus.RefundPending
-                      || refunds.Any(x => x is RefundStatus.Pending or RefundStatus.ManualActionRequired or RefundStatus.Processing or RefundStatus.Failed)
+                      || refunds.Any(x => x != RefundStatus.Completed)
                         ? MuaReceivableStatus.Frozen
                         : item.Booking.Status is BookingStatus.Completed or BookingStatus.AutoCompleted
+                          && !ComplaintPolicy.HasHold(item.Booking, DateTime.UtcNow)
                             ? MuaReceivableStatus.Available
                             : MuaReceivableStatus.OnHold;
-                if (item.Status == target) continue;
+                if (item.Status == target) { await tx.CommitAsync(); continue; }
                 var now = DateTime.UtcNow; item.Status = target; item.UpdatedAt = now;
                 item.FrozenAt = target == MuaReceivableStatus.Frozen ? now : null;
                 if (target == MuaReceivableStatus.Available) item.AvailableAt ??= now;
                 if (target == MuaReceivableStatus.Reversed) item.ReversedAt = now;
                 changed++;
+                await _context.SaveChangesAsync();
+                await tx.CommitAsync();
             }
-            if (changed > 0) await _context.SaveChangesAsync();
             return changed;
         }
 

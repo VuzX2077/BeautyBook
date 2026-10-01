@@ -309,7 +309,7 @@ namespace BeautyBookBackend.Services
                 payment.Status = full ? BookingPaymentStatus.Refunded : BookingPaymentStatus.PartiallyRefunded;
                 booking.PaymentStatus = full ? PaymentStatus.Refunded : PaymentStatus.PartiallyRefunded;
                 booking.UpdatedAt = current.CompletedAt.Value;
-                await _receivables.ReverseAsync(booking.BookingId);
+                await ApplyComplaintRefundAsync(booking, current, payment.Amount);
                 QueueStatusNotification(current,booking.CustomerId,RefundStatus.Completed,current.CompletedAt.Value);
             }
             await _context.SaveChangesAsync();
@@ -404,7 +404,7 @@ namespace BeautyBookBackend.Services
                 payment.Status = isFullRefund ? BookingPaymentStatus.Refunded : BookingPaymentStatus.PartiallyRefunded;
                 booking.PaymentStatus = isFullRefund ? PaymentStatus.Refunded : PaymentStatus.PartiallyRefunded;
                 booking.UpdatedAt = now;
-                await _receivables.ReverseAsync(booking.BookingId);
+                await ApplyComplaintRefundAsync(booking, refund, payment.Amount);
             }
             else if (target == RefundStatus.Failed)
             {
@@ -426,6 +426,28 @@ namespace BeautyBookBackend.Services
             await _context.SaveChangesAsync();
             await transaction.CommitAsync();
             return ToDto(refund);
+        }
+
+        private async Task ApplyComplaintRefundAsync(Booking booking, Refund refund, decimal paidAmount)
+        {
+            var complaint = await _context.BookingComplaints.FirstOrDefaultAsync(c => c.RefundId == refund.RefundId);
+            if (complaint == null || refund.Amount >= paidAmount) {
+                await _receivables.ReverseAsync(booking.BookingId);
+                return;
+            }
+            // Derive the remaining ledger from the original booking snapshot: retry-safe.
+            var r = await _context.MuaReceivables.FirstOrDefaultAsync(r => r.BookingId == booking.BookingId);
+            if (r == null) {
+                r = new MuaReceivable { Id = Guid.NewGuid(), BookingId = booking.BookingId, MuaId = booking.MUAId, CreatedAt = DateTime.UtcNow };
+                _context.MuaReceivables.Add(r);
+            }
+            var remainingRatio = (paidAmount - refund.Amount) / paidAmount;
+            r.GrossAmount = paidAmount - refund.Amount;
+            r.NetAmount = decimal.Round(booking.MuaPayoutAmount * remainingRatio, 0, MidpointRounding.AwayFromZero);
+            r.PlatformFeeAmount = r.GrossAmount - r.NetAmount;
+            r.Status = MuaReceivableStatus.OnHold;
+            r.FrozenAt = null; r.UpdatedAt = DateTime.UtcNow;
+            r.AvailableAt = booking.CompletedAt?.AddHours(ComplaintPolicy.WindowHours);
         }
 
         private Task<Refund?> GetRefundForUpdateAsync(Guid refundId) =>

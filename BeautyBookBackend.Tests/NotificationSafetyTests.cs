@@ -53,6 +53,15 @@ public class NotificationSafetyTests
         Assert.Equal("chat", NotificationChannelResolver.Resolve("CHAT_MESSAGE"));
     }
 
+    [Fact]
+    public void RefundNotification_ExposesStablePublicTypeAndUsesPaymentChannel()
+    {
+        var storedType = "REFUND_STATUS_CHANGED_PROCESSING_0123456789ABCDEF";
+
+        Assert.Equal("REFUND_STATUS_CHANGED", BookingNotificationService.PublicType(storedType));
+        Assert.Equal("payments", NotificationChannelResolver.Resolve(storedType));
+    }
+
     [Theory]
     [InlineData("", "Nội dung")]
     [InlineData("Tiêu đề", "")]

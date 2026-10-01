@@ -6,6 +6,7 @@ public static class NotificationChannelResolver
     {
         "ADMIN_ANNOUNCEMENT" => "default",
         "CHAT_MESSAGE" => "chat",
+        var type when type.StartsWith("REFUND_", StringComparison.Ordinal) => "payments",
         _ => "booking-reminders"
     };
 }

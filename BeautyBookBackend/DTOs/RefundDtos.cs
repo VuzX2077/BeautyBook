@@ -6,6 +6,7 @@ namespace BeautyBookBackend.DTOs
     public class RefundSummaryDto
     {
         public Guid RefundId { get; set; }
+        public Guid BookingId { get; set; }
         public decimal Amount { get; set; }
         public RefundStatus Status { get; set; }
         public RefundReasonCode ReasonCode { get; set; }
@@ -34,7 +35,6 @@ namespace BeautyBookBackend.DTOs
 
     public class AdminRefundDto : RefundSummaryDto
     {
-        public Guid BookingId { get; set; }
         public Guid CustomerId { get; set; }
         public string? CustomerName { get; set; }
         public string? DestinationBankBin { get; set; }

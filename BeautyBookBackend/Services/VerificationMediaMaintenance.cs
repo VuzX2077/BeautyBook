@@ -53,6 +53,7 @@ public sealed class VerificationMediaMaintenance(ApplicationDbContext db, Verifi
                     item = await media.UploadAsync(profile.MUAId, purpose, source, ct);
                     item.LegacyObjectKey = key;
                     item.LegacySha256 = Convert.ToHexString(SHA256.HashData(source));
+                    item.LegacyLocationVerified = true;
                     await db.SaveChangesAsync(ct);
                 }
                 var stored = await storage.DownloadAsync(item.ObjectKey, ct: ct);
@@ -95,6 +96,7 @@ public sealed class VerificationMediaMaintenance(ApplicationDbContext db, Verifi
                 item = await media.UploadChatAsync(message.SenderId, message.ChatRoomId, source, ct);
                 item.LegacyObjectKey = key;
                 item.LegacySha256 = Convert.ToHexString(SHA256.HashData(source));
+                item.LegacyLocationVerified = true;
                 await db.SaveChangesAsync(ct);
             }
             var stored = await storage.DownloadAsync(item.ObjectKey, ct: ct);
@@ -137,7 +139,8 @@ public sealed class VerificationMediaMaintenance(ApplicationDbContext db, Verifi
     private async Task CleanupOrphansAsync(CancellationToken ct)
     {
         var cutoff = DateTime.UtcNow.AddHours(-24);
-        var rows = await db.VerificationMedia.Where(x => x.CreatedAt < cutoff && (x.LegacyObjectKey == null || x.LegacyDeletedAt != null)).ToListAsync(ct);
+        var rows = await db.VerificationMedia.Where(x => x.CreatedAt < cutoff && (x.LegacyObjectKey == null || x.LegacyDeletedAt != null)
+            && !db.AccountDeletionRequests.Any(r => r.UserId == x.OwnerId && r.DatabaseCompletedAt != null)).ToListAsync(ct);
         var count = 0;
         foreach (var item in rows)
         {

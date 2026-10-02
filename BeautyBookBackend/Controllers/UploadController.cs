@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using BeautyBookBackend.Services;
+using System.Security.Claims;
 
 namespace BeautyBookBackend.Controllers
 {
@@ -39,7 +40,8 @@ namespace BeautyBookBackend.Controllers
             try { pixels = VerificationImage.Normalize(input.ToArray()); }
             catch (ArgumentException ex) { return BadRequest(new { Message = ex.Message }); }
             using var stream = new MemoryStream(pixels);
-            var url = await _imageStorage.UploadPublicImageAsync(
+            var url = await _imageStorage.UploadOwnedPublicImageAsync(
+                Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!),
                 stream,
                 "image/jpeg",
                 ".jpg",
@@ -82,8 +84,8 @@ namespace BeautyBookBackend.Controllers
                 buffer.Position = 0;
                 try
                 {
-                    url = await _imageStorage.UploadPublicImageAsync(
-                        buffer, file.ContentType, ExtensionsByContentType[file.ContentType], HttpContext.RequestAborted);
+                    url = await _imageStorage.UploadOwnedPublicImageAsync(
+                        Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!), buffer, file.ContentType, ExtensionsByContentType[file.ContentType], HttpContext.RequestAborted);
                 }
                 catch (InvalidOperationException)
                 {

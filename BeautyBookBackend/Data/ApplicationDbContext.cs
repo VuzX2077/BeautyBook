@@ -11,6 +11,8 @@ namespace BeautyBookBackend.Data
         }
 
         public DbSet<VerificationMedia> VerificationMedia { get; set; } = null!;
+        public DbSet<AccountDeletionRequest> AccountDeletionRequests { get; set; } = null!;
+        public DbSet<OwnedPublicMedia> OwnedPublicMedia { get; set; } = null!;
         public DbSet<PrivateMediaJob> PrivateMediaJobs { get; set; } = null!;
         public DbSet<MuaFollow> MuaFollows { get; set; } = null!;
         public DbSet<User> Users { get; set; } = null!;
@@ -52,6 +54,20 @@ namespace BeautyBookBackend.Data
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
+            modelBuilder.Entity<AccountDeletionRequest>(b => {
+                b.HasKey(x => x.UserId);
+                b.Property(x => x.Status).HasMaxLength(40);
+                b.Property(x => x.ErrorCode).HasMaxLength(80);
+                b.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
+            });
+            modelBuilder.Entity<OwnedPublicMedia>(b => {
+                b.HasKey(x => x.Id);
+                b.HasIndex(x => x.ObjectKey).IsUnique();
+                b.HasIndex(x => x.OwnerId);
+                b.Property(x => x.ObjectKey).HasMaxLength(1000);
+                b.Property(x => x.Url).HasMaxLength(2000);
+                b.HasOne<User>().WithMany().HasForeignKey(x => x.OwnerId).OnDelete(DeleteBehavior.Restrict);
+            });
             modelBuilder.Entity<PrivateMediaJob>(b => {
                 b.HasKey(x => x.Id);
                 b.Property(x => x.Action).HasMaxLength(40);
@@ -68,6 +84,7 @@ namespace BeautyBookBackend.Data
                 b.Property(x => x.Purpose).HasMaxLength(40);
                 b.Property(x => x.ContentType).HasMaxLength(60);
                 b.Property(x => x.Sha256).HasMaxLength(64);
+                b.Property(x => x.StorageLocationId).HasMaxLength(64);
                 b.Property(x => x.LegacyObjectKey).HasMaxLength(1000);
                 b.Property(x => x.LegacySha256).HasMaxLength(64);
                 b.HasOne<User>().WithMany().HasForeignKey(x => x.OwnerId).OnDelete(DeleteBehavior.Restrict);
@@ -116,6 +133,7 @@ namespace BeautyBookBackend.Data
                 b.Property(u => u.Email).HasMaxLength(255);
                 b.Property(u => u.PhoneNumber).HasMaxLength(20);
                 b.Property(u => u.IsActive).HasDefaultValue(true);
+                b.Property(u => u.MediaOwnershipTracked).HasDefaultValue(false);
             });
 
             modelBuilder.Entity<MakeupArtistProfile>(b =>

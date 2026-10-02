@@ -98,7 +98,7 @@ public sealed class VerificationMediaSafetyTests
         await db.Database.ExecuteSqlRawAsync("""
             CREATE TABLE VerificationMedia (Id TEXT PRIMARY KEY, OwnerId TEXT NOT NULL, ContextId TEXT NULL, Purpose TEXT NOT NULL, ObjectKey TEXT NOT NULL,
                 ContentType TEXT NOT NULL, Sha256 TEXT NOT NULL, Size INTEGER NOT NULL, CreatedAt TEXT NOT NULL,
-                ReadyAt TEXT NULL, AttachedAt TEXT NULL, DeletedAt TEXT NULL, LegacyObjectKey TEXT NULL, LegacySha256 TEXT NULL, LegacyDeletedAt TEXT NULL);
+                ReadyAt TEXT NULL, AttachedAt TEXT NULL, DeletedAt TEXT NULL, StorageDeletedAt TEXT NULL, StorageLocationId TEXT NULL, LegacyLocationVerified INTEGER NOT NULL DEFAULT 0, LegacyObjectKey TEXT NULL, LegacySha256 TEXT NULL, LegacyDeletedAt TEXT NULL);
             """);
         var owner = Guid.NewGuid();
         var id = Guid.NewGuid();

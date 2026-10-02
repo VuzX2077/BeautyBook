@@ -4,6 +4,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Text;
+using System.Net.WebSockets;
 using BeautyBookBackend.Data;
 using BeautyBookBackend.Models;
 using BeautyBookBackend.Models.Enums;
@@ -23,6 +24,58 @@ namespace BeautyBookBackend.Tests;
 public sealed class PrivateMediaHttpTests
 {
     private const string Key = "local-integration-only-key-at-least-32-bytes";
+    [PostgreSqlFact]
+    public async Task AccountDeletionAbortsAnAlreadyConnectedChatSession()
+    {
+        await using var database = await PostgreSqlDatabase.CreateMigratedAsync(); var owner = Guid.NewGuid();
+        await using (var db = database.CreateContext()) { db.Users.Add(new() { UserId = owner, Role = UserRole.Customer, Email = "ws@example.test", PasswordHash = "test", IsActive = true, CreatedAt = DateTime.UtcNow }); await db.SaveChangesAsync(); }
+        await using var factory = new LocalFactory(database.ConnectionString); using var client = factory.CreateClient();
+        var token = Token(owner, UserRole.Customer);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var wsClient = factory.Server.CreateWebSocketClient();
+        using var socket = await wsClient.ConnectAsync(new Uri("ws://localhost/chathub?access_token=" + token), timeout.Token);
+        await socket.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes("{\"protocol\":\"json\",\"version\":1}\u001e")), WebSocketMessageType.Text, true, timeout.Token);
+        var buffer = new byte[4096]; var handshake = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), timeout.Token);
+        Assert.Contains("{}", Encoding.UTF8.GetString(buffer, 0, handshake.Count));
+        client.DefaultRequestHeaders.Authorization = new("Bearer", token);
+        Assert.Equal(HttpStatusCode.Accepted, (await client.DeleteAsync("/api/User/me")).StatusCode);
+        try {
+            var closed = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), timeout.Token);
+            Assert.True(closed.MessageType == WebSocketMessageType.Close || Encoding.UTF8.GetString(buffer, 0, closed.Count).Contains("\"type\":7"));
+        } catch (WebSocketException) { /* Aborted transport is also revocation. */ }
+    }
+    [PostgreSqlFact]
+    public async Task DeletionEndpointIsSelfOnlyAndRevokesJwtWhileSupportRequiresAdmin()
+    {
+        await using var database = await PostgreSqlDatabase.CreateMigratedAsync();
+        var owner = Guid.NewGuid(); var other = Guid.NewGuid(); var admin = Guid.NewGuid();
+        await using (var db = database.CreateContext()) {
+            foreach (var id in new[] { owner, other, admin }) db.Users.Add(new User { UserId = id, Role = id == admin ? UserRole.Admin : UserRole.Customer, Email = $"{id}@example.test", PasswordHash = "test", IsActive = true, CreatedAt = DateTime.UtcNow });
+            await db.SaveChangesAsync();
+        }
+        await using var factory = new LocalFactory(database.ConnectionString);
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.DeleteAsync("/api/User/me")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/admin/account-deletions")).StatusCode);
+        client.DefaultRequestHeaders.Authorization = new("Bearer", Token(owner, UserRole.Customer));
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.PostAsJsonAsync($"/api/admin/account-deletions/{other}", new { confirmOwnerRequestVerified = true })).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync("/api/admin/account-deletions")).StatusCode);
+        var receipt = await client.DeleteAsync($"/api/User/me?userId={other}");
+        Assert.Equal(HttpStatusCode.Accepted, receipt.StatusCode);
+        var receiptJson = await receipt.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        Assert.Equal(owner.ToString(), receiptJson.GetProperty("referenceCode").GetString());
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/User/profile")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.DeleteAsync("/api/User/me")).StatusCode);
+        await using (var db = database.CreateContext()) {
+            Assert.False((await db.Users.SingleAsync(x => x.UserId == owner)).IsActive);
+            Assert.True((await db.Users.SingleAsync(x => x.UserId == other)).IsActive);
+            Assert.Equal("PendingStorage", (await db.AccountDeletionRequests.SingleAsync()).Status);
+        }
+        client.DefaultRequestHeaders.Authorization = new("Bearer", Token(admin, UserRole.Admin));
+        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/api/admin/account-deletions")).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync($"/api/admin/account-deletions/{other}", new { confirmOwnerRequestVerified = false })).StatusCode);
+        Assert.Equal(HttpStatusCode.Accepted, (await client.PostAsJsonAsync($"/api/admin/account-deletions/{other}", new { confirmOwnerRequestVerified = true })).StatusCode);
+    }
     [PostgreSqlFact]
     public async Task ProductionMigrationFailureNeverStartsHttpServer()
     {

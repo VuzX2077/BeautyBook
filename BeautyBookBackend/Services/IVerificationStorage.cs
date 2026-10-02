@@ -7,6 +7,8 @@ public sealed class StorageObjectMissingException : InvalidOperationException
 
 public interface IVerificationStorage
 {
+    // Non-secret identity of the configured origin/bucket, persisted with uploads.
+    string LocationId => "test-storage";
     Task EnsurePrivateAsync(CancellationToken ct = default);
     Task UploadAsync(string key, byte[] bytes, CancellationToken ct = default);
     Task<string> SignAsync(string key, CancellationToken ct = default);

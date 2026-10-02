@@ -19,7 +19,7 @@ public sealed class AdminBankAccountController(ApplicationDbContext db) : Contro
     {
         var rows=await db.BankAccounts.AsNoTracking()
         .Where(x=>x.IsActive&&x.VerificationStatus==BankAccountEligibility.Pending)
-        .Select(x=>new{x.Id,OwnerId=x.UserId,OwnerName=x.User!.FullName,x.BankCode,x.BankBin,x.BankName,x.AccountNumber,x.AccountHolderName,x.Method,x.QrCodeUrl,x.CreatedAt})
+        .Select(x=>new{x.Id,OwnerId=x.UserId,OwnerName=x.User!.FullName,x.BankCode,x.BankBin,x.BankName,x.AccountNumber,x.AccountHolderName,x.Method,QrCodeUrl=(string?)null,x.CreatedAt})
         .OrderBy(x=>x.CreatedAt).ThenBy(x=>x.Id).ToListAsync();
         return Ok(rows);
     }

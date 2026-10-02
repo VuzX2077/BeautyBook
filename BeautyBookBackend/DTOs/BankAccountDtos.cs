@@ -17,6 +17,7 @@ public class BankAccountDraftRequest
     [Required, MaxLength(150)] public string AccountHolderName { get; set; } = string.Empty;
     [Required, MaxLength(20)] public string Method { get; set; } = "BANK";
     [Url, MaxLength(1000)] public string? QrCodeUrl { get; set; }
+    public Guid? FinancialQrMediaId { get; set; }
 }
 
 public sealed class UpsertBankAccountRequest : BankAccountDraftRequest
@@ -41,6 +42,7 @@ public sealed class BankAccountDto
     public string AccountHolderName { get; set; } = string.Empty;
     public string Method { get; set; } = "BANK";
     public string? QrCodeUrl { get; set; }
+    public Guid? FinancialQrMediaId { get; set; }
     public string VerificationStatus { get; set; } = "PENDING_ADMIN";
     public DateTime? ActivatedAt { get; set; }
     public bool IsDefault { get; set; }

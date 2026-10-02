@@ -46,15 +46,13 @@ public static class BankAccountEligibility
         !string.Equals(NormalizeCode(currentCode), NormalizeCode(newCode), StringComparison.Ordinal)
         || !string.Equals(NormalizeAccount(currentAccountNumber), NormalizeAccount(newAccountNumber), StringComparison.Ordinal)
         || !string.Equals(NormalizeHolder(currentAccountHolderName), NormalizeHolder(newAccountHolderName), StringComparison.Ordinal)
-        || !string.Equals(NormalizeMethod(currentMethod), NormalizeMethod(newMethod), StringComparison.Ordinal)
-        || !string.Equals(NormalizeQr(currentQrCodeUrl), NormalizeQr(newQrCodeUrl), StringComparison.Ordinal);
+        || !string.Equals(NormalizeMethod(currentMethod), NormalizeMethod(newMethod), StringComparison.Ordinal);
 
     public static bool SnapshotMatches(Refund refund, BankAccount account) =>
         string.Equals(NormalizeCode(refund.DestinationBankCode), NormalizeCode(account.BankCode), StringComparison.Ordinal)
         && string.Equals(NormalizeCode(refund.DestinationBankBin), NormalizeCode(account.BankBin), StringComparison.Ordinal)
         && string.Equals(NormalizeAccount(refund.DestinationAccountNumber), NormalizeAccount(account.AccountNumber), StringComparison.Ordinal)
-        && string.Equals(NormalizeHolder(refund.DestinationAccountName), NormalizeHolder(account.AccountHolderName), StringComparison.Ordinal)
-        && string.Equals(NormalizeQr(refund.DestinationQrCodeUrl), NormalizeQr(account.QrCodeUrl), StringComparison.Ordinal);
+        && string.Equals(NormalizeHolder(refund.DestinationAccountName), NormalizeHolder(account.AccountHolderName), StringComparison.Ordinal);
 
     public static string NormalizeCode(string? value) => (value ?? string.Empty).Trim().ToUpperInvariant();
     public static string NormalizeAccount(string? value) => string.Concat((value ?? string.Empty).Where(char.IsLetterOrDigit)).ToUpperInvariant();

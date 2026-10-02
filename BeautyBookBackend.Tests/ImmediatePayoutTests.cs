@@ -119,7 +119,16 @@ public sealed class ImmediatePayoutTests
     public async Task Old_guard_reproduces_Render_error_and_upgrade_preserves_live_mua_payout()
     {
         await using var database=await PostgreSqlDatabase.CreateAsync();
-        await using(var original=database.CreateContext()) await original.Database.GetService<IMigrator>().MigrateAsync("20261002114018_AddAccountDeletionStorageLifecycle");
+        await using(var original=database.CreateContext()) {
+            // Current model needs the additive QR columns. Reinstall the exact old
+            // guard function to reproduce Render's 23514, without an obsolete EF schema.
+            await original.Database.MigrateAsync();
+            var oldSql = new BeautyBookBackend.Migrations.AddAccountDeletionStorageLifecycle().UpOperations
+                .OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>().Single(x=>x.Sql.Contains("CREATE FUNCTION public.account_deletion_write_guard"));
+            var function = System.Text.RegularExpressions.Regex.Match(oldSql.Sql, @"CREATE FUNCTION public\.account_deletion_write_guard\(\).*?END \$guard\$;", System.Text.RegularExpressions.RegexOptions.Singleline).Value;
+            Assert.NotEmpty(function);
+            await ExecuteGuardSqlAsync(original,function.Replace("CREATE FUNCTION", "CREATE OR REPLACE FUNCTION"));
+        }
         var ids=await Seed(database);
         await using(var db=database.CreateContext()) {
             await BookingServiceFor(db).UpdateBookingStatusAsync(ids.Booking,ids.Customer,BookingStatus.Completed);
@@ -128,7 +137,9 @@ public sealed class ImmediatePayoutTests
             var error=await Assert.ThrowsAsync<DbUpdateException>(()=>new MuaReceivableService(db).ReconcileStatesAsync());
             Assert.Equal("23514",Assert.IsType<Npgsql.PostgresException>(error.InnerException).SqlState);
         }
-        await using(var upgrade=database.CreateContext())await upgrade.Database.MigrateAsync();
+        await using(var upgrade=database.CreateContext())
+            foreach(var operation in new BeautyBookBackend.Migrations.AllowRetainedReceivableLifecycleAfterCustomerDeletion().UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>())
+                await ExecuteGuardSqlAsync(upgrade,operation.Sql);
         await using var check=database.CreateContext();Assert.Equal(1,await new MuaReceivableService(check).ReconcileStatesAsync());
         Assert.Equal(6600m,(await check.MuaReceivables.SingleAsync()).NetAmount);
         var service=new PayoutService(check,new EligibleMua());var p=await service.CreateAsync(ids.Mua,new(){BankAccountId=ids.Bank,IdempotencyKey="retained-ledger"});
@@ -169,6 +180,11 @@ public sealed class ImmediatePayoutTests
         Assert.Equal("23514",(await Assert.ThrowsAsync<Npgsql.PostgresException>(()=>db.Database.ExecuteSqlInterpolatedAsync($"UPDATE \"MuaReceivables\" SET \"Status\"=1 WHERE \"Id\"={rid}"))).SqlState);
     }
 
+    private static async Task ExecuteGuardSqlAsync(ApplicationDbContext db,string sql) {
+        await db.Database.OpenConnectionAsync();
+        try { await using var command=db.Database.GetDbConnection().CreateCommand();command.CommandText=sql;await command.ExecuteNonQueryAsync(); }
+        finally { await db.Database.CloseConnectionAsync(); }
+    }
     private static Task<int> Tombstone(ApplicationDbContext db,Guid id) => db.Database.ExecuteSqlInterpolatedAsync($"UPDATE \"Users\" SET \"DeletedAt\"={DateTime.UtcNow},\"IsActive\"=FALSE,\"Email\"=NULL,\"FullName\"=NULL,\"AvatarUrl\"=NULL,\"PhoneNumber\"=NULL WHERE \"UserId\"={id}");
 
     private static BeautyBookBackend.Services.BookingService BookingServiceFor(ApplicationDbContext db){var config=new ConfigurationBuilder().Build();var time=new BookingTimeService(config);return new(new BookingRepository(db),new MuaRepository(db),new ReviewRepository(db),new UnitOfWork(db),new BookingNotificationService(db,time),db,null!,new RefundService(db,new MuaReceivableService(db),null!,config,Microsoft.Extensions.Logging.Abstractions.NullLogger<RefundService>.Instance),null!,new MuaReceivableService(db),config,null!,null!,time);}

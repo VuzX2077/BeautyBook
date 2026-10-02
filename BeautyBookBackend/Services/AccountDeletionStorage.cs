@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace BeautyBookBackend.Services;
 
-public sealed class AccountDeletionStorage(ApplicationDbContext db, IVerificationStorage storage)
+public sealed class AccountDeletionStorage(ApplicationDbContext db, IVerificationStorage storage, IFinancialStorage? financialStorage = null)
 {
     public async Task ProcessAsync(Guid owner, CancellationToken ct)
     {
@@ -19,28 +19,34 @@ public sealed class AccountDeletionStorage(ApplicationDbContext db, IVerificatio
                 throw new InvalidOperationException("Account deletion precondition failed.");
             await LegacyMediaWriteGuard.VerifyCoverageAsync(db, ct);
             await AccountDeletionService.VerifyWriterCoverageAsync(db, ct);
+            await FinancialMediaWriteGuard.VerifyCoverageAsync(db, ct);
             request.Attempts++; request.Status = "PendingStorage";
             await db.SaveChangesAsync(ct);
             var review = request.UnresolvedReferences.Count > 0;
             foreach (var item in await db.VerificationMedia.Where(x => x.OwnerId == owner).ToListAsync(ct)) {
+                var isFinancial = item.Purpose == FinancialMediaService.Purpose;
+                var target = isFinancial ? financialStorage ?? throw new InvalidOperationException("Financial storage is unavailable.") : storage;
                 // A timed-out upload can have reached the provider despite a missing response.
                 // Keep the durable manifest and defer confirmation while that upload settles.
                 if (item.ReadyAt == null && item.CreatedAt > DateTime.UtcNow.AddMinutes(-10))
                     throw new InvalidOperationException("Incomplete upload requires a later deletion confirmation.");
-                if (item.ObjectKey != $"verification/{owner:N}/{item.Id:N}.jpg" || item.DeletedAt == null)
+                if (isFinancial && (item.ObjectKey != FinancialMediaService.ObjectKey(owner, item.Id) || item.StorageLocationId == null)) { review = true; continue; }
+                if (item.ObjectKey != (isFinancial ? FinancialMediaService.ObjectKey(owner, item.Id) : $"verification/{owner:N}/{item.Id:N}.jpg") || item.DeletedAt == null)
                     throw new InvalidOperationException("Storage ownership invariant failed.");
                 if (item.StorageLocationId == null) {
                     // Legacy metadata has no bucket binding. Never treat a 404 from a
                     // different project/bucket as proof that the original was erased.
                     try {
-                        var bytes = await storage.DownloadAsync(item.ObjectKey, ct: ct);
+                        var bytes = await target.DownloadAsync(item.ObjectKey, ct: ct);
                         if (Convert.ToHexString(SHA256.HashData(bytes)) != item.Sha256) { review = true; continue; }
-                        item.StorageLocationId = storage.LocationId; await db.SaveChangesAsync(ct);
+                        item.StorageLocationId = target.LocationId; await db.SaveChangesAsync(ct);
                     } catch (StorageObjectMissingException) { review = true; continue; }
                 }
-                if (item.StorageLocationId != storage.LocationId)
+                if (item.StorageLocationId != target.LocationId)
                     throw new InvalidOperationException("Storage location differs from the recorded upload.");
                 if (await HasReferenceAsync(VerificationMediaService.Reference(item.Id), ct)) { review = true; continue; }
+                if (isFinancial && await FinancialMediaService.HasReferenceAsync(db, item.Id, ct)) { review = true; continue; }
+                if (isFinancial && item.LegacyObjectKey != null && item.LegacyDeletedAt == null) { review = true; continue; }
                 // Legacy source has a migration checksum, but must also be unreferenced now.
                 if (item.LegacyObjectKey != null && item.LegacyDeletedAt == null) {
                     var canDeleteLegacy = item.LegacyLocationVerified && item.LegacySha256 != null && !await HasReferenceAsync(item.LegacyObjectKey, ct);
@@ -57,8 +63,8 @@ public sealed class AccountDeletionStorage(ApplicationDbContext db, IVerificatio
                     } else review = true;
                 }
                 if (item.StorageDeletedAt == null) {
-                    await storage.EnsurePrivateAsync(ct);
-                    await DeleteAndConfirmAsync(item.ObjectKey, false, ct);
+                    await target.EnsurePrivateAsync(ct);
+                    await DeleteAndConfirmAsync(item.ObjectKey, false, ct, target);
                     item.StorageDeletedAt = DateTime.UtcNow; await db.SaveChangesAsync(ct);
                 }
                 if (item.StorageDeletedAt != null && (item.LegacyObjectKey == null || item.LegacyDeletedAt != null)) {
@@ -87,10 +93,11 @@ public sealed class AccountDeletionStorage(ApplicationDbContext db, IVerificatio
         }
     }
 
-    private async Task DeleteAndConfirmAsync(string key, bool legacy, CancellationToken ct)
+    private async Task DeleteAndConfirmAsync(string key, bool legacy, CancellationToken ct, IVerificationStorage? target = null)
     {
-        await storage.DeleteAsync(key, legacy, ct);
-        try { await storage.DownloadAsync(key, legacy, ct); }
+        target ??= storage;
+        await target.DeleteAsync(key, legacy, ct);
+        try { await target.DownloadAsync(key, legacy, ct); }
         catch (StorageObjectMissingException) { return; }
         throw new InvalidOperationException("Storage deletion is not confirmed.");
     }

@@ -113,7 +113,7 @@ public sealed class VerificationMediaMaintenance(ApplicationDbContext db, Verifi
         // Fail before any DELETE if the provider cannot prove the bucket is private now.
         await storage.EnsurePrivateAsync(ct);
         await LegacyMediaWriteGuard.VerifyCoverageAsync(db, ct);
-        var rows = await db.VerificationMedia.Where(x => x.LegacyObjectKey != null && x.LegacyDeletedAt == null && x.DeletedAt == null && x.ReadyAt != null && x.AttachedAt != null).ToListAsync(ct);
+        var rows = await db.VerificationMedia.Where(x => x.Purpose != FinancialMediaService.Purpose && x.LegacyObjectKey != null && x.LegacyDeletedAt == null && x.DeletedAt == null && x.ReadyAt != null && x.AttachedAt != null).ToListAsync(ct);
         foreach (var item in rows)
         {
             var key = item.LegacyObjectKey!;
@@ -139,7 +139,7 @@ public sealed class VerificationMediaMaintenance(ApplicationDbContext db, Verifi
     private async Task CleanupOrphansAsync(CancellationToken ct)
     {
         var cutoff = DateTime.UtcNow.AddHours(-24);
-        var rows = await db.VerificationMedia.Where(x => x.CreatedAt < cutoff && (x.LegacyObjectKey == null || x.LegacyDeletedAt != null)
+        var rows = await db.VerificationMedia.Where(x => x.Purpose != FinancialMediaService.Purpose && x.CreatedAt < cutoff && (x.LegacyObjectKey == null || x.LegacyDeletedAt != null)
             && !db.AccountDeletionRequests.Any(r => r.UserId == x.OwnerId && r.DatabaseCompletedAt != null)).ToListAsync(ct);
         var count = 0;
         foreach (var item in rows)

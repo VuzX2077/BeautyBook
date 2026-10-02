@@ -36,10 +36,29 @@ namespace BeautyBookBackend.Controllers
     [Route("api/admin/payouts")]
     public class AdminPayoutController : ControllerBase
     {
-        private readonly IPayoutService _service;public AdminPayoutController(IPayoutService service)=>_service=service;
+        private readonly IPayoutService _service;
+        private readonly FinancialMediaService? _financial;
+        public AdminPayoutController(IPayoutService service, FinancialMediaService? financial = null) { _service=service; _financial=financial; }
         private Guid CurrentUserId=>Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value??Guid.Empty.ToString());
         [HttpGet]public async Task<IActionResult> Pending()=>Ok(await _service.GetPendingAdminAsync());
         [HttpGet("{id:guid}")]public async Task<IActionResult> ById(Guid id){var payout=await _service.GetAdminByIdAsync(id);return payout==null?NotFound():Ok(payout);}
+        [HttpGet("{id:guid}/transfer-qr")]
+        [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+        public async Task<IActionResult> TransferQr(Guid id)
+        {
+            var payout = await _service.GetAdminByIdAsync(id);
+            if (payout == null) return NotFound();
+            try {
+                if (payout.BankCode == "MOMO") {
+                    var image = _financial == null ? null : await _financial.PayoutImageAsync(id, HttpContext.RequestAborted);
+                    if (image == null) return Conflict(new { Code = "PAYOUT_QR_UNAVAILABLE", Message = "Không có QR MoMo riêng tư hợp lệ. Hãy đối chiếu thông tin và chuyển thủ công." });
+                    return Ok(new { PayoutId = payout.Id, payout.Amount, ImageDataUrl = image, Kind = "MOMO_ORIGINAL", ContainsPayoutAmount = false });
+                }
+                return Ok(new { PayoutId = payout.Id, payout.Amount, ImageDataUrl = PayoutQrGenerator.ImageDataUrl(payout), Kind = "BANK_GENERATED", ContainsPayoutAmount = true });
+            }
+            catch (InvalidOperationException) { return Conflict(new { Code = "PAYOUT_QR_UNAVAILABLE", Message = "QR chưa khả dụng. Hãy kiểm tra thông tin nhận tiền và chuyển thủ công." }); }
+            catch (HttpRequestException) { return StatusCode(503, new { Code = "PAYOUT_QR_UNAVAILABLE", Message = "Chưa thể đọc QR riêng tư. Thông tin chuyển thủ công vẫn khả dụng." }); }
+        }
         [HttpPost("{id:guid}/start-processing")]public async Task<IActionResult> Start(Guid id,PayoutActionRequest r){var x=await _service.StartProcessingAsync(id,CurrentUserId,r.Reference);return x==null?Conflict():Ok(x);}
         [HttpPost("{id:guid}/complete")]public async Task<IActionResult> Complete(Guid id,PayoutCompleteRequest r){var x=await _service.CompleteAsync(id,CurrentUserId,r.Reference);return x==null?Conflict():Ok(x);}
         [HttpPost("{id:guid}/fail")]public async Task<IActionResult> Fail(Guid id,PayoutFailRequest r){var x=await _service.FailAsync(id,CurrentUserId,r.FailureCode,r.FailureMessage,r.ConfirmedFundsNotSent);return x==null?Conflict():Ok(x);}

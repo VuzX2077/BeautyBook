@@ -8,6 +8,7 @@ using System.Net.WebSockets;
 using BeautyBookBackend.Data;
 using BeautyBookBackend.Models;
 using BeautyBookBackend.Models.Enums;
+using BeautyBookBackend.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -24,6 +25,45 @@ namespace BeautyBookBackend.Tests;
 public sealed class PrivateMediaHttpTests
 {
     private const string Key = "local-integration-only-key-at-least-32-bytes";
+    [PostgreSqlFact]
+    public async Task TransferQrIsAdminOnlyPerPayoutAndNeverUsesLegacyImageOrStorage()
+    {
+        await using var database = await PostgreSqlDatabase.CreateMigratedAsync();
+        var admin = Guid.NewGuid(); var customer = Guid.NewGuid(); var mua = Guid.NewGuid();
+        var first = Guid.NewGuid(); var second = Guid.NewGuid();
+        await using (var db = database.CreateContext()) {
+            foreach (var (id, role) in new[] { (admin, UserRole.Admin), (customer, UserRole.Customer), (mua, UserRole.MUA) })
+                db.Users.Add(new User { UserId = id, Role = role, Email = $"{id}@example.test", PasswordHash = "test", IsActive = true });
+            db.MakeupArtistProfiles.Add(new() { MUAId = mua });
+            db.Payouts.AddRange(new Payout { Id = first, MuaId = mua, RequestedBy = mua, IdempotencyKey = "first", Status = PayoutStatus.Processing, Amount = 12345, BankCodeSnapshot = "VCB", BankBinSnapshot = "970436", AccountNumberSnapshot = "1234567890", AccountHolderNameSnapshot = "TEST FIRST", QrCodeUrlSnapshot = "https://test.invalid/storage/v1/object/public/images/legacy.png" },
+                new Payout { Id = second, MuaId = mua, RequestedBy = mua, IdempotencyKey = "second", Status = PayoutStatus.Processing, Amount = 67890, BankCodeSnapshot = "VCB", BankBinSnapshot = "970436", AccountNumberSnapshot = "9876543210", AccountHolderNameSnapshot = "TEST SECOND" });
+            await db.SaveChangesAsync();
+        }
+        await using var factory = new LocalFactory(database.ConnectionString); using var client = factory.CreateClient();
+        var path = $"/api/admin/payouts/{first}/transfer-qr";
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync(path)).StatusCode);
+        foreach (var (id, role) in new[] { (customer, UserRole.Customer), (mua, UserRole.MUA) }) {
+            client.DefaultRequestHeaders.Authorization = new("Bearer", Token(id, role));
+            Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync(path)).StatusCode);
+        }
+        client.DefaultRequestHeaders.Authorization = new("Bearer", Token(admin, UserRole.Admin));
+        foreach (var (id, amount, number, name) in new[] { (first, 12345, "1234567890", "TEST FIRST"), (second, 67890, "9876543210", "TEST SECOND") }) {
+            var detail = await client.GetFromJsonAsync<System.Text.Json.JsonElement>($"/api/admin/payouts/{id}");
+            Assert.Equal(number, detail.GetProperty("accountNumber").GetString()); Assert.Equal(name, detail.GetProperty("accountHolderName").GetString());
+            Assert.Equal(System.Text.Json.JsonValueKind.Null, detail.GetProperty("qrCodeUrl").ValueKind);
+            var response = await client.GetAsync($"/api/admin/payouts/{id}/transfer-qr"); Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.True(response.Headers.CacheControl!.NoStore);
+            var json = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+            Assert.Equal(id, json.GetProperty("payoutId").GetGuid()); Assert.Equal((decimal)amount, json.GetProperty("amount").GetDecimal());
+            var bytes = Convert.FromBase64String(json.GetProperty("imageDataUrl").GetString()!.Split(',')[1]);
+            var decoded = BankQrDecoder.DecodeImage(bytes); Assert.Equal(number, decoded.AccountNumber); Assert.Equal("970436", decoded.BankBin);
+            Assert.Contains("54" + amount.ToString().Length.ToString("D2") + amount, decoded.RawPayload);
+            Assert.Contains("BB" + id.ToString("N")[..23].ToUpperInvariant(), decoded.RawPayload);
+        }
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"/api/admin/payouts/{Guid.NewGuid()}/transfer-qr")).StatusCode);
+        await using var check = database.CreateContext(); Assert.Empty(await check.OwnedPublicMedia.ToListAsync());
+        Assert.Contains("legacy.png", (await check.Payouts.FindAsync(first))!.QrCodeUrlSnapshot);
+    }
     [PostgreSqlFact]
     public async Task AccountDeletionAbortsAnAlreadyConnectedChatSession()
     {
@@ -132,10 +172,10 @@ public sealed class PrivateMediaHttpTests
         Assert.Single(await check.PrivateMediaJobs.ToListAsync());
         Assert.Equal("Queued", (await check.PrivateMediaJobs.SingleAsync()).Status);
     }
-    private static string Token(Guid id, UserRole role) => new JwtSecurityTokenHandler().WriteToken(new JwtSecurityToken(
+    internal static string Token(Guid id, UserRole role) => new JwtSecurityTokenHandler().WriteToken(new JwtSecurityToken(
         "local-test", "local-test", [new Claim(ClaimTypes.NameIdentifier, id.ToString()), new Claim(ClaimTypes.Role, role.ToString())],
         expires: DateTime.UtcNow.AddMinutes(5), signingCredentials: new SigningCredentials(new SymmetricSecurityKey(Encoding.UTF8.GetBytes(Key)), SecurityAlgorithms.HmacSha256)));
-    private sealed class LocalFactory(string connection, string environment = "Testing", bool applyMigrations = false) : WebApplicationFactory<Program>
+    internal sealed class LocalFactory(string connection, string environment = "Testing", bool applyMigrations = false, IFinancialStorage? financialStorage = null) : WebApplicationFactory<Program>
     {
         protected override IHost CreateHost(IHostBuilder builder)
         {
@@ -160,6 +200,7 @@ public sealed class PrivateMediaHttpTests
                 services.RemoveAll<DbContextOptions<ApplicationDbContext>>();
                 services.RemoveAll<ApplicationDbContext>();
                 services.AddDbContext<ApplicationDbContext>(options => options.UseNpgsql(connection));
+                if(financialStorage != null) { services.RemoveAll<IFinancialStorage>(); services.AddSingleton(financialStorage); }
                 services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, options => options.TokenValidationParameters = new TokenValidationParameters {
                     ValidateIssuer = true, ValidateAudience = true, ValidateLifetime = true, ValidateIssuerSigningKey = true,
                     ValidIssuer = "local-test", ValidAudience = "local-test", IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(Key)),

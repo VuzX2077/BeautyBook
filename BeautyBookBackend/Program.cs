@@ -199,6 +199,10 @@ builder.Services.AddRateLimiter(options => options.AddConcurrencyLimiter("media-
 builder.Services.AddScoped<VerificationMediaMaintenance>();
 builder.Services.AddHostedService<PrivateMediaMaintenanceWorker>();
 builder.Services.AddHttpClient<IVerificationStorage, SupabaseVerificationStorage>(client => client.Timeout = TimeSpan.FromSeconds(30));
+builder.Services.AddHttpClient<IFinancialStorage, SupabaseFinancialStorage>(client => client.Timeout = TimeSpan.FromSeconds(30));
+builder.Services.AddScoped<FinancialMediaService>();
+builder.Services.AddScoped<FinancialMediaCleanup>();
+builder.Services.AddHostedService<FinancialMediaCleanupWorker>();
 
 builder.Services.AddScoped<IMuaScheduleService, MuaScheduleService>();
 builder.Services.AddSingleton<BookingTimeService>();

@@ -36,6 +36,24 @@ public sealed class AccountDeletionTests
     private static AccountDeletionService Service(ApplicationDbContext db, Storage storage) => new(db, storage, new AccountConnections());
 
     [PostgreSqlFact]
+    public async Task LegacyOwnedBankQrIsDeletedAfterReferencesAreCapturedAndCleared()
+    {
+        await using var database = await PostgreSqlDatabase.CreateMigratedAsync();
+        await using var db = database.CreateContext(); var storage = new Storage(); var owner = Guid.NewGuid();
+        db.Users.Add(User(owner));
+        var media = new OwnedPublicMedia { Id = Guid.NewGuid(), OwnerId = owner, CreatedAt = DateTime.UtcNow, ReadyAt = DateTime.UtcNow };
+        media.ObjectKey = $"uploads/{owner:N}/{media.Id:N}.png"; media.Url = "https://storage.test/" + media.ObjectKey;
+        storage.Public[media.ObjectKey] = [1]; db.OwnedPublicMedia.Add(media);
+        db.BankAccounts.Add(new BankAccount { Id = Guid.NewGuid(), UserId = owner, AccountNumber = "0912345678", AccountHolderName = "TEST ONLY", NormalizedAccountNumber = "0912345678", CanonicalBankKey = "MOMO", Method = "MOMO", QrCodeUrl = media.Url });
+        await db.SaveChangesAsync();
+        Assert.True((await Service(db, storage).DeleteAsync(owner)).Deleted);
+        await new AccountDeletionStorage(db, storage).ProcessAsync(owner, CancellationToken.None);
+        Assert.Empty(storage.Public); Assert.Empty(await db.BankAccounts.ToListAsync());
+        Assert.NotNull(media.StorageDeletedAt);
+        Assert.Equal("Completed", (await db.AccountDeletionRequests.SingleAsync()).Status);
+    }
+
+    [PostgreSqlFact]
     public async Task ChangedStorageLocationFailsClosedAndUnboundMissingLegacyNeedsReview()
     {
         await using var database = await PostgreSqlDatabase.CreateMigratedAsync(); await using var db = database.CreateContext(); var storage = new Storage(); var owner = Guid.NewGuid();

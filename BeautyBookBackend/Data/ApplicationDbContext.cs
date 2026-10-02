@@ -76,6 +76,9 @@ namespace BeautyBookBackend.Data
                 b.HasIndex(x => x.IsActive).IsUnique().HasFilter("\"IsActive\" = TRUE");
                 b.HasIndex(x => x.CreatedAt);
             });
+            modelBuilder.Entity<BankAccount>().HasOne<VerificationMedia>().WithMany().HasForeignKey(x => x.FinancialQrMediaId).OnDelete(DeleteBehavior.Restrict);
+            modelBuilder.Entity<Payout>().HasOne<VerificationMedia>().WithMany().HasForeignKey(x => x.FinancialQrMediaIdSnapshot).OnDelete(DeleteBehavior.Restrict);
+            modelBuilder.Entity<Refund>().HasOne<VerificationMedia>().WithMany().HasForeignKey(x => x.DestinationFinancialQrMediaId).OnDelete(DeleteBehavior.Restrict);
             modelBuilder.Entity<VerificationMedia>(b => {
                 b.HasKey(x => x.Id);
                 b.HasIndex(x => x.ObjectKey).IsUnique();

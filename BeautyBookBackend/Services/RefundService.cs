@@ -500,24 +500,26 @@ namespace BeautyBookBackend.Services
         private static void ClearDestination(Refund refund)
         {
             refund.DestinationBankAccountId=null;
+            refund.DestinationFinancialQrMediaId=null;
             refund.DestinationBankBin=null;
             refund.DestinationBankCode=null;
             refund.DestinationBankName=null;
             refund.DestinationAccountNumber=null;
             refund.DestinationAccountName=null;
-            refund.DestinationQrCodeUrl=null;
+            // Deprecated image evidence remains until owner-aware cleanup/deletion.
             refund.DestinationCapturedAt=null;
         }
 
         private static void CaptureDestination(Refund refund, BankAccount bank, DateTime now)
         {
             refund.DestinationBankAccountId = bank.Id;
+            refund.DestinationFinancialQrMediaId = bank.FinancialQrMediaId;
             refund.DestinationBankBin = bank.BankBin;
             refund.DestinationBankCode = bank.BankCode;
             refund.DestinationBankName = bank.BankName;
             refund.DestinationAccountNumber = bank.AccountNumber;
             refund.DestinationAccountName = bank.AccountHolderName;
-            refund.DestinationQrCodeUrl = bank.QrCodeUrl;
+            // Do not copy QR images into new snapshots or erase legacy evidence.
             refund.DestinationCapturedAt = now;
         }
 
@@ -576,7 +578,7 @@ namespace BeautyBookBackend.Services
             LastProviderState = refund.LastProviderState, AttemptCount = refund.AttemptCount,
             DestinationBankBin = refund.DestinationBankBin, DestinationBankCode = refund.DestinationBankCode, DestinationBankName = refund.DestinationBankName,
             DestinationAccountNumber = refund.DestinationAccountNumber,
-            DestinationQrCodeUrl = refund.DestinationQrCodeUrl,
+            DestinationQrCodeUrl = null,
             MaskedDestinationAccountNumber = refund.DestinationAccountNumber == null ? null : Mask(refund.DestinationAccountNumber),
             DestinationAccountName = refund.DestinationAccountName, CreatedAt = refund.CreatedAt,
             ProcessingAt = refund.ProcessingAt, CompletedAt = refund.CompletedAt, FailedAt = refund.FailedAt,

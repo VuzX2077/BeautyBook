@@ -13,6 +13,7 @@ public sealed class BankAccount
     public string CanonicalBankKey { get; set; } = string.Empty;
     public string NormalizedAccountNumber { get; set; } = string.Empty;
     public string? QrCodeUrl { get; set; }
+    public Guid? FinancialQrMediaId { get; set; }
     public string VerificationStatus { get; set; } = "PENDING_ADMIN";
     public DateTime? ActivatedAt { get; set; }
     public bool IsDefault { get; set; }

@@ -1,0 +1,86 @@
+Git read-only snapshot — tracked diffs plus untracked inventory. No commit/staging/push.
+
+D:/EXE/BeautyBook
+Branch: feature/fixdelete
+HEAD: 9288af5efe56140f5f8c838c4c1ffb212962c5ac
+git diff --stat
+ BeautyBookBackend.Tests/AccountDeletionTests.cs    | 18 ++++++++
+ BeautyBookBackend.Tests/BankAccountServiceTests.cs | 23 +++++++++-
+ BeautyBookBackend.Tests/CustomerRefundFlowTests.cs |  2 +
+ BeautyBookBackend.Tests/ImmediatePayoutTests.cs    | 20 ++++++++-
+ BeautyBookBackend.Tests/PrivateMediaHttpTests.cs   | 45 ++++++++++++++++++-
+ .../Controllers/AdminBankAccountController.cs      |  2 +-
+ BeautyBookBackend/Controllers/PayoutController.cs  | 21 ++++++++-
+ BeautyBookBackend/Controllers/UploadController.cs  | 50 +++++++---------------
+ BeautyBookBackend/DTOs/BankAccountDtos.cs          |  2 +
+ BeautyBookBackend/Data/ApplicationDbContext.cs     |  3 ++
+ .../ApplicationDbContextModelSnapshot.cs           | 40 ++++++++++++++---
+ BeautyBookBackend/Models/BankAccount.cs            |  1 +
+ BeautyBookBackend/Models/Payout.cs                 |  1 +
+ BeautyBookBackend/Models/Refund.cs                 |  1 +
+ BeautyBookBackend/Program.cs                       |  4 ++
+ BeautyBookBackend/Services/AccountDeletionData.cs  |  4 +-
+ .../Services/AccountDeletionStorage.cs             | 27 +++++++-----
+ .../Services/BankAccountEligibility.cs             |  6 +--
+ BeautyBookBackend/Services/BankAccountService.cs   | 31 +++++++++++---
+ BeautyBookBackend/Services/PayoutService.cs        |  6 +--
+ BeautyBookBackend/Services/RefundService.cs        |  8 ++--
+ .../Services/SupabaseVerificationStorage.cs        |  4 +-
+ .../Services/VerificationMediaMaintenance.cs       |  4 +-
+ .../Services/VerificationMediaService.cs           | 11 +++--
+ 24 files changed, 252 insertions(+), 82 deletions(-)
+
+UNTRACKED (not included in git diff --stat):
+BeautyBookBackend.Tests/FinancialMomoTests.cs
+BeautyBookBackend.Tests/FinancialQrSecurityTests.cs
+BeautyBookBackend.Tests/FinancialStorageTests.cs
+BeautyBookBackend.Tests/PayoutQrTests.cs
+BeautyBookBackend/Controllers/FinancialMediaController.cs
+BeautyBookBackend/Migrations/20261002182347_AddPrivateFinancialQrReferences.Designer.cs
+BeautyBookBackend/Migrations/20261002182347_AddPrivateFinancialQrReferences.cs
+BeautyBookBackend/Services/FinancialMediaCleanup.cs
+BeautyBookBackend/Services/FinancialMediaService.cs
+BeautyBookBackend/Services/FinancialMediaWriteGuard.cs
+BeautyBookBackend/Services/IFinancialStorage.cs
+BeautyBookBackend/Services/PayoutQrGenerator.cs
+docs/FINAL-IMPLEMENTATION-POLICY-AUDIT-2026-10-03.md
+docs/FINANCIAL-QR-SECURITY-FIX-2026-10-03.md
+docs/financial-qr-git-diff-stat.txt
+docs/financial-qr-legacy-inventory.sql
+
+D:/EXE/bbeauty-app
+Branch: feature/payouts
+HEAD: 72d459a4acd7d8319dfc175d1a7d201b00908d1a
+git diff --stat
+ app/(admin)/bank-accounts/index.tsx      |  2 +-
+ app/(admin)/payouts/[id].tsx             | 18 ++++++++++++--
+ app/(admin)/refunds/[id].tsx             |  2 +-
+ app/(mua)/bank-account-form.tsx          | 42 +++++++++++++++++++-------------
+ app/(mua)/bank-accounts.tsx              |  2 +-
+ app/refund-bank-account-form.tsx         | 17 ++++++-------
+ docs/chinhsach.txt                       | 20 ++++++++++-----
+ repositories/ApiBankAccountRepository.ts |  2 +-
+ services/adminPayoutService.ts           |  6 +++++
+ services/supabase.ts                     | 14 ++++++++---
+ types/bankAccount.ts                     |  4 +--
+ 11 files changed, 86 insertions(+), 43 deletions(-)
+
+UNTRACKED (not included in git diff --stat):
+app/__tests__/adminPayoutQr.test.tsx
+app/__tests__/financialQrForms.test.tsx
+services/__tests__/financialQr.test.ts
+services/financialMediaService.ts
+
+D:/EXE/bbook-web
+Branch: feature/policypage
+HEAD: b42d32bcf63580ee29a4720e67a24eb5382e7a81
+git diff --stat
+ delete-account.html       |  4 ++--
+ delete-account/index.html |  4 ++--
+ legal/content.json        | 20 ++++++++++++--------
+ legal/privacy.txt         | 20 ++++++++++++++------
+ privacy.html              | 18 +++++++++++-------
+ privacy/index.html        | 18 +++++++++++-------
+ 6 files changed, 52 insertions(+), 32 deletions(-)
+
+UNTRACKED (not included in git diff --stat):

@@ -21,11 +21,13 @@ public sealed class SupabaseVerificationStorage : IVerificationStorage
         }
     }
     public SupabaseVerificationStorage(HttpClient http, IConfiguration config)
+        : this(http, config, config["Supabase:VerificationBucket"] ?? Environment.GetEnvironmentVariable("SUPABASE_VERIFICATION_BUCKET") ?? "verification-private") { }
+    internal SupabaseVerificationStorage(HttpClient http, IConfiguration config, string privateBucket)
     {
         _http = http;
         _origin = (config["Supabase:Url"] ?? Environment.GetEnvironmentVariable("SUPABASE_URL") ?? "").TrimEnd('/');
         _secret = config["Supabase:ServiceRoleKey"] ?? Environment.GetEnvironmentVariable("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-        _bucket = config["Supabase:VerificationBucket"] ?? Environment.GetEnvironmentVariable("SUPABASE_VERIFICATION_BUCKET") ?? "verification-private";
+        _bucket = privateBucket;
         _legacyBucket = config["Supabase:StorageBucket"] ?? Environment.GetEnvironmentVariable("SUPABASE_STORAGE_BUCKET") ?? "images";
     }
     private void ValidateConfig()

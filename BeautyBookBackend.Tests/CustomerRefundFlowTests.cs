@@ -40,6 +40,7 @@ public sealed class CustomerRefundFlowTests
     public async Task EnsureRefund_with_destination_starts_pending_and_masks_customer_response()
     {
         await using var store = await RefundStore.CreateAsync(withUsableBank: true);
+        var bank = await store.Db.BankAccounts.SingleAsync(); bank.QrCodeUrl = "https://test.invalid/storage/v1/object/public/images/legacy.png";
         var refund = await store.Service.EnsureRefundAsync(store.Booking, store.Payment, 100_000,
             RefundReasonCode.MuaRejected, "MUA từ chối", store.MuaId);
         await store.Db.SaveChangesAsync();
@@ -47,6 +48,7 @@ public sealed class CustomerRefundFlowTests
 
         var detail = await store.Service.GetCustomerRefundAsync(refund.RefundId, store.CustomerId);
         Assert.NotNull(detail);
+        Assert.Null(refund.DestinationQrCodeUrl); Assert.DoesNotContain("object/public", JsonSerializer.Serialize(detail));
         Assert.Equal(RefundStatus.Pending, detail.Status);
         Assert.Equal("**1111", detail.MaskedDestinationAccountNumber);
         Assert.DoesNotContain("111111", JsonSerializer.Serialize(detail));

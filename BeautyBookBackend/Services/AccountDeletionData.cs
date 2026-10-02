@@ -64,11 +64,11 @@ public sealed partial class AccountDeletionService
         await _context.Refunds.Where(x => x.Booking!.CustomerId == userId || x.Booking.MUAId == userId).ExecuteUpdateAsync(x => x
             .SetProperty(r => r.Reason, "").SetProperty(r => r.FailureMessage, (string?)null));
         await _context.Refunds.Where(x => x.Booking!.CustomerId == userId || x.DestinationBankAccount!.UserId == userId).ExecuteUpdateAsync(x => x
-            .SetProperty(r => r.DestinationBankAccountId, (Guid?)null).SetProperty(r => r.DestinationAccountName, (string?)null)
+            .SetProperty(r => r.DestinationBankAccountId, (Guid?)null).SetProperty(r => r.DestinationFinancialQrMediaId, (Guid?)null).SetProperty(r => r.DestinationAccountName, (string?)null)
             .SetProperty(r => r.DestinationAccountNumber, (string?)null).SetProperty(r => r.DestinationQrCodeUrl, (string?)null)
             .SetProperty(r => r.DestinationBankBin, (string?)null).SetProperty(r => r.DestinationBankCode, (string?)null).SetProperty(r => r.DestinationBankName, (string?)null));
         await _context.Payouts.Where(x => x.MuaId == userId || x.BankAccount!.UserId == userId).ExecuteUpdateAsync(x => x
-            .SetProperty(p => p.BankAccountId, (Guid?)null).SetProperty(p => p.BankCodeSnapshot, "").SetProperty(p => p.BankBinSnapshot, (string?)null)
+            .SetProperty(p => p.BankAccountId, (Guid?)null).SetProperty(p => p.FinancialQrMediaIdSnapshot, (Guid?)null).SetProperty(p => p.BankCodeSnapshot, "").SetProperty(p => p.BankBinSnapshot, (string?)null)
             .SetProperty(p => p.BankNameSnapshot, (string?)null).SetProperty(p => p.AccountNumberSnapshot, "").SetProperty(p => p.AccountHolderNameSnapshot, "")
             .SetProperty(p => p.QrCodeUrlSnapshot, (string?)null).SetProperty(p => p.FailureMessage, (string?)null));
         await _context.BankAccounts.Where(x => x.UserId == userId).ExecuteDeleteAsync();

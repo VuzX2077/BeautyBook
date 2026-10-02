@@ -6,12 +6,13 @@ using Microsoft.EntityFrameworkCore;
 
 namespace BeautyBookBackend.Services;
 
-public sealed class BankAccountService(ApplicationDbContext db, IEmailOtpService emailOtpService) : IBankAccountService
+public sealed class BankAccountService(ApplicationDbContext db, IEmailOtpService emailOtpService, FinancialMediaService? financial = null) : IBankAccountService
 {
     public const string AddPurpose = "BANK_ACCOUNT_ADD";
     public const string UpdatePurpose = "BANK_ACCOUNT_UPDATE";
     private static readonly Dictionary<string, string> CodeToBin = new(StringComparer.OrdinalIgnoreCase)
     { ["MB"]="970422",["VCB"]="970436",["TCB"]="970407",["ACB"]="970416",["VPB"]="970432",["BIDV"]="970418",["ICB"]="970415",["VBA"]="970405",["STB"]="970403",["TPB"]="970423",["VIB"]="970441",["SHB"]="970443",["HDB"]="970437",["OCB"]="970448" };
+    internal static bool BankBinMatchesKnownCode(string code, string? bin) => !CodeToBin.TryGetValue(code, out var expected) || expected == bin;
 
     public async Task<IReadOnlyList<BankAccountDto>> GetAsync(Guid userId) =>
         (await db.BankAccounts.AsNoTracking().Where(x => x.UserId == userId && x.IsActive)
@@ -61,6 +62,11 @@ public sealed class BankAccountService(ApplicationDbContext db, IEmailOtpService
             QrCodeUrl=value.Qr, VerificationStatus=BankAccountEligibility.Pending, ActivatedAt=null,
             IsActive=true, IsDefault=false, CreatedAt=now, UpdatedAt=now
         };
+        entity.FinancialQrMediaId = value.Method == "MOMO" ? request.FinancialQrMediaId : null;
+        if (entity.FinancialQrMediaId.HasValue) {
+            if (financial == null) throw new InvalidOperationException("Financial media service unavailable.");
+            await financial.AttachAsync(userId, entity.Id, value.AccountNumber, entity.FinancialQrMediaId.Value);
+        }
         db.BankAccounts.Add(entity);
         await db.SaveChangesAsync();
         await tx.CommitAsync();
@@ -79,6 +85,8 @@ public sealed class BankAccountService(ApplicationDbContext db, IEmailOtpService
         var sensitive = BankAccountEligibility.HasSensitiveChanges(
             entity.BankCode+"|"+entity.BankBin, entity.AccountNumber, entity.AccountHolderName, entity.Method, entity.QrCodeUrl,
             value.BankCode+"|"+value.BankBin, value.AccountNumber, value.Holder, value.Method, value.Qr);
+        var newFinancialId = value.Method == "MOMO" ? request.FinancialQrMediaId : null;
+        sensitive |= entity.FinancialQrMediaId != newFinancialId;
         if (!sensitive)
         {
             await tx.CommitAsync();
@@ -93,14 +101,22 @@ public sealed class BankAccountService(ApplicationDbContext db, IEmailOtpService
 
         var wasDefault = entity.IsDefault;
         var now = DateTime.UtcNow;
+        if (newFinancialId.HasValue) {
+            if (financial == null) throw new InvalidOperationException("Financial media service unavailable.");
+            await financial.AttachAsync(userId, id, value.AccountNumber, newFinancialId.Value);
+        }
+        var replacedFinancialId = entity.FinancialQrMediaId;
+        entity.FinancialQrMediaId = newFinancialId;
         entity.BankCode=value.BankCode; entity.BankBin=value.BankBin; entity.BankName=value.BankName;
         entity.AccountNumber=value.AccountNumber; entity.NormalizedAccountNumber=value.NormalizedAccountNumber;
         entity.CanonicalBankKey=value.CanonicalBankKey; entity.AccountHolderName=value.Holder;
-        entity.Method=value.Method; entity.QrCodeUrl=value.Qr; entity.UpdatedAt=now;
+        // Preserve legacy references for owner-aware cleanup, never accept a new QR URL.
+        entity.Method=value.Method; entity.UpdatedAt=now;
         entity.VerificationStatus=BankAccountEligibility.Pending; entity.ActivatedAt=null;
         entity.ReviewedAt=null; entity.ReviewedBy=null; entity.IsDefault=false;
         await db.SaveChangesAsync();
         if (wasDefault) await BankAccountDefaultManager.PromoteReplacementAsync(db, userId, id, now);
+        if (replacedFinancialId != newFinancialId && financial != null) await financial.MarkReplacedAsync(userId, replacedFinancialId);
         await tx.CommitAsync();
         return ToDto(entity);
     }
@@ -131,7 +147,7 @@ public sealed class BankAccountService(ApplicationDbContext db, IEmailOtpService
 
     private static string BuildContext(string operation, Guid userId, Guid? bankAccountId, NormalizedBank value) => string.Join('\n',
         operation, userId.ToString("N"), bankAccountId?.ToString("N") ?? string.Empty, value.BankCode, value.BankBin, NormalizeBankName(value.BankName),
-        value.NormalizedAccountNumber, value.Holder, value.Method, BankAccountEligibility.NormalizeQr(value.Qr));
+        value.NormalizedAccountNumber, value.Holder, value.Method, BankAccountEligibility.NormalizeQr(value.Qr), value.FinancialQrMediaId?.ToString("N") ?? "");
 
     private static string NormalizeBankName(string? value) =>
         string.Join(' ', (value ?? string.Empty).Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries)).ToUpperInvariant();
@@ -145,7 +161,7 @@ public sealed class BankAccountService(ApplicationDbContext db, IEmailOtpService
         return email[0]+new string('*',Math.Max(3,at-1))+email[at..];
     }
 
-    private sealed record NormalizedBank(string BankCode,string BankBin,string BankName,string AccountNumber,string NormalizedAccountNumber,string Holder,string Method,string CanonicalBankKey,string? Qr);
+    private sealed record NormalizedBank(string BankCode,string BankBin,string BankName,string AccountNumber,string NormalizedAccountNumber,string Holder,string Method,string CanonicalBankKey,string? Qr,Guid? FinancialQrMediaId);
     private static NormalizedBank Normalize(BankAccountDraftRequest r)
     {
         var requestedMethod=BankAccountEligibility.NormalizeCode(r.Method); if(requestedMethod is not ("BANK" or "MOMO"))throw Invalid("Phương thức nhận tiền chỉ chấp nhận BANK hoặc MOMO.");
@@ -154,8 +170,9 @@ public sealed class BankAccountService(ApplicationDbContext db, IEmailOtpService
         if(method=="BANK"&&(!Regex.IsMatch(code,"^[A-Z0-9]{2,20}$")||!Regex.IsMatch(bin,"^[0-9]{6}$")))throw Invalid("Mã ngân hàng hoặc BIN không hợp lệ.");
         var account=BankAccountEligibility.NormalizeAccount(r.AccountNumber); var pattern=method=="MOMO"?"^(0|84)[0-9]{8,10}$":"^[A-Z0-9]{5,30}$"; if(!Regex.IsMatch(account,pattern))throw Invalid("Số tài khoản không hợp lệ.");
         var holder=BankAccountEligibility.NormalizeHolder(r.AccountHolderName); if(string.IsNullOrWhiteSpace(holder))throw Invalid("Tên chủ tài khoản là bắt buộc.");
-        var key=method=="MOMO"?"MOMO":"BIN:"+bin; var qr=string.IsNullOrWhiteSpace(r.QrCodeUrl)?(method=="BANK"?$"https://img.vietqr.io/image/{bin}-{account}-compact2.png":null):r.QrCodeUrl.Trim();
-        return new(code,bin,(r.BankName??string.Empty).Trim(),account,account,holder,method,key,qr);
+        var key=method=="MOMO"?"MOMO":"BIN:"+bin;
+        // Deprecated client QR URLs are ignored, including old public Supabase URLs.
+        return new(code,bin,(r.BankName??string.Empty).Trim(),account,account,holder,method,key,null,method=="MOMO"?r.FinancialQrMediaId:null);
     }
 
     private static BookingRuleException Duplicate()=>new("BANK_ACCOUNT_DUPLICATE","Tài khoản ngân hàng này đã tồn tại.",409);
@@ -168,7 +185,7 @@ public sealed class BankAccountService(ApplicationDbContext db, IEmailOtpService
         var reason=BankAccountEligibility.GetUnavailableReason(x.IsActive,x.VerificationStatus,x.ActivatedAt,DateTime.UtcNow);
         return new(){Id=x.Id,BankCode=x.BankCode,BankBin=x.BankBin,BankName=x.BankName,
             MaskedAccountNumber=x.AccountNumber.Length<=4?new string('*',x.AccountNumber.Length):new string('*',x.AccountNumber.Length-4)+x.AccountNumber[^4..],
-            AccountHolderName=x.AccountHolderName,Method=x.Method,QrCodeUrl=x.QrCodeUrl,VerificationStatus=x.VerificationStatus,
+            AccountHolderName=x.AccountHolderName,Method=x.Method,QrCodeUrl=null,FinancialQrMediaId=x.FinancialQrMediaId,VerificationStatus=x.VerificationStatus,
             ActivatedAt=x.ActivatedAt,IsDefault=x.IsDefault,IsActive=x.IsActive,IsUsable=reason==null,CanReceiveMoney=reason==null,
             IsCoolingDown=false,UnavailableReason=reason};
     }

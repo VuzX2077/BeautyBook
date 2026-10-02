@@ -21,8 +21,11 @@ public sealed class VerificationMediaService(ApplicationDbContext db, IVerificat
     }
     public Task<VerificationMedia> UploadChatAsync(Guid owner, Guid roomId, byte[] input, CancellationToken ct = default) =>
         UploadCoreAsync(owner, "chat", input, roomId, ct);
-    private async Task<VerificationMedia> UploadCoreAsync(Guid owner, string purpose, byte[] input, Guid? contextId, CancellationToken ct)
+    public Task<VerificationMedia> UploadFinancialAsync(Guid owner, byte[] input, IFinancialStorage financialStorage, CancellationToken ct = default) =>
+        UploadCoreAsync(owner, FinancialMediaService.Purpose, input, null, ct, financialStorage, "financial");
+    private async Task<VerificationMedia> UploadCoreAsync(Guid owner, string purpose, byte[] input, Guid? contextId, CancellationToken ct, IVerificationStorage? storageOverride = null, string prefix = "verification")
     {
+        var targetStorage = storageOverride ?? storage;
         await using var operation = new MediaOperationLock(db);
         await operation.AcquireAsync(ct);
         if (!await db.Users.AnyAsync(x => x.UserId == owner && x.IsActive && x.DeletedAt == null, ct))
@@ -31,15 +34,15 @@ public sealed class VerificationMediaService(ApplicationDbContext db, IVerificat
         var media = new VerificationMedia {
             Id = Guid.NewGuid(), OwnerId = owner, Purpose = purpose, ContextId = contextId, CreatedAt = DateTime.UtcNow,
             Sha256 = Convert.ToHexString(SHA256.HashData(bytes)), Size = bytes.Length,
-            StorageLocationId = storage.LocationId,
+            StorageLocationId = targetStorage.LocationId,
         };
-        media.ObjectKey = $"verification/{owner:N}/{media.Id:N}.jpg";
+        media.ObjectKey = $"{prefix}/{owner:N}/{media.Id:N}.jpg";
         // Record first so a provider timeout/crash never leaves an untracked private object.
         db.VerificationMedia.Add(media);
         await db.SaveChangesAsync(ct);
         try
         {
-            await storage.UploadAsync(media.ObjectKey, bytes, ct);
+            await targetStorage.UploadAsync(media.ObjectKey, bytes, ct);
             media.ReadyAt = DateTime.UtcNow;
             await db.SaveChangesAsync(ct);
         }

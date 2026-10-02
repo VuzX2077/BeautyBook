@@ -18,6 +18,24 @@ namespace BeautyBookBackend.Tests;
 public sealed class VerificationMediaSafetyTests
 {
     [Fact]
+    public void InvalidEncodingHasActionableError()
+    {
+        var error = Assert.Throws<ArgumentException>(() => VerificationImage.Normalize("not an image"u8.ToArray()));
+        Assert.Contains("định dạng", error.Message);
+        Assert.DoesNotContain("megapixel", error.Message);
+    }
+
+    [Fact]
+    public void OversizedImageIsRejectedBeforePixelDecoding()
+    {
+        using var bitmap = new SKBitmap(5000, 5000);
+        bitmap.Erase(SKColors.White);
+        using var image = SKImage.FromBitmap(bitmap);
+        using var encoded = image.Encode(SKEncodedImageFormat.Png, 100);
+        var error = Assert.Throws<ArgumentException>(() => VerificationImage.Normalize(encoded.ToArray()));
+        Assert.Contains("24 megapixel", error.Message);
+    }
+    [Fact]
     public void ReencodingRejectsFakeImagesAndRemovesTrailingMetadata()
     {
         Assert.Throws<ArgumentException>(() => VerificationImage.Normalize("not an image"u8.ToArray()));

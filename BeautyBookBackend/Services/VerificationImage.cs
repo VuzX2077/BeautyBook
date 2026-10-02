@@ -10,9 +10,12 @@ public static class VerificationImage
         if (source.Length == 0 || source.Length > MaxBytes) throw new ArgumentException("Ảnh vượt quá 10 MB hoặc không có dữ liệu.");
         using var data = SKData.CreateCopy(source);
         using var codec = SKCodec.Create(data);
-        if (codec == null || codec.EncodedFormat is not (SKEncodedImageFormat.Jpeg or SKEncodedImageFormat.Png or SKEncodedImageFormat.Webp)
-            || codec.Info.Width <= 0 || codec.Info.Height <= 0 || (long)codec.Info.Width * codec.Info.Height > 24_000_000)
-            throw new ArgumentException("Chọn ảnh JPEG, PNG hoặc WebP hợp lệ, tối đa 24 megapixel.");
+        if (codec == null || codec.EncodedFormat is not (SKEncodedImageFormat.Jpeg or SKEncodedImageFormat.Png or SKEncodedImageFormat.Webp))
+            throw new ArgumentException("Không đọc được định dạng ảnh. Vui lòng chụp lại hoặc chọn ảnh JPEG, PNG hoặc WebP hợp lệ.");
+        if (codec.Info.Width <= 0 || codec.Info.Height <= 0)
+            throw new ArgumentException("Kích thước ảnh không hợp lệ. Vui lòng chọn ảnh khác.");
+        if ((long)codec.Info.Width * codec.Info.Height > 24_000_000)
+            throw new ArgumentException("Ảnh vượt quá 24 megapixel. Vui lòng cập nhật app để ảnh được thu nhỏ trước khi tải lên.");
         using var bitmap = new SKBitmap(codec.Info.Width, codec.Info.Height);
         if (codec.GetPixels(bitmap.Info, bitmap.GetPixels()) != SKCodecResult.Success)
             throw new ArgumentException("Ảnh bị hỏng hoặc không đọc được.");

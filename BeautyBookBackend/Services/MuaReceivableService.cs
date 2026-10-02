@@ -13,26 +13,31 @@ namespace BeautyBookBackend.Services
 
         public async Task<MuaReceivable> EnsureForCompletedBookingAsync(Booking booking)
         {
+            var now = DateTime.UtcNow;
+            if (!booking.CompletedAt.HasValue)
+                throw new InvalidOperationException("Booking chưa có thời điểm hoàn thành.");
+            var blocked = await _context.BookingComplaints.AnyAsync(c => c.BookingId == booking.BookingId && c.IsOpen)
+                || await _context.Refunds.AnyAsync(r => r.BookingId == booking.BookingId && r.Status != RefundStatus.Completed);
             var existing = await _context.MuaReceivables.FirstOrDefaultAsync(x => x.BookingId == booking.BookingId);
             if (existing != null)
             {
+                // Never reopen committed, paid, reversed or explicitly frozen funds.
                 if (existing.Status == MuaReceivableStatus.OnHold)
                 {
-                    var availableAt = (booking.CompletedAt ?? DateTime.UtcNow).AddHours(ComplaintPolicy.WindowHours);
-                    existing.Status = MuaReceivableStatus.OnHold;
-                    existing.AvailableAt ??= availableAt;
-                    existing.UpdatedAt = availableAt;
+                    existing.Status = blocked ? MuaReceivableStatus.Frozen
+                        : existing.NetAmount <= 0 ? MuaReceivableStatus.Reversed : MuaReceivableStatus.Available;
+                    existing.AvailableAt = booking.CompletedAt;
+                    existing.UpdatedAt = now;
                 }
                 return existing;
             }
-
-            var now = DateTime.UtcNow;
             var receivable = new MuaReceivable
             {
                 Id = Guid.NewGuid(), BookingId = booking.BookingId, MuaId = booking.MUAId,
                 GrossAmount = booking.DepositAmount, PlatformFeeAmount = booking.PlatformFeeAmount,
-                NetAmount = booking.MuaPayoutAmount, Status = MuaReceivableStatus.OnHold,
-                CreatedAt = now, AvailableAt = (booking.CompletedAt ?? now).AddHours(ComplaintPolicy.WindowHours), UpdatedAt = now
+                NetAmount = booking.MuaPayoutAmount, Status = blocked ? MuaReceivableStatus.Frozen
+                    : booking.MuaPayoutAmount <= 0 ? MuaReceivableStatus.Reversed : MuaReceivableStatus.Available,
+                CreatedAt = now, AvailableAt = booking.CompletedAt, UpdatedAt = now
             };
             await _context.MuaReceivables.AddAsync(receivable);
             return receivable;
@@ -55,10 +60,14 @@ namespace BeautyBookBackend.Services
             if (target == MuaReceivableStatus.Available)
             {
                 var booking = await _context.Bookings.FindAsync(bookingId);
-                if (booking != null && ComplaintPolicy.HasHold(booking, now))
+                var blocked = await _context.BookingComplaints.AnyAsync(c => c.BookingId == bookingId && c.IsOpen)
+                    || await _context.Refunds.AnyAsync(r => r.BookingId == bookingId && r.Status != RefundStatus.Completed);
+                if (blocked || booking?.PaymentStatus is PaymentStatus.Frozen or PaymentStatus.RefundPending)
+                    receivable.Status = MuaReceivableStatus.Frozen;
+                else if (booking == null || booking.Status is not (BookingStatus.Completed or BookingStatus.AutoCompleted) || ComplaintPolicy.HasHold(booking, now))
                     receivable.Status = MuaReceivableStatus.OnHold;
                 receivable.FrozenAt = null;
-                receivable.AvailableAt = booking?.CompletedAt?.AddHours(ComplaintPolicy.WindowHours) ?? receivable.AvailableAt;
+                receivable.AvailableAt = booking?.CompletedAt ?? receivable.AvailableAt;
             }
             if (target == MuaReceivableStatus.Reversed) receivable.ReversedAt = now;
         }
@@ -93,7 +102,7 @@ namespace BeautyBookBackend.Services
                 if (item.Status == target) { await tx.CommitAsync(); continue; }
                 var now = DateTime.UtcNow; item.Status = target; item.UpdatedAt = now;
                 item.FrozenAt = target == MuaReceivableStatus.Frozen ? now : null;
-                if (target == MuaReceivableStatus.Available) item.AvailableAt ??= now;
+                if (target == MuaReceivableStatus.Available) item.AvailableAt = booking.CompletedAt ?? now;
                 if (target == MuaReceivableStatus.Reversed) item.ReversedAt = now;
                 changed++;
                 await _context.SaveChangesAsync();

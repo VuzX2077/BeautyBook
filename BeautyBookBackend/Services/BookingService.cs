@@ -495,7 +495,7 @@ namespace BeautyBookBackend.Services
             if (newStatus == BookingStatus.Completed)
             {
                 if (!await CompleteBookingAsync(booking)) return null;
-                booking.CompletedAt = DateTime.UtcNow;
+                booking.CompletedAt ??= DateTime.UtcNow;
             }
             else if (newStatus == BookingStatus.Cancelled || newStatus == BookingStatus.Rejected)
             {
@@ -605,7 +605,7 @@ namespace BeautyBookBackend.Services
             {
                 if (!await CompleteBookingAsync(booking)) return null;
                 booking.Status = BookingStatus.Completed;
-                booking.CompletedAt = DateTime.UtcNow;
+                booking.CompletedAt ??= DateTime.UtcNow;
                 await _receivableService.RestoreAfterMuaWinsAsync(booking.BookingId);
             }
             booking.UpdatedAt = DateTime.UtcNow;
@@ -629,7 +629,7 @@ namespace BeautyBookBackend.Services
                 if (await _context.BookingComplaints.AnyAsync(c => c.BookingId == booking.BookingId && c.IsOpen)) continue;
                 if (!await CompleteBookingAsync(booking)) continue;
                 booking.Status = BookingStatus.AutoCompleted;
-                booking.CompletedAt = DateTime.UtcNow;
+                booking.CompletedAt ??= DateTime.UtcNow;
                 await _receivableService.RestoreAfterMuaWinsAsync(booking.BookingId);
                 booking.UpdatedAt = DateTime.UtcNow;
                 await _unitOfWork.SaveChangesAsync();
@@ -759,6 +759,8 @@ namespace BeautyBookBackend.Services
                 && x.Status != RefundStatus.Completed);
             if (hasUnresolvedRefund) return false;
 
+            // Establish one completion timestamp before opening the receivable in this transaction.
+            booking.CompletedAt ??= DateTime.UtcNow;
             await _receivableService.EnsureForCompletedBookingAsync(booking);
 
             var muaProfile = await _muaRepository.GetProfileWithFullDetailsAsync(booking.MUAId);

@@ -10,5 +10,6 @@ public static class ComplaintPolicy
     public static bool CanCreate(Booking booking, DateTime now) => booking.Status is
         BookingStatus.Approved or BookingStatus.InProgress or BookingStatus.WaitingCustomer or BookingStatus.Disputed
         || (booking.Status is BookingStatus.Completed or BookingStatus.AutoCompleted && Deadline(booking) > now);
-    public static bool HasHold(Booking booking, DateTime now) => booking.CompletedAt == null || Deadline(booking) > now;
+    // The support window is independent of payout availability. Completion opens earnings immediately.
+    public static bool HasHold(Booking booking, DateTime now) => booking.CompletedAt == null;
 }

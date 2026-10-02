@@ -75,7 +75,8 @@ namespace BeautyBookBackend.Services
         public async Task<int> ReconcileStatesAsync()
         {
             var candidates = await _context.MuaReceivables.AsNoTracking()
-                .Where(x => x.Status == MuaReceivableStatus.OnHold || x.Status == MuaReceivableStatus.Frozen)
+                .Where(x => (x.Status == MuaReceivableStatus.OnHold || x.Status == MuaReceivableStatus.Frozen)
+                    && _context.Users.Any(u => u.UserId == x.MuaId && u.DeletedAt == null && u.IsActive))
                 .Select(x => new { x.Id, x.BookingId })
                 .ToListAsync();
             var changed = 0;
@@ -86,6 +87,9 @@ namespace BeautyBookBackend.Services
                 var item = await _context.MuaReceivables.FromSqlInterpolated($"SELECT * FROM \"MuaReceivables\" WHERE \"Id\"={candidate.Id} FOR UPDATE").FirstAsync();
                 // A payout may have claimed the row since the initial scan.
                 if (item.Status is not (MuaReceivableStatus.OnHold or MuaReceivableStatus.Frozen)) { await tx.CommitAsync(); continue; }
+                // Recheck after taking the booking lock; a deletion may follow the initial scan.
+                if (!await _context.Users.AnyAsync(u => u.UserId == item.MuaId && u.DeletedAt == null && u.IsActive))
+                { await tx.CommitAsync(); continue; }
                 item.Booking = booking;
                 var refunds = await _context.Refunds.Where(x => x.BookingId == item.BookingId).Select(x => x.Status).ToListAsync();
                 var openComplaint = await _context.BookingComplaints.AnyAsync(c => c.BookingId == item.BookingId && c.IsOpen);

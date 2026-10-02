@@ -2,6 +2,8 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text;
+using System.Security.Cryptography;
 
 namespace BeautyBookBackend.Services;
 
@@ -12,6 +14,12 @@ public sealed class SupabaseVerificationStorage : IVerificationStorage
     private readonly string _secret;
     private readonly string _bucket;
     private readonly string _legacyBucket;
+    public string LocationId {
+        get {
+            ValidateConfig();
+            return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(new Uri(_origin).GetLeftPart(UriPartial.Authority) + "/" + _bucket + "/" + _legacyBucket)));
+        }
+    }
     public SupabaseVerificationStorage(HttpClient http, IConfiguration config)
     {
         _http = http;

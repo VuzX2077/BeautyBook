@@ -23,10 +23,15 @@ public sealed class VerificationMediaService(ApplicationDbContext db, IVerificat
         UploadCoreAsync(owner, "chat", input, roomId, ct);
     private async Task<VerificationMedia> UploadCoreAsync(Guid owner, string purpose, byte[] input, Guid? contextId, CancellationToken ct)
     {
+        await using var operation = new MediaOperationLock(db);
+        await operation.AcquireAsync(ct);
+        if (!await db.Users.AnyAsync(x => x.UserId == owner && x.IsActive && x.DeletedAt == null, ct))
+            throw new UnauthorizedAccessException("Tài khoản không còn hoạt động.");
         var bytes = VerificationImage.Normalize(input);
         var media = new VerificationMedia {
             Id = Guid.NewGuid(), OwnerId = owner, Purpose = purpose, ContextId = contextId, CreatedAt = DateTime.UtcNow,
             Sha256 = Convert.ToHexString(SHA256.HashData(bytes)), Size = bytes.Length,
+            StorageLocationId = storage.LocationId,
         };
         media.ObjectKey = $"verification/{owner:N}/{media.Id:N}.jpg";
         // Record first so a provider timeout/crash never leaves an untracked private object.

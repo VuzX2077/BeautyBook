@@ -58,6 +58,14 @@ public class PushNotificationWorker : BackgroundService
         var pending = await db.AppNotifications.Where(n => n.Status == "Pending" && n.ScheduledAt <= now).OrderBy(n => n.ScheduledAt).Take(100).ToListAsync(ct);
         foreach (var notification in pending)
         {
+            // A deletion may have scrubbed this notification after the batch was read.
+            // Reload under the shared media/account lock and hold it across delivery;
+            // deletion cannot acknowledge success while a stale preview is dispatched.
+            await using var operation = new MediaOperationLock(db);
+            try { await operation.AcquireAsync(ct); }
+            catch (InvalidOperationException) { continue; }
+            await db.Entry(notification).ReloadAsync(ct);
+            if (db.Entry(notification).State == EntityState.Detached || notification.Status != "Pending") continue;
             var devices = await db.DevicePushTokens.Where(x => x.UserId == notification.UserId && x.IsActive).ToListAsync(ct);
             if (devices.Count == 0) { notification.Status = "Skipped"; notification.LastError = "No active push token"; continue; }
             var data = string.IsNullOrWhiteSpace(notification.DataJson) ? new { } : JsonSerializer.Deserialize<object>(notification.DataJson)!;

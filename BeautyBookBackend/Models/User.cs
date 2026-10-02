@@ -17,6 +17,9 @@ namespace BeautyBookBackend.Models
         public DateTime CreatedAt { get; set; }
         public bool IsActive { get; set; }
         public DateTime? DeletedAt { get; set; }
+        // New registrations use the owner-tracked uploader. Existing rows default false
+        // in the additive migration: old unreferenced uploads cannot be inferred from DB.
+        public bool MediaOwnershipTracked { get; set; } = true;
 
         // Navigation
         public MakeupArtistProfile? MakeupArtistProfile { get; set; }

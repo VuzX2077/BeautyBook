@@ -183,6 +183,10 @@ builder.Services.AddHttpClient<IEmailSender, BrevoEmailSender>(client =>
     client.Timeout = TimeSpan.FromSeconds(20);
 });
 builder.Services.AddScoped<IUserService, UserService>();
+builder.Services.AddSingleton<AccountConnections>();
+builder.Services.AddScoped<AccountDeletionService>();
+builder.Services.AddScoped<AccountDeletionStorage>();
+builder.Services.AddHostedService<AccountDeletionWorker>();
 builder.Services.AddScoped<IMuaService, MuaService>();
 builder.Services.AddScoped<IMuaEligibilityService, MuaEligibilityService>();
 builder.Services.AddScoped<VerificationMediaService>();

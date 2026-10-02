@@ -14,8 +14,11 @@ public sealed class VerificationMedia
     public DateTime? ReadyAt { get; set; }
     public DateTime? AttachedAt { get; set; }
     public DateTime? DeletedAt { get; set; }
+    public DateTime? StorageDeletedAt { get; set; }
+    public string? StorageLocationId { get; set; }
     // Retained only until the migration removes the original public object.
     public string? LegacyObjectKey { get; set; }
     public string? LegacySha256 { get; set; }
+    public bool LegacyLocationVerified { get; set; }
     public DateTime? LegacyDeletedAt { get; set; }
 }

@@ -4,6 +4,8 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using BeautyBookBackend.Services;
+using BeautyBookBackend.Data;
+using Microsoft.EntityFrameworkCore;
 
 namespace BeautyBookBackend.Hubs
 {
@@ -11,7 +13,18 @@ namespace BeautyBookBackend.Hubs
     public class ChatHub : Hub
     {
         private readonly IChatService _chatService;
-        public ChatHub(IChatService chatService) => _chatService = chatService;
+        private readonly ApplicationDbContext _db;
+        private readonly AccountConnections _connections;
+        public ChatHub(IChatService chatService, ApplicationDbContext db, AccountConnections connections)
+        { _chatService = chatService; _db = db; _connections = connections; }
+
+        private async Task RequireActiveAsync()
+        {
+            var id = CurrentUserId();
+            if (!await _db.Users.AnyAsync(x => x.UserId == id && x.IsActive && x.DeletedAt == null)) {
+                Context.Abort(); throw new HubException("Tài khoản không còn hoạt động.");
+            }
+        }
 
         private Guid CurrentUserId()
         {
@@ -21,6 +34,9 @@ namespace BeautyBookBackend.Hubs
 
         public override async Task OnConnectedAsync()
         {
+            // Register before checking DB: deletion between those steps still aborts us.
+            _connections.Register(CurrentUserId(), Context);
+            await RequireActiveAsync();
             var userId = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             if (!string.IsNullOrEmpty(userId))
             {
@@ -32,6 +48,7 @@ namespace BeautyBookBackend.Hubs
 
         public async Task JoinRoom(Guid roomId)
         {
+            await RequireActiveAsync();
             await _chatService.EnsureRoomAccessAsync(roomId, CurrentUserId());
             await Groups.AddToGroupAsync(Context.ConnectionId, roomId.ToString());
         }
@@ -40,6 +57,7 @@ namespace BeautyBookBackend.Hubs
 
         public async Task Typing(Guid roomId, bool isTyping)
         {
+            await RequireActiveAsync();
             var userId = CurrentUserId();
             await _chatService.EnsureRoomAccessAsync(roomId, userId);
             await Clients.OthersInGroup(roomId.ToString()).SendAsync("TypingChanged", new { RoomId = roomId, UserId = userId, IsTyping = isTyping });
@@ -47,6 +65,7 @@ namespace BeautyBookBackend.Hubs
 
         public override async Task OnDisconnectedAsync(Exception? exception)
         {
+            _connections.Remove(CurrentUserId(), Context.ConnectionId);
             var userId = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             if (!string.IsNullOrEmpty(userId))
             {

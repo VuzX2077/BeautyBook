@@ -5,6 +5,8 @@ using BeautyBookBackend.Models.Enums;
 using BeautyBookBackend.Repositories;
 using BeautyBookBackend.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Configuration;
 
 namespace BeautyBookBackend.Tests;
@@ -113,9 +115,65 @@ public sealed class ImmediatePayoutTests
         Assert.Empty(await db.MuaReceivables.ToListAsync());Assert.Null((await db.Bookings.SingleAsync()).CompletedAt);
     }
 
+    [PostgreSqlFact]
+    public async Task Old_guard_reproduces_Render_error_and_upgrade_preserves_live_mua_payout()
+    {
+        await using var database=await PostgreSqlDatabase.CreateAsync();
+        await using(var original=database.CreateContext()) await original.Database.GetService<IMigrator>().MigrateAsync("20261002114018_AddAccountDeletionStorageLifecycle");
+        var ids=await Seed(database);
+        await using(var db=database.CreateContext()) {
+            await BookingServiceFor(db).UpdateBookingStatusAsync(ids.Booking,ids.Customer,BookingStatus.Completed);
+            var r=await db.MuaReceivables.SingleAsync();r.Status=MuaReceivableStatus.OnHold;r.AvailableAt=DateTime.UtcNow.AddHours(48);await db.SaveChangesAsync();
+            await Tombstone(db,ids.Customer);
+            var error=await Assert.ThrowsAsync<DbUpdateException>(()=>new MuaReceivableService(db).ReconcileStatesAsync());
+            Assert.Equal("23514",Assert.IsType<Npgsql.PostgresException>(error.InnerException).SqlState);
+        }
+        await using(var upgrade=database.CreateContext())await upgrade.Database.MigrateAsync();
+        await using var check=database.CreateContext();Assert.Equal(1,await new MuaReceivableService(check).ReconcileStatesAsync());
+        Assert.Equal(6600m,(await check.MuaReceivables.SingleAsync()).NetAmount);
+        var service=new PayoutService(check,new EligibleMua());var p=await service.CreateAsync(ids.Mua,new(){BankAccountId=ids.Bank,IdempotencyKey="retained-ledger"});
+        Assert.NotNull(await service.StartProcessingAsync(p.Id,ids.Admin,null));Assert.NotNull(await service.CompleteAsync(p.Id,ids.Admin,"verified-local-transfer"));
+        Assert.Equal(MuaReceivableStatus.PaidOut,(await check.MuaReceivables.SingleAsync()).Status);
+        Assert.NotNull((await check.Users.SingleAsync(u=>u.UserId==ids.Customer)).DeletedAt);
+    }
+
+    [PostgreSqlFact]
+    public async Task Deleted_mua_is_skipped_and_does_not_block_other_receivables()
+    {
+        await using var database=await PostgreSqlDatabase.CreateMigratedAsync();var retired=await Seed(database);var live=await Seed(database);
+        await using var db=database.CreateContext();
+        foreach(var ids in new[]{retired,live}) {
+            await BookingServiceFor(db).UpdateBookingStatusAsync(ids.Booking,ids.Customer,BookingStatus.Completed);
+            var r=await db.MuaReceivables.SingleAsync(x=>x.BookingId==ids.Booking);r.Status=MuaReceivableStatus.OnHold;await db.SaveChangesAsync();
+        }
+        await Tombstone(db,retired.Mua);
+        Assert.Equal(1,await new MuaReceivableService(db).ReconcileStatesAsync());
+        Assert.Equal(MuaReceivableStatus.OnHold,(await db.MuaReceivables.SingleAsync(x=>x.BookingId==retired.Booking)).Status);
+        Assert.Equal(MuaReceivableStatus.Available,(await db.MuaReceivables.SingleAsync(x=>x.BookingId==live.Booking)).Status);
+        Assert.Equal(0,await new MuaReceivableService(db).ReconcileStatesAsync());
+    }
+
+    [PostgreSqlFact]
+    public async Task Retained_ledger_exception_cannot_change_amounts_references_restore_user_or_reopen_paid_money()
+    {
+        await using var database=await PostgreSqlDatabase.CreateMigratedAsync();var ids=await Seed(database);
+        await using var db=database.CreateContext();await BookingServiceFor(db).UpdateBookingStatusAsync(ids.Booking,ids.Customer,BookingStatus.Completed);await Tombstone(db,ids.Customer);
+        var rid=(await db.MuaReceivables.SingleAsync()).Id;
+        Assert.Equal("23514",(await Assert.ThrowsAsync<Npgsql.PostgresException>(()=>db.Database.ExecuteSqlInterpolatedAsync($"UPDATE \"MuaReceivables\" SET \"NetAmount\"=999999 WHERE \"Id\"={rid}"))).SqlState);
+        Assert.Equal("23514",(await Assert.ThrowsAsync<Npgsql.PostgresException>(()=>db.Database.ExecuteSqlInterpolatedAsync($"UPDATE \"MuaReceivables\" SET \"MuaId\"={ids.Customer} WHERE \"Id\"={rid}"))).SqlState);
+        Assert.Equal("23514",(await Assert.ThrowsAsync<Npgsql.PostgresException>(()=>db.Database.ExecuteSqlInterpolatedAsync($"UPDATE \"Users\" SET \"AvatarUrl\"={"https://example.test/restored.jpg"} WHERE \"UserId\"={ids.Customer}"))).SqlState);
+        Assert.Equal("23514",(await Assert.ThrowsAsync<Npgsql.PostgresException>(()=>db.Database.ExecuteSqlInterpolatedAsync($"UPDATE \"Bookings\" SET \"Notes\"={"new personal data"} WHERE \"BookingId\"={ids.Booking}"))).SqlState);
+        var now=DateTime.UtcNow;var newId=Guid.NewGuid();
+        Assert.Equal("23514",(await Assert.ThrowsAsync<Npgsql.PostgresException>(()=>db.Database.ExecuteSqlInterpolatedAsync($"INSERT INTO \"MuaReceivables\" (\"Id\",\"BookingId\",\"MuaId\",\"GrossAmount\",\"PlatformFeeAmount\",\"NetAmount\",\"Status\",\"CreatedAt\",\"UpdatedAt\") VALUES ({newId},{ids.Booking},{ids.Mua},9000,2400,6600,1,{now},{now})"))).SqlState);
+        var service=new PayoutService(db,new EligibleMua());var p=await service.CreateAsync(ids.Mua,new(){BankAccountId=ids.Bank,IdempotencyKey="terminal"});await service.StartProcessingAsync(p.Id,ids.Admin,null);await service.CompleteAsync(p.Id,ids.Admin,"local-only");
+        Assert.Equal("23514",(await Assert.ThrowsAsync<Npgsql.PostgresException>(()=>db.Database.ExecuteSqlInterpolatedAsync($"UPDATE \"MuaReceivables\" SET \"Status\"=1 WHERE \"Id\"={rid}"))).SqlState);
+    }
+
+    private static Task<int> Tombstone(ApplicationDbContext db,Guid id) => db.Database.ExecuteSqlInterpolatedAsync($"UPDATE \"Users\" SET \"DeletedAt\"={DateTime.UtcNow},\"IsActive\"=FALSE,\"Email\"=NULL,\"FullName\"=NULL,\"AvatarUrl\"=NULL,\"PhoneNumber\"=NULL WHERE \"UserId\"={id}");
+
     private static BeautyBookBackend.Services.BookingService BookingServiceFor(ApplicationDbContext db){var config=new ConfigurationBuilder().Build();var time=new BookingTimeService(config);return new(new BookingRepository(db),new MuaRepository(db),new ReviewRepository(db),new UnitOfWork(db),new BookingNotificationService(db,time),db,null!,new RefundService(db,new MuaReceivableService(db),null!,config,Microsoft.Extensions.Logging.Abstractions.NullLogger<RefundService>.Instance),null!,new MuaReceivableService(db),config,null!,null!,time);}
     private record Ids(Guid Booking,Guid Customer,Guid Mua,Guid Bank,Guid Admin);
-    private static async Task<Ids> Seed(PostgreSqlDatabase database){var ids=new Ids(Guid.NewGuid(),Guid.NewGuid(),Guid.NewGuid(),Guid.NewGuid(),Guid.NewGuid());var now=DateTime.UtcNow;await using var db=database.CreateContext();db.Users.AddRange(new User{UserId=ids.Customer,Role=UserRole.Customer,Email="customer@example.test",IsActive=true,CreatedAt=now},new User{UserId=ids.Mua,Role=UserRole.MUA,Email="mua@example.test",IsActive=true,CreatedAt=now},new User{UserId=ids.Admin,Role=UserRole.Admin,Email="admin@example.test",IsActive=true,CreatedAt=now});db.MakeupArtistProfiles.Add(new(){MUAId=ids.Mua});db.Bookings.Add(new(){BookingId=ids.Booking,CustomerId=ids.Customer,MUAId=ids.Mua,TotalAmount=30000,DepositAmount=9000,PlatformFeeAmount=2400,MuaPayoutAmount=6600,RemainingAmount=21000,Status=BookingStatus.WaitingCustomer,PaymentStatus=PaymentStatus.DepositHeld,BookingDate=now,StartTime=TimeSpan.FromHours(8),EndTime=TimeSpan.FromHours(9),WaitingCustomerAt=now.AddHours(-25),CustomerConfirmationDeadline=now.AddHours(-1),CreatedAt=now,UpdatedAt=now});db.BookingPayments.Add(new(){PaymentId=Guid.NewGuid(),BookingId=ids.Booking,CustomerId=ids.Customer,ProviderOrderCode=DateTime.UtcNow.Ticks,Amount=9000,Status=BookingPaymentStatus.Paid,PaidAt=now,ExpiresAt=now.AddHours(1),CreatedAt=now,UpdatedAt=now});db.BankAccounts.Add(new(){Id=ids.Bank,UserId=ids.Mua,BankCode="VCB",BankBin="970436",BankName="VCB",CanonicalBankKey="BIN:970436",AccountNumber="123456",NormalizedAccountNumber="123456",AccountHolderName="MUA",Method="BANK",VerificationStatus="APPROVED",IsActive=true,ActivatedAt=now,CreatedAt=now,UpdatedAt=now});await db.SaveChangesAsync();return ids;}
+    private static async Task<Ids> Seed(PostgreSqlDatabase database){var ids=new Ids(Guid.NewGuid(),Guid.NewGuid(),Guid.NewGuid(),Guid.NewGuid(),Guid.NewGuid());var now=DateTime.UtcNow;await using var db=database.CreateContext();db.Users.AddRange(new User{UserId=ids.Customer,Role=UserRole.Customer,Email=ids.Customer+"@example.test",IsActive=true,CreatedAt=now},new User{UserId=ids.Mua,Role=UserRole.MUA,Email=ids.Mua+"@example.test",IsActive=true,CreatedAt=now},new User{UserId=ids.Admin,Role=UserRole.Admin,Email=ids.Admin+"@example.test",IsActive=true,CreatedAt=now});db.MakeupArtistProfiles.Add(new(){MUAId=ids.Mua});db.Bookings.Add(new(){BookingId=ids.Booking,CustomerId=ids.Customer,MUAId=ids.Mua,TotalAmount=30000,DepositAmount=9000,PlatformFeeAmount=2400,MuaPayoutAmount=6600,RemainingAmount=21000,Status=BookingStatus.WaitingCustomer,PaymentStatus=PaymentStatus.DepositHeld,BookingDate=now,StartTime=TimeSpan.FromHours(8),EndTime=TimeSpan.FromHours(9),WaitingCustomerAt=now.AddHours(-25),CustomerConfirmationDeadline=now.AddHours(-1),CreatedAt=now,UpdatedAt=now});db.BookingPayments.Add(new(){PaymentId=Guid.NewGuid(),BookingId=ids.Booking,CustomerId=ids.Customer,ProviderOrderCode=DateTime.UtcNow.Ticks,Amount=9000,Status=BookingPaymentStatus.Paid,PaidAt=now,ExpiresAt=now.AddHours(1),CreatedAt=now,UpdatedAt=now});db.BankAccounts.Add(new(){Id=ids.Bank,UserId=ids.Mua,BankCode="VCB",BankBin="970436",BankName="VCB",CanonicalBankKey="BIN:970436",AccountNumber="123456",NormalizedAccountNumber="123456",AccountHolderName="MUA",Method="BANK",VerificationStatus="APPROVED",IsActive=true,ActivatedAt=now,CreatedAt=now,UpdatedAt=now});await db.SaveChangesAsync();return ids;}
     private sealed class EligibleMua:IMuaEligibilityService
     {
         public Task<MuaIdentityVerificationRequestDto?> GetIdentityVerificationAsync(Guid muaId)=>Task.FromResult<MuaIdentityVerificationRequestDto?>(null);

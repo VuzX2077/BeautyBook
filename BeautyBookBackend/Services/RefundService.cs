@@ -447,7 +447,7 @@ namespace BeautyBookBackend.Services
             r.PlatformFeeAmount = r.GrossAmount - r.NetAmount;
             r.Status = MuaReceivableStatus.OnHold;
             r.FrozenAt = null; r.UpdatedAt = DateTime.UtcNow;
-            r.AvailableAt = booking.CompletedAt?.AddHours(ComplaintPolicy.WindowHours);
+            r.AvailableAt = booking.CompletedAt;
         }
 
         private Task<Refund?> GetRefundForUpdateAsync(Guid refundId) =>

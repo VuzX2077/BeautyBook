@@ -39,7 +39,7 @@ namespace BeautyBookBackend.Services
             if (await _context.BookingComplaints.AnyAsync(c => bookingIds.Contains(c.BookingId) && c.IsOpen)
                 || locked.Any(r => r.AvailableAt > DateTime.UtcNow))
                 throw new InvalidOperationException("Khoản thu nhập đang trong thời hạn khiếu nại hoặc có hồ sơ chưa xử lý.");
-            var blockedBooking=await _context.Bookings.AnyAsync(x=>bookingIds.Contains(x.BookingId)&&(x.Status==BookingStatus.Disputed||x.PaymentStatus==PaymentStatus.Frozen||x.PaymentStatus==PaymentStatus.RefundPending));
+            var blockedBooking=await _context.Bookings.AnyAsync(x=>bookingIds.Contains(x.BookingId)&&((x.Status!=BookingStatus.Completed&&x.Status!=BookingStatus.AutoCompleted)||x.PaymentStatus==PaymentStatus.Frozen||x.PaymentStatus==PaymentStatus.RefundPending));
             var blockedRefund=await _context.Refunds.AnyAsync(x=>bookingIds.Contains(x.BookingId)&&x.Status!=RefundStatus.Completed);
             if(blockedBooking||blockedRefund)throw new InvalidOperationException("Khoản thu nhập đang có dispute/refund hoặc nghĩa vụ tài chính chưa xử lý.");
             var now=DateTime.UtcNow;var payout=new Payout{Id=Guid.NewGuid(),MuaId=muaId,RequestedBy=muaId,BankAccountId=bank.Id,Amount=locked.Sum(x=>x.NetAmount),Status=PayoutStatus.Pending,Provider=PayoutProvider.Manual,BankCodeSnapshot=bank.BankCode,BankBinSnapshot=bank.BankBin,BankNameSnapshot=bank.BankName,AccountNumberSnapshot=bank.AccountNumber,AccountHolderNameSnapshot=bank.AccountHolderName,QrCodeUrlSnapshot=bank.QrCodeUrl,IdempotencyKey=key,CreatedAt=now,UpdatedAt=now};

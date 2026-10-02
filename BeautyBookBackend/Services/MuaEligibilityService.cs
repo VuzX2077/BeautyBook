@@ -11,11 +11,13 @@ namespace BeautyBookBackend.Services
     {
         private readonly ApplicationDbContext _db;
         private readonly IMuaScheduleService _scheduleService;
+        private readonly VerificationMediaService _media;
 
-        public MuaEligibilityService(ApplicationDbContext db, IMuaScheduleService scheduleService)
+        public MuaEligibilityService(ApplicationDbContext db, IMuaScheduleService scheduleService, VerificationMediaService media)
         {
             _db = db;
             _scheduleService = scheduleService;
+            _media = media;
         }
 
         public async Task<MuaEligibilityDto?> EvaluateAsync(Guid muaId, bool updateStatus = true)
@@ -41,7 +43,7 @@ namespace BeautyBookBackend.Services
                 Requirement("basicInformation", "Thông tin cơ bản hợp lệ", HasValidBasicInformation(profile.User.FullName, profile.User.Email)),
                 Requirement("avatar", "Có ảnh đại diện", IsValidPublicUrl(profile.User.AvatarUrl)),
                 Requirement("city", "Có thành phố/khu vực", !string.IsNullOrWhiteSpace(profile.City)),
-                Requirement("identityVerification", "Có đủ CCCD/CMND và ảnh chân dung", IsValidPublicUrl(profile.IdentityFrontUrl) && IsValidPublicUrl(profile.IdentityBackUrl) && IsValidPublicUrl(profile.PortraitUrl)),
+                Requirement("identityVerification", "Có đủ CCCD/CMND và ảnh chân dung", await _media.HasIdentityAsync(profile)),
                 Requirement("bankAccount", "Có tài khoản ngân hàng", hasActiveBankAccount),
                 Requirement("specialty", "Có chuyên môn hoặc phong cách", !string.IsNullOrWhiteSpace(profile.Specialization) || specialtyCount > 0, !string.IsNullOrWhiteSpace(profile.Specialization) ? 1 : specialtyCount, 1),
                 Requirement("activeService", "Có ít nhất 1 dịch vụ đang hoạt động", activeServiceCount >= 1, activeServiceCount, 1),
@@ -148,26 +150,65 @@ namespace BeautyBookBackend.Services
         public async Task<MuaIdentityVerificationRequestDto?> GetIdentityVerificationAsync(Guid muaId)
         {
             var profile = await _db.MakeupArtistProfiles.AsNoTracking().FirstOrDefaultAsync(x => x.MUAId == muaId);
+            var certificates = new List<string>();
+            if (profile != null)
+                foreach (var reference in profile.CertificateUrls)
+                    certificates.Add(await _media.ResolveAsync(reference, muaId, "certificate"));
             return profile == null ? null : new MuaIdentityVerificationRequestDto
             {
-                IdentityFrontUrl = profile.IdentityFrontUrl ?? "",
-                IdentityBackUrl = profile.IdentityBackUrl ?? "",
-                PortraitUrl = profile.PortraitUrl ?? "",
-                CertificateUrls = profile.CertificateUrls.ToList()
+                IdentityFrontMediaId = VerificationMediaService.TryId(profile.IdentityFrontUrl, out var front) ? front : null,
+                IdentityBackMediaId = VerificationMediaService.TryId(profile.IdentityBackUrl, out var back) ? back : null,
+                PortraitMediaId = VerificationMediaService.TryId(profile.PortraitUrl, out var face) ? face : null,
+                CertificateMediaIds = profile.CertificateUrls.Where(x => VerificationMediaService.TryId(x, out _)).Select(x => Guid.Parse(x[6..])).ToList(),
+                IdentityFrontUrl = await _media.ResolveAsync(profile.IdentityFrontUrl, muaId, "identity-front"),
+                IdentityBackUrl = await _media.ResolveAsync(profile.IdentityBackUrl, muaId, "identity-back"),
+                PortraitUrl = await _media.ResolveAsync(profile.PortraitUrl, muaId, "portrait"),
+                CertificateUrls = certificates
             };
         }
 
         public async Task<(bool Success, string? Error)> UpdateIdentityVerificationAsync(Guid muaId, MuaIdentityVerificationRequestDto request)
         {
+            await using var identityTransaction = await _db.Database.BeginTransactionAsync();
+            if (_db.Database.IsNpgsql())
+            {
+                var available = await _db.Database.SqlQueryRaw<bool>("SELECT pg_try_advisory_xact_lock_shared(724266524669002) AS \"Value\"").SingleAsync();
+                if (!available) return (false, "Hệ thống đang chuyển kho ảnh xác minh. Vui lòng thử lại sau.");
+                await _db.Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM \"MakeupArtistProfiles\" WHERE \"MUAId\" = {muaId} FOR UPDATE");
+            }
             var profile = await _db.MakeupArtistProfiles.FirstOrDefaultAsync(x => x.MUAId == muaId);
             if (profile == null) return (false, "Không tìm thấy hồ sơ MUA.");
-            var urls = new[] { request.IdentityFrontUrl, request.IdentityBackUrl, request.PortraitUrl };
-            if (urls.Any(x => !IsValidPublicUrl(x)) || request.CertificateUrls.Any(x => !IsValidPublicUrl(x)))
-                return (false, "Ảnh xác minh phải là URL công khai hợp lệ.");
-            profile.IdentityFrontUrl = request.IdentityFrontUrl.Trim();
-            profile.IdentityBackUrl = request.IdentityBackUrl.Trim();
-            profile.PortraitUrl = request.PortraitUrl.Trim();
-            profile.CertificateUrls = request.CertificateUrls.Distinct().ToList();
+            if (!string.IsNullOrEmpty(request.IdentityFrontUrl) || !string.IsNullOrEmpty(request.IdentityBackUrl) || !string.IsNullOrEmpty(request.PortraitUrl) || request.CertificateUrls.Count > 0)
+                return (false, "Vui lòng cập nhật app và tải giấy tờ qua kho ảnh xác minh riêng tư.");
+            var requested = new[] { (request.IdentityFrontMediaId, "identity-front"), (request.IdentityBackMediaId, "identity-back"), (request.PortraitMediaId, "portrait") }
+                .Concat(request.CertificateMediaIds.Distinct().Select(id => ((Guid?)id, "certificate")));
+            var owned = new List<VerificationMedia>();
+            if (_db.Database.IsNpgsql())
+                foreach (var id in requested.Where(x => x.Item1.HasValue).Select(x => x.Item1!.Value).Distinct().OrderBy(x => x))
+                    await _db.Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM \"VerificationMedia\" WHERE \"Id\" = {id} FOR UPDATE");
+            foreach (var (id, purpose) in requested)
+            {
+                var item = id.HasValue ? await _media.FindOwnedAsync(id.Value, muaId, purpose) : null;
+                if (item == null) return (false, "Ảnh xác minh không tồn tại, sai loại hoặc không thuộc tài khoản của bạn.");
+                owned.Add(item);
+            }
+            var changed = profile.IdentityFrontUrl != VerificationMediaService.Reference(request.IdentityFrontMediaId!.Value)
+                || profile.IdentityBackUrl != VerificationMediaService.Reference(request.IdentityBackMediaId!.Value)
+                || profile.PortraitUrl != VerificationMediaService.Reference(request.PortraitMediaId!.Value)
+                || !profile.CertificateUrls.SequenceEqual(request.CertificateMediaIds.Distinct().Select(VerificationMediaService.Reference));
+            profile.IdentityFrontUrl = VerificationMediaService.Reference(request.IdentityFrontMediaId!.Value);
+            profile.IdentityBackUrl = VerificationMediaService.Reference(request.IdentityBackMediaId!.Value);
+            profile.PortraitUrl = VerificationMediaService.Reference(request.PortraitMediaId!.Value);
+            profile.CertificateUrls = request.CertificateMediaIds.Distinct().Select(VerificationMediaService.Reference).ToList();
+            foreach (var item in owned) item.AttachedAt ??= DateTime.UtcNow;
+            // Changed documents require a fresh review; old approval cannot cover new evidence.
+            if (changed && profile.VerificationStatus is MuaVerificationStatus.Approved or MuaVerificationStatus.PendingReview)
+            {
+                profile.VerificationStatus = MuaVerificationStatus.Draft;
+                profile.ReviewedAt = null;
+                profile.ReviewedByAdminId = null;
+                profile.SubmittedAt = null;
+            }
             if (profile.VerificationStatus == MuaVerificationStatus.Rejected)
             {
                 profile.VerificationStatus = MuaVerificationStatus.Draft;
@@ -175,18 +216,25 @@ namespace BeautyBookBackend.Services
                 profile.RejectionDetailsJson = null;
             }
             await _db.SaveChangesAsync();
+            await identityTransaction.CommitAsync();
             await EvaluateAsync(muaId);
             return (true, null);
         }
 
         public async Task<bool> ReviewAsync(Guid muaId, Guid adminId, bool approved, string? reason = null, IReadOnlyList<string>? reasonCodes = null, IReadOnlyList<MuaApplicationRejectionItemDto>? items = null)
         {
+            await using var transaction = await _db.Database.BeginTransactionAsync();
+            if (_db.Database.IsNpgsql())
+            {
+                var available = await _db.Database.SqlQueryRaw<bool>("SELECT pg_try_advisory_xact_lock_shared(724266524669002) AS \"Value\"").SingleAsync();
+                if (!available) return false;
+                await _db.Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM \"MakeupArtistProfiles\" WHERE \"MUAId\" = {muaId} FOR UPDATE");
+            }
             if (approved)
             {
                 var eligibility = await EvaluateAsync(muaId, false);
                 if (eligibility == null || eligibility.MissingRequirements.Count > 0) return false;
             }
-            await using var transaction = await _db.Database.BeginTransactionAsync();
             var lockKey = $"mua-review:{muaId:N}";
             await _db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({lockKey}, 0))");
             var now = DateTime.UtcNow;

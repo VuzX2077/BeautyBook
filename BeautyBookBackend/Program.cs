@@ -185,6 +185,17 @@ builder.Services.AddHttpClient<IEmailSender, BrevoEmailSender>(client =>
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IMuaService, MuaService>();
 builder.Services.AddScoped<IMuaEligibilityService, MuaEligibilityService>();
+builder.Services.AddScoped<VerificationMediaService>();
+builder.Services.AddRateLimiter(options => options.AddConcurrencyLimiter("media-upload", limiter =>
+{
+    limiter.PermitLimit = 1;
+    limiter.QueueLimit = 10;
+    limiter.QueueProcessingOrder = System.Threading.RateLimiting.QueueProcessingOrder.OldestFirst;
+}));
+builder.Services.AddScoped<VerificationMediaMaintenance>();
+builder.Services.AddHostedService<PrivateMediaMaintenanceWorker>();
+builder.Services.AddHttpClient<IVerificationStorage, SupabaseVerificationStorage>(client => client.Timeout = TimeSpan.FromSeconds(30));
+
 builder.Services.AddScoped<IMuaScheduleService, MuaScheduleService>();
 builder.Services.AddSingleton<BookingTimeService>();
 builder.Services.AddScoped<IBookingService, BookingService>();
@@ -239,6 +250,8 @@ var app = builder.Build();
 // managed database wakes up.
 var applyMigrations = builder.Configuration.GetValue<bool?>("ApplyMigrations")
     ?? app.Environment.IsProduction();
+if (app.Environment.IsProduction() && !applyMigrations)
+    throw new InvalidOperationException("Production requires ApplyMigrations=true before accepting traffic.");
 if (applyMigrations)
 {
     const long migrationLockId = 724_266_524_669_001;
@@ -269,6 +282,15 @@ if (applyMigrations)
         }
     }
 }
+
+var verificationTask = builder.Configuration["verification-media-task"];
+if (!string.IsNullOrEmpty(verificationTask))
+{
+    await using var maintenanceScope = app.Services.CreateAsyncScope();
+    await maintenanceScope.ServiceProvider.GetRequiredService<VerificationMediaMaintenance>().RunAsync(verificationTask);
+    return;
+}
+
 
 // Configure the HTTP request pipeline.
 app.UseForwardedHeaders();
@@ -311,3 +333,4 @@ if (!string.IsNullOrWhiteSpace(port))
 
 app.Run();
 
+public partial class Program { }

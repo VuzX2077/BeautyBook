@@ -18,13 +18,15 @@ namespace BeautyBookBackend.Services
         private readonly ApplicationDbContext _context;
         private readonly IChatNotificationService _chatNotifications;
         private readonly ILogger<ChatService> _logger;
+        private readonly VerificationMediaService? _media;
 
-        public ChatService(IChatRepository chatRepository, ApplicationDbContext context, IChatNotificationService chatNotifications, ILogger<ChatService> logger)
+        public ChatService(IChatRepository chatRepository, ApplicationDbContext context, IChatNotificationService chatNotifications, ILogger<ChatService> logger, VerificationMediaService? media = null)
         {
             _chatRepository = chatRepository;
             _context = context;
             _chatNotifications = chatNotifications;
             _logger = logger;
+            _media = media;
         }
 
         public async Task<ChatRoomDto> GetOrCreateChatRoomAsync(Guid customerId, Guid muaId)
@@ -66,7 +68,7 @@ namespace BeautyBookBackend.Services
                 var lastMsg = await _chatRepository.GetLastMessageAsync(room.ChatRoomId);
                 if (lastMsg != null)
                 {
-                    dto.LastMessage = MapToMessageDto(lastMsg, userId);
+                    dto.LastMessage = await MapToMessageDtoAsync(lastMsg, userId);
                 }
                 dto.UnreadCount = await _chatRepository.GetUnreadCountAsync(room.ChatRoomId, userId);
                 dtos.Add(dto);
@@ -90,7 +92,9 @@ namespace BeautyBookBackend.Services
             }
 
             var messages = await _chatRepository.GetMessagesByRoomIdAsync(roomId, before, limit);
-            return messages.Select(m => MapToMessageDto(m, userId));
+            var result = new List<MessageDto>();
+            foreach (var message in messages) result.Add(await MapToMessageDtoAsync(message, userId));
+            return result;
         }
 
         public async Task EnsureRoomAccessAsync(Guid roomId, Guid userId)
@@ -132,8 +136,22 @@ namespace BeautyBookBackend.Services
             if (string.IsNullOrWhiteSpace(content) && string.IsNullOrWhiteSpace(imageUrl))
                 throw new ArgumentException("Tin nhắn phải có nội dung hoặc hình ảnh.");
             if (content?.Trim().Length > 2000) throw new ArgumentException("Tin nhắn không được vượt quá 2000 ký tự.");
-            if (imageUrl?.Length > 1000 || (!string.IsNullOrWhiteSpace(imageUrl) && !Uri.TryCreate(imageUrl, UriKind.Absolute, out _)))
-                throw new ArgumentException("Đường dẫn hình ảnh không hợp lệ.");
+            VerificationMedia? attachment = null;
+            await using var imageTransaction = !string.IsNullOrWhiteSpace(imageUrl) && _context.Database.IsNpgsql() ? await _context.Database.BeginTransactionAsync() : null;
+            if (!string.IsNullOrWhiteSpace(imageUrl))
+            {
+                if (_media == null || !VerificationMediaService.TryId(imageUrl, out var imageId)) throw new ArgumentException("Vui lòng tải ảnh qua kho ảnh chat riêng tư.");
+                if (_context.Database.IsNpgsql())
+                {
+                    var available = await _context.Database.SqlQueryRaw<bool>("SELECT pg_try_advisory_xact_lock_shared(724266524669002) AS \"Value\"").SingleAsync();
+                    if (!available) throw new ArgumentException("Kho ảnh đang được bảo trì. Vui lòng thử lại sau.");
+                    await _context.Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM \"VerificationMedia\" WHERE \"Id\" = {imageId} FOR UPDATE");
+                }
+                attachment = await _media.FindOwnedAsync(imageId, senderId, "chat");
+                if (attachment == null || attachment.ContextId != roomId) throw new ArgumentException("Ảnh không thuộc tài khoản hoặc cuộc trò chuyện này.");
+                // Durable reference + attachment are saved together by the repository's SaveChanges.
+                attachment.AttachedAt = DateTime.UtcNow;
+            }
 
             Message? replyTo = null;
             if (replyToMessageId.HasValue)
@@ -156,6 +174,7 @@ namespace BeautyBookBackend.Services
             };
 
             var savedMessage = await _chatRepository.AddMessageAsync(message);
+            if (imageTransaction != null) await imageTransaction.CommitAsync();
             try
             {
                 await _chatNotifications.QueueMessageAsync(room, savedMessage);
@@ -166,7 +185,7 @@ namespace BeautyBookBackend.Services
                 // a successfully persisted chat message look failed to the sender.
                 _logger.LogWarning(ex, "Unable to queue push notification for chat message {MessageId}", savedMessage.MessageId);
             }
-            return MapToMessageDto(savedMessage, senderId);
+            return await MapToMessageDtoAsync(savedMessage, senderId);
         }
 
         public async Task<MessageDto> ToggleReactionAsync(Guid roomId, Guid messageId, Guid userId, string emoji)
@@ -186,7 +205,7 @@ namespace BeautyBookBackend.Services
             else _context.MessageReactions.Add(new MessageReaction { MessageId = messageId, UserId = userId, Emoji = emoji });
             await _context.SaveChangesAsync();
             await _context.Entry(message).Collection(m => m.Reactions).LoadAsync();
-            return MapToMessageDto(message, userId);
+            return await MapToMessageDtoAsync(message, userId);
         }
 
         private static string DisplayName(string? name) => string.IsNullOrWhiteSpace(name) ? "Người dùng B-Book" : name.Trim();
@@ -216,8 +235,14 @@ namespace BeautyBookBackend.Services
             return dto;
         }
 
-        private MessageDto MapToMessageDto(Message message, Guid? currentUserId = null)
+        private async Task<MessageDto> MapToMessageDtoAsync(Message message, Guid? currentUserId = null)
         {
+            async Task<string?> Preview(string? reference)
+            {
+                try { return _media == null ? null : await _media.ResolveChatAsync(reference, message.ChatRoomId); }
+                catch (Exception ex) when (ex is InvalidOperationException or System.Net.Http.HttpRequestException)
+                { _logger.LogWarning("Private chat preview unavailable for message {MessageId}.", message.MessageId); return null; }
+            }
             return new MessageDto
             {
                 MessageId = message.MessageId,
@@ -227,10 +252,12 @@ namespace BeautyBookBackend.Services
                 SentAt = message.SentAt,
                 IsRead = message.IsRead
                 ,ReadAt = message.ReadAt
-                ,ImageUrl = message.ImageUrl
+                ,ImageUrl = await Preview(message.ImageUrl)
+                ,ImageMediaId = VerificationMediaService.TryId(message.ImageUrl, out var imageId) ? imageId : null
                 ,ReplyToMessageId = message.ReplyToMessageId
                 ,ReplyToContent = message.ReplyToMessage?.Content
-                ,ReplyToImageUrl = message.ReplyToMessage?.ImageUrl
+                ,ReplyToImageUrl = await Preview(message.ReplyToMessage?.ImageUrl)
+                ,ReplyToImageMediaId = VerificationMediaService.TryId(message.ReplyToMessage?.ImageUrl, out var replyImageId) ? replyImageId : null
                 ,Reactions = message.Reactions.GroupBy(r => r.Emoji).Select(g => new MessageReactionDto
                 {
                     Emoji = g.Key,

@@ -66,9 +66,14 @@ namespace BeautyBookBackend.DTOs
 
     public sealed class MuaIdentityVerificationRequestDto
     {
-        [Required, Url] public string IdentityFrontUrl { get; set; } = null!;
-        [Required, Url] public string IdentityBackUrl { get; set; } = null!;
-        [Required, Url] public string PortraitUrl { get; set; } = null!;
+        public Guid? IdentityFrontMediaId { get; set; }
+        public Guid? IdentityBackMediaId { get; set; }
+        public Guid? PortraitMediaId { get; set; }
+        [MaxLength(20)] public List<Guid> CertificateMediaIds { get; set; } = new();
+        // Read-only response previews. Write paths reject URL-based submissions.
+        public string IdentityFrontUrl { get; set; } = "";
+        public string IdentityBackUrl { get; set; } = "";
+        public string PortraitUrl { get; set; } = "";
         public List<string> CertificateUrls { get; set; } = new();
     }
 }

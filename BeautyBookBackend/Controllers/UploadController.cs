@@ -24,23 +24,31 @@ namespace BeautyBookBackend.Controllers
         public UploadController(IImageStorage imageStorage) => _imageStorage = imageStorage;
 
         [HttpPost("image")]
+        [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting("media-upload")]
         [RequestSizeLimit(10 * 1024 * 1024)]
-        public async Task<IActionResult> UploadImage(IFormFile file)
+        public async Task<IActionResult> UploadImage(IFormFile file, [FromForm] string? purpose)
         {
+            if (purpose is not ("avatar" or "portfolio" or "service" or "review"))
+                return BadRequest(new { Code = "UPLOAD_PURPOSE_REQUIRED", Message = "Vui lòng cập nhật app. Giấy tờ, chat và bằng chứng phải dùng kho ảnh riêng tư." });
             if (file.Length == 0 || file.Length > 10 * 1024 * 1024 || !AllowedTypes.Contains(file.ContentType))
                 return BadRequest(new { Message = "Ảnh không hợp lệ hoặc vượt quá 10MB." });
 
-            var extension = ExtensionsByContentType[file.ContentType];
-            await using var stream = file.OpenReadStream();
+            using var input = new MemoryStream();
+            await file.CopyToAsync(input, HttpContext.RequestAborted);
+            byte[] pixels;
+            try { pixels = VerificationImage.Normalize(input.ToArray()); }
+            catch (ArgumentException ex) { return BadRequest(new { Message = ex.Message }); }
+            using var stream = new MemoryStream(pixels);
             var url = await _imageStorage.UploadPublicImageAsync(
                 stream,
-                file.ContentType,
-                extension,
+                "image/jpeg",
+                ".jpg",
                 HttpContext.RequestAborted);
             return Ok(new { Url = url });
         }
 
         [HttpPost("bank-qr")]
+        [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting("media-upload")]
         [RequestSizeLimit(5 * 1024 * 1024)]
         public async Task<IActionResult> UploadBankQr(IFormFile file)
         {

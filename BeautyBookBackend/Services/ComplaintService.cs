@@ -74,7 +74,7 @@ public class ComplaintService(ApplicationDbContext db, IMuaReceivableService rec
             Booking = new { b.BookingId, b.Status, b.BookingDate, b.TotalAmount, b.DepositAmount, b.PaymentStatus,
                 b.CompletedAt, CustomerName = b.Customer?.FullName, MuaName = b.MakeupArtistProfile?.User?.FullName },
             Messages = c.Messages.Where(m => admin || !m.Internal).OrderBy(m => m.CreatedAt).ThenBy(m => m.Id)
-                .Select(m => new { m.Id, m.AuthorRole, m.Kind, m.Body, m.ImageUrls, m.Internal, m.CreatedAt }) };
+                .Select(m => new { m.Id, m.AuthorRole, m.Kind, m.Body, ImageUrls = Array.Empty<string>(), m.Internal, m.CreatedAt }) };
     }
     public async Task Message(Guid id, Guid user, bool admin, ComplaintMessageRequest request)
     {
@@ -168,8 +168,10 @@ public class ComplaintService(ApplicationDbContext db, IMuaReceivableService rec
     private static void Authorize(Booking b, Guid user, bool admin) { if (!admin && user != b.CustomerId && user != b.MUAId) Fail("FORBIDDEN", "Bạn không có quyền xem hồ sơ này.", 403); }
     private static void Text(string body, int min = 1) { if (string.IsNullOrWhiteSpace(body) || body.Trim().Length < min || body.Length > 2000) Fail("INVALID_TEXT", $"Nội dung cần từ {min} đến 2.000 ký tự.", 400); }
     private static void ValidateImages(List<string> images) {
-        if (images == null || images.Count > 5 || images.Any(u => string.IsNullOrEmpty(u) || u.Length > 2000 || !Uri.TryCreate(u, UriKind.Absolute, out var uri) || uri.Scheme != "https"))
-            Fail("INVALID_IMAGES", "Tối đa 5 ảnh với đường dẫn HTTPS hợp lệ.", 400);
+        // Private complaint attachments ship in Phase 2. Never accept public
+        // evidence URLs while that upload/access flow is unavailable.
+        if (images == null || images.Count != 0)
+            Fail("PRIVATE_EVIDENCE_UNAVAILABLE", "Ảnh bằng chứng đang tạm ngưng để bảo vệ dữ liệu riêng tư. Vui lòng gửi nội dung văn bản.", 400);
     }
     private void AddMessage(BookingComplaint c, Guid author, string role, string kind, string body, List<string> images, bool internalNote = false) {
         db.ComplaintMessages.Add(new() { Id = Guid.NewGuid(), ComplaintId = c.Id, AuthorId = author, AuthorRole = role,

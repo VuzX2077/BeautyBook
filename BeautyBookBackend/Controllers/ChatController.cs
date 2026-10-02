@@ -13,6 +13,7 @@ namespace BeautyBookBackend.Controllers
     [Route("api/[controller]")]
     [ApiController]
     [Authorize]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
     public class ChatController : ControllerBase
     {
         private readonly IChatService _chatService;
@@ -32,6 +33,31 @@ namespace BeautyBookBackend.Controllers
                 throw new UnauthorizedAccessException("Invalid user token.");
             }
             return userId;
+        }
+
+        [HttpPost("rooms/{roomId:guid}/images")]
+        [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting("media-upload")]
+        [RequestSizeLimit(VerificationImage.MaxBytes + 64 * 1024)]
+        public async Task<IActionResult> UploadChatImage(Guid roomId, [FromForm] IFormFile file)
+        {
+            Response.Headers.CacheControl = "no-store";
+            try
+            {
+                var userId = GetCurrentUserId();
+                await _chatService.EnsureRoomAccessAsync(roomId, userId);
+                if (file == null || file.Length <= 0 || file.Length > VerificationImage.MaxBytes) return BadRequest(new { Message = "Ảnh không hợp lệ hoặc vượt quá 10 MB." });
+                var db = HttpContext.RequestServices.GetRequiredService<BeautyBookBackend.Data.ApplicationDbContext>();
+                if (await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.CountAsync(db.VerificationMedia.Where(x => x.OwnerId == userId && x.CreatedAt > DateTime.UtcNow.AddHours(-1))) >= 60)
+                    return StatusCode(429, new { Message = "Bạn đã tải nhiều ảnh. Vui lòng thử lại sau." });
+                using var bytes = new MemoryStream();
+                await file.CopyToAsync(bytes, HttpContext.RequestAborted);
+                var item = await HttpContext.RequestServices.GetRequiredService<VerificationMediaService>().UploadChatAsync(userId, roomId, bytes.ToArray(), HttpContext.RequestAborted);
+                return Ok(new { MediaId = item.Id });
+            }
+            catch (UnauthorizedAccessException) { return Forbid(); }
+            catch (ArgumentException ex) { return BadRequest(new { Message = ex.Message }); }
+            catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or DllNotFoundException or TypeInitializationException)
+            { return StatusCode(503, new { Message = "Kho ảnh riêng tư đang tạm thời không khả dụng. Vui lòng thử lại." }); }
         }
 
         [HttpGet("rooms")]

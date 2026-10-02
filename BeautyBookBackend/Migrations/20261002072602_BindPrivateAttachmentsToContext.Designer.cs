@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using BeautyBookBackend.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace BeautyBookBackend.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20261002072602_BindPrivateAttachmentsToContext")]
+    partial class BindPrivateAttachmentsToContext
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1439,55 +1442,6 @@ namespace BeautyBookBackend.Migrations
                         .IsUnique();
 
                     b.ToTable("PortfolioSaves");
-                });
-
-            modelBuilder.Entity("BeautyBookBackend.Models.PrivateMediaJob", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Action")
-                        .IsRequired()
-                        .HasMaxLength(40)
-                        .HasColumnType("character varying(40)");
-
-                    b.Property<int>("Attempts")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("CompletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
-                    b.Property<Guid>("RequestedBy")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Result")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
-
-                    b.Property<DateTime?>("StartedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(40)
-                        .HasColumnType("character varying(40)");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CreatedAt");
-
-                    b.HasIndex("IsActive")
-                        .IsUnique()
-                        .HasFilter("\"IsActive\" = TRUE");
-
-                    b.ToTable("PrivateMediaJobs");
                 });
 
             modelBuilder.Entity("BeautyBookBackend.Models.Product", b =>

@@ -10,6 +10,8 @@ namespace BeautyBookBackend.Data
         {
         }
 
+        public DbSet<VerificationMedia> VerificationMedia { get; set; } = null!;
+        public DbSet<PrivateMediaJob> PrivateMediaJobs { get; set; } = null!;
         public DbSet<MuaFollow> MuaFollows { get; set; } = null!;
         public DbSet<User> Users { get; set; } = null!;
         public DbSet<MakeupArtistProfile> MakeupArtistProfiles { get; set; } = null!;
@@ -50,6 +52,26 @@ namespace BeautyBookBackend.Data
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
+            modelBuilder.Entity<PrivateMediaJob>(b => {
+                b.HasKey(x => x.Id);
+                b.Property(x => x.Action).HasMaxLength(40);
+                b.Property(x => x.Status).HasMaxLength(40);
+                b.Property(x => x.Result).HasMaxLength(1000);
+                b.HasIndex(x => x.IsActive).IsUnique().HasFilter("\"IsActive\" = TRUE");
+                b.HasIndex(x => x.CreatedAt);
+            });
+            modelBuilder.Entity<VerificationMedia>(b => {
+                b.HasKey(x => x.Id);
+                b.HasIndex(x => x.ObjectKey).IsUnique();
+                b.HasIndex(x => new { x.OwnerId, x.Purpose });
+                b.Property(x => x.ObjectKey).HasMaxLength(1000);
+                b.Property(x => x.Purpose).HasMaxLength(40);
+                b.Property(x => x.ContentType).HasMaxLength(60);
+                b.Property(x => x.Sha256).HasMaxLength(64);
+                b.Property(x => x.LegacyObjectKey).HasMaxLength(1000);
+                b.Property(x => x.LegacySha256).HasMaxLength(64);
+                b.HasOne<User>().WithMany().HasForeignKey(x => x.OwnerId).OnDelete(DeleteBehavior.Restrict);
+            });
             modelBuilder.Entity<BookingComplaint>(b => {
                 b.HasKey(c => c.Id);
                 b.HasOne(c => c.Booking).WithMany().HasForeignKey(c => c.BookingId).OnDelete(DeleteBehavior.Restrict);

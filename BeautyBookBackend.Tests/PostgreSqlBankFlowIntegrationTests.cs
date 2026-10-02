@@ -151,7 +151,7 @@ public sealed class PostgreSqlBankFlowIntegrationTests
     {
         await using var database=await PostgreSqlDatabase.CreateMigratedAsync();var customer=Guid.NewGuid();var bankId=Guid.NewGuid();
         await using(var seed=database.CreateContext()){seed.Users.Add(User(customer,UserRole.Customer));seed.BankAccounts.Add(UsableBank(customer,bankId,false,"111111"));await seed.SaveChangesAsync();}
-        await using var db=database.CreateContext();var service=new PayoutService(db,new MuaEligibilityService(db,new AlwaysAvailableSchedule()));
+        await using var db=database.CreateContext();var service=new PayoutService(db,new MuaEligibilityService(db,new AlwaysAvailableSchedule(), new VerificationMediaService(db, new SupabaseVerificationStorage(new HttpClient(), new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build()))));
         await Assert.ThrowsAsync<InvalidOperationException>(()=>service.CreateAsync(customer,new CreatePayoutRequest{BankAccountId=bankId,IdempotencyKey="customer-cannot-payout"}));
         Assert.Empty(await db.Payouts.ToListAsync());
     }

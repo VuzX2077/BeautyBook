@@ -12,9 +12,11 @@ namespace BeautyBookBackend.DTOs.Chat
         public bool IsRead { get; set; }
         public DateTime? ReadAt { get; set; }
         public string? ImageUrl { get; set; }
+        public Guid? ImageMediaId { get; set; }
         public Guid? ReplyToMessageId { get; set; }
         public string? ReplyToContent { get; set; }
         public string? ReplyToImageUrl { get; set; }
+        public Guid? ReplyToImageMediaId { get; set; }
         public List<MessageReactionDto> Reactions { get; set; } = new();
     }
 

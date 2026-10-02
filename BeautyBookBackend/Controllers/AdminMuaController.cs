@@ -46,7 +46,9 @@ namespace BeautyBookBackend.Controllers
             var privateProfile = await db.MakeupArtistProfiles.AsNoTracking().FirstAsync(x => x.MUAId == muaId);
             var bank = await db.BankAccounts.AsNoTracking().Where(x => x.UserId == muaId && x.IsActive)
                 .OrderByDescending(x => x.IsDefault).Select(x => new { x.BankCode, x.BankName, x.AccountNumber, x.AccountHolderName, x.VerificationStatus }).FirstOrDefaultAsync();
-            var verificationDocuments = new { privateProfile.Address, privateProfile.IdentityFrontUrl, privateProfile.IdentityBackUrl, privateProfile.PortraitUrl, privateProfile.CertificateUrls };
+            Response.Headers.CacheControl = "no-store";
+            var docs = await _eligibility.GetIdentityVerificationAsync(muaId);
+            var verificationDocuments = new { privateProfile.Address, docs!.IdentityFrontUrl, docs.IdentityBackUrl, docs.PortraitUrl, docs.CertificateUrls };
             return Ok(new { Profile = profile, VerificationDocuments = verificationDocuments, BankAccount = bank, Schedule = await _scheduleService.GetManagementScheduleAsync(muaId), Eligibility = await _eligibility.EvaluateAsync(muaId) });
         }
 

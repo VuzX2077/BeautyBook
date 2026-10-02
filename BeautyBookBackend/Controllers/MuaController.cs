@@ -227,6 +227,7 @@ namespace BeautyBookBackend.Controllers
         [HttpGet("verification/identity")]
         public async Task<IActionResult> GetIdentityVerification()
         {
+            Response.Headers.CacheControl = "no-store";
             var data = await _eligibilityService.GetIdentityVerificationAsync(CurrentUserId);
             return data == null ? NotFound() : Ok(data);
         }

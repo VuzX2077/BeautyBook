@@ -38,6 +38,11 @@ public static partial class BankQrDecoder
                 root.TryGetValue("59", out var name);
                 if (string.IsNullOrWhiteSpace(bin) || string.IsNullOrWhiteSpace(account))
                     throw new InvalidOperationException("QR VietQR thiếu ngân hàng hoặc số tài khoản.");
+                // Supported MoMo multi-app receive profile observed in the supplied QR.
+                // Its NAPAS receiver identifier is opaque: never treat it as a phone,
+                // trim a suffix, or generate a replacement from the owner's phone.
+                if (bin == "971025" && accountTemplate.GetValueOrDefault("02") == "QRIBFTTA")
+                    return new("MOMO", bin, null, CleanName(name), payload);
                 return new("BANK", bin, account, CleanName(name), payload);
             }
         }

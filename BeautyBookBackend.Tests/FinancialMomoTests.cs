@@ -28,7 +28,12 @@ public sealed class FinancialMomoTests
     }
     private static byte[] Qr(string suffix = "") {
         // Reserved .test address and deliberately invalid subscriber identifier: no real account/phone.
-        using var data = QRCodeGenerator.GenerateQrCode("momo://receive/test-only" + suffix, QRCodeGenerator.ECCLevel.Q);
+        var payload = "momo://receive/test-only" + suffix;
+        if (suffix == "multi-app") {
+            string Tlv(string tag, string value) => tag + value.Length.ToString("D2") + value;
+            payload = Tlv("00", "01") + Tlv("38", Tlv("00", "A000000727") + Tlv("01", Tlv("00", "971025") + Tlv("01", "0000000000000000000")) + Tlv("02", "QRIBFTTA"));
+        }
+        using var data = QRCodeGenerator.GenerateQrCode(payload, QRCodeGenerator.ECCLevel.Q);
         return new PngByteQRCode(data).GetGraphic(8);
     }
     private static User User(Guid id, UserRole role = UserRole.MUA) => new() { UserId=id,Role=role,Email=$"{id}@example.test",PasswordHash="test",IsActive=true,MediaOwnershipTracked=true };
@@ -40,7 +45,7 @@ public sealed class FinancialMomoTests
     {
         await using var database = await PostgreSqlDatabase.CreateMigratedAsync(); await using var db = database.CreateContext(); var owner=Guid.NewGuid(); var other=Guid.NewGuid(); var storage=new Storage();
         db.Users.AddRange(User(owner),User(other)); db.MakeupArtistProfiles.Add(new() { MUAId=owner }); await db.SaveChangesAsync();
-        var media=Media(db,storage); var first=(await media.UploadAsync(owner,Qr(),default)).Media;
+        var media=Media(db,storage); var first=(await media.UploadAsync(owner,Qr("multi-app"),default)).Media;
         Assert.Empty(await db.OwnedPublicMedia.ToListAsync()); Assert.Empty(storage.Inner.Public); Assert.Single(storage.Inner.Private);
         Assert.StartsWith($"financial/{owner:N}/",first.ObjectKey); Assert.Equal("financial-test",first.StorageLocationId);
         Assert.Null(await media.OwnerImageAsync(other,first.Id,default)); Assert.StartsWith("data:image/jpeg;base64,",await media.OwnerImageAsync(owner,first.Id,default));

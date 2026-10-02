@@ -39,6 +39,31 @@ public sealed class FinancialQrSecurityTests
         Assert.DoesNotContain("RawPayload", json); Assert.DoesNotContain(payload, json);
         Assert.Equal("no-store", controller.Response.Headers.CacheControl.ToString()); Assert.Equal(0, storage.Calls);
     }
+    private static string Tlv(string tag, string value) => tag + value.Length.ToString("D2") + value;
+    private static string MultiAppPayload(string bin = "971025", string service = "QRIBFTTA") =>
+        Tlv("00", "01") + Tlv("38", Tlv("00", "A000000727") + Tlv("01", Tlv("00", bin) + Tlv("01", "0000000000000000000")) + Tlv("02", service));
+
+    [Fact]
+    public async Task MomoMultiAppDecodesWithoutInventingPhoneAndCannotEnterPublicStorage()
+    {
+        var payload = MultiAppPayload();
+        var decoded = BankQrDecoder.DecodeImage(Qr(payload));
+        Assert.Equal("MOMO", decoded.Method); Assert.Equal("971025", decoded.BankBin);
+        Assert.Null(decoded.AccountNumber); Assert.Null(decoded.AccountName);
+        var storage = new Storage();
+        var response = Assert.IsType<OkObjectResult>(await Controller(storage).UploadBankQr(File(Qr(payload))));
+        var json = System.Text.Json.JsonSerializer.Serialize(response.Value);
+        Assert.DoesNotContain("RawPayload", json);
+        using var document = System.Text.Json.JsonDocument.Parse(json);
+        Assert.True(document.RootElement.GetProperty("RequiresManualAccountNumber").GetBoolean());
+        Assert.True(document.RootElement.GetProperty("RequiresManualAccountName").GetBoolean());
+        foreach (var purpose in new[] { "avatar", "portfolio", "service", "review" })
+            Assert.IsType<BadRequestObjectResult>(await Controller(storage).UploadImage(File(Qr(payload)), purpose));
+        Assert.Equal(0, storage.Calls);
+        Assert.Equal("BANK", BankQrDecoder.ParsePayload(MultiAppPayload("970436")).Method);
+        Assert.Equal("BANK", BankQrDecoder.ParsePayload(MultiAppPayload(service: "OTHER")).Method);
+    }
+
     [Fact]
     public async Task InvalidBytesAndUntrustedMimeAreRejectedWithoutStorage()
     {

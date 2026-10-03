@@ -41,6 +41,7 @@ public class BrevoEmailSenderTests
     [Theory]
     [InlineData("BANK_ACCOUNT_ADD", "Mã OTP xác minh thêm tài khoản nhận tiền")]
     [InlineData("BANK_ACCOUNT_UPDATE", "Mã OTP xác minh thay đổi tài khoản nhận tiền")]
+    [InlineData("BANK_ACCOUNT_SET_DEFAULT", "Mã OTP xác nhận đổi tài khoản nhận tiền mặc định")]
     public async Task BankOtpExplainsSensitiveReceivingDestinationChange(string purpose,string subject)
     {
         var handler=new Handler(async request=>{using var json=JsonDocument.Parse(await request.Content!.ReadAsStringAsync());Assert.Equal(subject,json.RootElement.GetProperty("subject").GetString());var text=json.RootElement.GetProperty("textContent").GetString();Assert.Contains("thay đổi nơi nhận tiền",text);Assert.Contains("Không chia sẻ OTP",text);Assert.Contains("đổi mật khẩu",text);return new HttpResponseMessage(HttpStatusCode.Created);});
@@ -70,6 +71,33 @@ public class BrevoEmailSenderTests
     {
         var handler = new Handler(_ => throw new TaskCanceledException());
         await Assert.ThrowsAsync<EmailDeliveryException>(() => Sender(handler).SendOtpAsync("recipient@example.com", "123456", "REGISTER"));
+    }
+
+    [Fact]
+    public async Task DefaultOtpContainsOnlySafeActionAndCodeAndUnsupportedPurposeSendsNothing()
+    {
+        var calls = 0;
+        var handler = new Handler(async request =>
+        {
+            calls++;
+            using var json = JsonDocument.Parse(await request.Content!.ReadAsStringAsync());
+            foreach (var field in new[] { "textContent", "htmlContent" })
+            {
+                var body = WebUtility.HtmlDecode(json.RootElement.GetProperty(field).GetString()!);
+                Assert.Contains("123456", body);
+                Assert.Contains("tài khoản nhận tiền mặc định", body);
+                Assert.Contains("5 phút", body);
+                Assert.DoesNotContain("AccountNumber", body);
+                Assert.DoesNotContain("MoMo", body);
+                Assert.DoesNotContain("<img", body);
+                Assert.DoesNotContain("https://", body);
+            }
+            return new HttpResponseMessage(HttpStatusCode.Created);
+        });
+        var sender = Sender(handler);
+        await sender.SendOtpAsync("recipient@example.com", "123456", "BANK_ACCOUNT_SET_DEFAULT");
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => sender.SendOtpAsync("recipient@example.com", "123456", "UNSUPPORTED"));
+        Assert.Equal(1, calls);
     }
 
     private sealed class Handler(Func<HttpRequestMessage, Task<HttpResponseMessage>> send) : HttpMessageHandler

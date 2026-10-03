@@ -54,11 +54,11 @@ public sealed class NearbyMuasController(ApplicationDbContext db) : ControllerBa
             AverageRating = x.Profile.AverageRating,
             ReviewCount = db.Reviews.Count(r => r.MUAId == x.Profile.MUAId),
             MinPrice = db.Services.Where(s => s.MUAId == x.Profile.MUAId && s.IsActive).Select(s => (decimal?)s.Price).Min(),
-            Latitude = x.Profile.OperatingLocationConfirmed ? x.Lat : null,
-            Longitude = x.Profile.OperatingLocationConfirmed ? x.Lng : null, DistanceKm = x.Distance,
-            LocationPrecision = x.Profile.PublicMeetingPoint ? "PUBLIC_POINT" : "APPROXIMATE",
+            Latitude = x.Profile.PublicMeetingPoint && x.Profile.OperatingLocationConfirmed ? x.Lat : null,
+            Longitude = x.Profile.PublicMeetingPoint && x.Profile.OperatingLocationConfirmed ? x.Lng : null, DistanceKm = x.Distance,
+            LocationPrecision = x.Profile.PublicMeetingPoint && x.Profile.OperatingLocationConfirmed ? "PUBLIC_POINT" : "APPROXIMATE",
             CanGetDirections = x.Profile.PublicMeetingPoint && x.Profile.OperatingLocationConfirmed,
-            LocationLabel = x.Profile.PublicMeetingPoint ? x.Profile.OperatingLocationLabel : null,
+            LocationLabel = x.Profile.PublicMeetingPoint && x.Profile.OperatingLocationConfirmed ? x.Profile.OperatingLocationLabel : null,
             RankScore = x.Profile.RankScore
         });
     }

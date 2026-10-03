@@ -13,7 +13,8 @@ namespace BeautyBookBackend.Controllers
     public class RefundController : ControllerBase
     {
         private readonly IRefundService _refundService;
-        public RefundController(IRefundService refundService) => _refundService = refundService;
+        private readonly FinancialMediaService? _financial;
+        public RefundController(IRefundService refundService, FinancialMediaService? financial = null) { _refundService = refundService; _financial = financial; }
 
         private Guid CurrentUserId => Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? Guid.Empty.ToString());
 
@@ -28,6 +29,23 @@ namespace BeautyBookBackend.Controllers
             return result == null ? NotFound() : Ok(result);
         }
 
+        [HttpGet("/api/admin/refunds/{id:guid}/transfer-qr")]
+        [ResponseCache(NoStore=true, Location=ResponseCacheLocation.None)]
+        public async Task<IActionResult> TransferQr(Guid id) {
+            Response.Headers.CacheControl="no-store";
+            var refund=await _refundService.GetAdminByIdAsync(id);
+            if(refund==null)return NotFound();
+            if(refund.Status is not (RefundStatus.Pending or RefundStatus.ManualActionRequired or RefundStatus.Processing) || !string.IsNullOrWhiteSpace(refund.ProviderReferenceId))return Conflict(new { Message="Refund không ở trạng thái chuyển thủ công." });
+            try {
+                if(refund.DestinationBankCode=="MOMO") {
+                    var image=_financial==null?null:await _financial.RefundImageAsync(id,HttpContext.RequestAborted);
+                    return image==null?Conflict(new { Message="Không có QR MoMo hợp lệ; hãy đối chiếu thông tin thủ công." }):Ok(new { RefundId=id, refund.Amount, ImageDataUrl=image, Kind="MOMO_ORIGINAL", ContainsRefundAmount=false });
+                }
+                var dto=new AdminPayoutDto { Id=id, Amount=refund.Amount, Status=BeautyBookBackend.Models.Enums.PayoutStatus.Processing, BankCode=refund.DestinationBankCode??"", BankBin=refund.DestinationBankBin, AccountNumber=refund.DestinationAccountNumber??"", AccountHolderName=refund.DestinationAccountName??"" };
+                return Ok(new { RefundId=id, refund.Amount, ImageDataUrl=PayoutQrGenerator.ImageDataUrl(dto), Kind="BANK_GENERATED", ContainsRefundAmount=true });
+            } catch(InvalidOperationException) { return Conflict(new { Message="QR chưa khả dụng; hãy đối chiếu thông tin thủ công." }); }
+            catch(HttpRequestException) { return StatusCode(503,new { Message="Chưa thể đọc QR riêng tư." }); }
+        }
         [HttpPost("{id:guid}/start-processing")]
         public async Task<IActionResult> StartProcessing(Guid id, [FromBody] RefundProcessingRequest request)
         {

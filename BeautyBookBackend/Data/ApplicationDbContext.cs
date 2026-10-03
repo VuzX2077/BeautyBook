@@ -396,6 +396,8 @@ namespace BeautyBookBackend.Data
                 b.Property(x => x.NormalizedAccountNumber).HasMaxLength(30).IsRequired();
                 b.Property(x => x.CanonicalBankKey).HasMaxLength(40).IsRequired();
                 b.Property(x => x.AccountHolderName).HasMaxLength(150).IsRequired();
+                b.Property(x => x.RejectionReason).HasMaxLength(50);
+                b.Property(x => x.ReviewNote).HasMaxLength(500);
                 b.Property(x => x.Method).HasMaxLength(20).HasDefaultValue("BANK");
                 b.Property(x => x.QrCodeUrl).HasMaxLength(1000);
                 b.Property(x => x.VerificationStatus).HasMaxLength(30).HasDefaultValue("PENDING_ADMIN");

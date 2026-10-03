@@ -160,7 +160,7 @@ namespace BeautyBookBackend.Services
             var automated = _configuration.GetValue<bool>("Refunds:AutomatedPayoutEnabled");
             var now = DateTime.UtcNow;
             var awaitingIds = await _context.Refunds.AsNoTracking()
-                .Where(x => x.Status == RefundStatus.AwaitingDestination)
+                .Where(x => x.Status == RefundStatus.AwaitingDestination && !x.DestinationNeedsConfirmation)
                 .OrderBy(x=>x.CreatedAt)
                 .Select(x=>x.RefundId)
                 .ToListAsync();
@@ -168,7 +168,7 @@ namespace BeautyBookBackend.Services
             {
                 await using var destinationTransaction=await _context.Database.BeginTransactionAsync();
                 var refund=await GetRefundForUpdateAsync(refundId);
-                if(refund?.Status!=RefundStatus.AwaitingDestination)continue;
+                if(refund?.Status!=RefundStatus.AwaitingDestination || refund.DestinationNeedsConfirmation)continue;
                 var customerId=await _context.Bookings.Where(x=>x.BookingId==refund.BookingId).Select(x=>x.CustomerId).FirstOrDefaultAsync();
                 var bank=await GetUsableCustomerBankForUpdateAsync(customerId,now);
                 if(bank==null){await destinationTransaction.CommitAsync();continue;}
@@ -182,14 +182,14 @@ namespace BeautyBookBackend.Services
             var items = await _context.Refunds.AsNoTracking()
                 .Where(x => x.Status == RefundStatus.Pending
                     || (x.Status == RefundStatus.Processing && x.ProviderReferenceId != null))
-                .Select(x => new { x.RefundId, x.Status, x.ProviderReferenceId })
+                .Select(x => new { x.RefundId, x.Status, x.ProviderReferenceId, x.DestinationBankCode })
                 .ToListAsync();
             var count = 0;
             foreach (var item in items)
             {
                 // Once a provider operation has started it must always be reconciled,
                 // even if the feature flag is switched off during an incident.
-                if (automated || (item.Status == RefundStatus.Processing && item.ProviderReferenceId != null))
+                if ((automated && item.DestinationBankCode != "MOMO") || (item.Status == RefundStatus.Processing && item.ProviderReferenceId != null))
                 {
                     if (await ProcessAutomatedAsync(item.RefundId)) count++;
                     continue;
@@ -245,6 +245,10 @@ namespace BeautyBookBackend.Services
                     return true;
                 }
 
+                if(refund.DestinationBankCode=="MOMO" && refund.ProviderReferenceId==null) {
+                    refund.Status=RefundStatus.ManualActionRequired; refund.UpdatedAt=DateTime.UtcNow;
+                    await _context.SaveChangesAsync(); await transaction.CommitAsync(); return true;
+                }
                 referenceId = refund.ProviderReferenceId ?? $"refund_{refund.RefundId:N}";
                 var enteredProcessing = refund.Status != RefundStatus.Processing;
                 refund.ProviderReferenceId = referenceId;
@@ -471,7 +475,7 @@ namespace BeautyBookBackend.Services
             ProcessingAt = refund.ProcessingAt,
             CompletedAt = refund.CompletedAt,
             FailedAt = refund.FailedAt,
-            FailureCode = refund.FailureCode,
+            DestinationNeedsConfirmation = refund.DestinationNeedsConfirmation, FailureCode = refund.FailureCode,
             FailureMessage = refund.FailureMessage
         };
 
@@ -499,6 +503,7 @@ namespace BeautyBookBackend.Services
 
         private static void ClearDestination(Refund refund)
         {
+            refund.DestinationNeedsConfirmation=true;
             refund.DestinationBankAccountId=null;
             refund.DestinationFinancialQrMediaId=null;
             refund.DestinationBankBin=null;
@@ -512,6 +517,7 @@ namespace BeautyBookBackend.Services
 
         private static void CaptureDestination(Refund refund, BankAccount bank, DateTime now)
         {
+            refund.DestinationNeedsConfirmation = false;
             refund.DestinationBankAccountId = bank.Id;
             refund.DestinationFinancialQrMediaId = bank.FinancialQrMediaId;
             refund.DestinationBankBin = bank.BankBin;
@@ -574,7 +580,7 @@ namespace BeautyBookBackend.Services
             RefundId = refund.RefundId, BookingId = refund.BookingId,
             CustomerId = refund.Booking?.CustomerId ?? Guid.Empty, CustomerName = refund.Booking?.Customer?.FullName,
             Amount = refund.Amount, Status = refund.Status, ReasonCode = refund.ReasonCode, Reason = refund.Reason,
-            ProviderReference = refund.ProviderReference, ProviderPayoutId = refund.ProviderPayoutId,
+            ProviderReference = refund.ProviderReference, ProviderPayoutId = refund.ProviderPayoutId, ProviderReferenceId = refund.ProviderReferenceId,
             LastProviderState = refund.LastProviderState, AttemptCount = refund.AttemptCount,
             DestinationBankBin = refund.DestinationBankBin, DestinationBankCode = refund.DestinationBankCode, DestinationBankName = refund.DestinationBankName,
             DestinationAccountNumber = refund.DestinationAccountNumber,
@@ -582,7 +588,7 @@ namespace BeautyBookBackend.Services
             MaskedDestinationAccountNumber = refund.DestinationAccountNumber == null ? null : Mask(refund.DestinationAccountNumber),
             DestinationAccountName = refund.DestinationAccountName, CreatedAt = refund.CreatedAt,
             ProcessingAt = refund.ProcessingAt, CompletedAt = refund.CompletedAt, FailedAt = refund.FailedAt,
-            FailureCode = refund.FailureCode, FailureMessage = refund.FailureMessage
+            DestinationNeedsConfirmation = refund.DestinationNeedsConfirmation, FailureCode = refund.FailureCode, FailureMessage = refund.FailureMessage
         };
     }
 }

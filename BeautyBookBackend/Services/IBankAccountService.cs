@@ -10,5 +10,7 @@ public interface IBankAccountService
     Task<BankAccountDto> AddAsync(Guid userId, UpsertBankAccountRequest request);
     Task<BankAccountDto?> UpdateAsync(Guid userId, Guid id, UpsertBankAccountRequest request);
     Task<BankAccountDto?> SetDefaultAsync(Guid userId, Guid id);
+    Task<BankAccountOtpResponse?> RequestDefaultOtpAsync(Guid userId, Guid id) => throw new NotSupportedException();
+    Task<BankAccountDto?> SetDefaultWithOtpAsync(Guid userId, Guid id, string otp) => throw new NotSupportedException();
     Task<bool> DeactivateAsync(Guid userId, Guid id);
 }

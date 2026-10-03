@@ -18,7 +18,8 @@ public sealed class BankAccountController(IBankAccountService service,IAuthServi
     [HttpPost] public Task<IActionResult> Add(UpsertBankAccountRequest request)=>WithErrors(()=>service.AddAsync(UserId,request));
     [HttpPut("{id:guid}")] public Task<IActionResult> Update(Guid id,UpsertBankAccountRequest request)=>WithErrors(()=>service.UpdateAsync(UserId,id,request),true);
     [HttpDelete("{id:guid}")] public async Task<IActionResult> Delete(Guid id)=>await service.DeactivateAsync(UserId,id)?NoContent():NotFound(Error("BANK_ACCOUNT_NOT_FOUND","Không tìm thấy tài khoản ngân hàng."));
-    [HttpPost("{id:guid}/set-default")] public async Task<IActionResult> SetDefault(Guid id,SetBankAccountDefaultRequest request)=>await WithPassword(request.CurrentPassword,()=>service.SetDefaultAsync(UserId,id),true);
+    [HttpPost("{id:guid}/set-default/request-otp")] public Task<IActionResult> RequestDefaultOtp(Guid id)=>WithErrors(()=>service.RequestDefaultOtpAsync(UserId,id),true);
+    [HttpPost("{id:guid}/set-default")] public async Task<IActionResult> SetDefault(Guid id,SetBankAccountDefaultRequest request)=>!string.IsNullOrWhiteSpace(request.Otp)?await WithErrors(()=>service.SetDefaultWithOtpAsync(UserId,id,request.Otp),true):await WithPassword(request.CurrentPassword,()=>service.SetDefaultAsync(UserId,id),true);
 
     private async Task<IActionResult> WithPassword<T>(string password,Func<Task<T>> action,bool nullable=false)
     {

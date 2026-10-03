@@ -26,6 +26,7 @@ namespace BeautyBookBackend.Models
         public Guid? DestinationFinancialQrMediaId { get; set; }
         public Guid? DestinationBankAccountId { get; set; }
         public DateTime? DestinationCapturedAt { get; set; }
+        public bool DestinationNeedsConfirmation { get; set; }
         public int AttemptCount { get; set; }
         public DateTime? LastAttemptAt { get; set; }
         public DateTime? NextRetryAt { get; set; }

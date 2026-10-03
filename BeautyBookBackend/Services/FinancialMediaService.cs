@@ -13,7 +13,7 @@ public sealed class FinancialMediaService(ApplicationDbContext db, VerificationM
 
     public async Task<(VerificationMedia Media, BankQrData Decoded)> UploadAsync(Guid owner, byte[] input, CancellationToken ct)
     {
-        if (!await db.Users.AnyAsync(x => x.UserId == owner && x.Role == UserRole.MUA && x.IsActive && x.DeletedAt == null, ct))
+        if (!await db.Users.AnyAsync(x => x.UserId == owner && (x.Role == UserRole.MUA || x.Role == UserRole.Customer) && x.IsActive && x.DeletedAt == null, ct))
             throw new UnauthorizedAccessException();
         if (await db.VerificationMedia.CountAsync(x => x.OwnerId == owner && x.Purpose == Purpose && x.CreatedAt > DateTime.UtcNow.AddHours(-1), ct) >= 30)
             throw new InvalidOperationException("Financial upload limit reached.");
@@ -36,7 +36,7 @@ public sealed class FinancialMediaService(ApplicationDbContext db, VerificationM
             ?? throw new BookingRuleException("FINANCIAL_QR_INVALID", "QR MoMo không còn khả dụng hoặc không thuộc tài khoản của bạn.", 409);
         if (item.ContextId.HasValue && item.ContextId != bankId) throw new BookingRuleException("FINANCIAL_QR_INVALID", "QR đã gắn với tài khoản nhận tiền khác.", 409);
         var decoded = BankQrDecoder.DecodeImage(await ReadVerifiedAsync(item, ct));
-        if (decoded.Method != "MOMO" || (decoded.AccountNumber != null && BankAccountEligibility.NormalizeAccount(decoded.AccountNumber) != BankAccountEligibility.NormalizeAccount(accountNumber)))
+        if (decoded.Method != "MOMO" || (decoded.AccountNumber != null && MomoPhone.Normalize(decoded.AccountNumber) != MomoPhone.Normalize(accountNumber)))
             throw new BookingRuleException("FINANCIAL_QR_RECIPIENT_MISMATCH", "Số MoMo không khớp QR. Vui lòng tải QR đúng người nhận hoặc dùng thông tin thủ công.", 409);
         item.ContextId = bankId; item.AttachedAt ??= DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
@@ -54,6 +54,19 @@ public sealed class FinancialMediaService(ApplicationDbContext db, VerificationM
         var item = await db.VerificationMedia.AsNoTracking().FirstOrDefaultAsync(x => x.Id == payout.FinancialQrMediaIdSnapshot && x.OwnerId == payout.MuaId && x.Purpose == Purpose && x.ContextId == payout.BankAccountId && x.ReadyAt != null && x.StorageDeletedAt == null, ct);
         // A replaced image may still be the immutable receiver QR for this active payout.
         return item == null ? null : DataUrl(await ReadVerifiedAsync(item, ct));
+    }
+    public async Task<string?> ReviewImageAsync(Guid accountId,CancellationToken ct) {
+        var bank=await db.BankAccounts.AsNoTracking().FirstOrDefaultAsync(x=>x.Id==accountId&&x.IsActive&&x.VerificationStatus==BankAccountEligibility.Pending&&x.Method=="MOMO",ct);
+        if(bank?.FinancialQrMediaId==null)return null;
+        var item=await db.VerificationMedia.AsNoTracking().FirstOrDefaultAsync(x=>x.Id==bank.FinancialQrMediaId&&x.OwnerId==bank.UserId&&x.Purpose==Purpose&&x.ContextId==bank.Id&&x.ReadyAt!=null&&x.DeletedAt==null&&x.StorageDeletedAt==null,ct);
+        return item==null?null:DataUrl(await ReadVerifiedAsync(item,ct));
+    }
+    public async Task<string?> RefundImageAsync(Guid refundId,CancellationToken ct) {
+        var refund=await db.Refunds.AsNoTracking().FirstOrDefaultAsync(x=>x.RefundId==refundId&&x.DestinationBankCode=="MOMO",ct);
+        if(refund==null || refund.Status is not (RefundStatus.Pending or RefundStatus.ManualActionRequired or RefundStatus.Processing) || !refund.DestinationFinancialQrMediaId.HasValue)return null;
+        var owner=await db.Bookings.Where(x=>x.BookingId==refund.BookingId).Select(x=>x.CustomerId).SingleAsync(ct);
+        var item=await db.VerificationMedia.AsNoTracking().FirstOrDefaultAsync(x=>x.Id==refund.DestinationFinancialQrMediaId&&x.OwnerId==owner&&x.Purpose==Purpose&&x.ContextId==refund.DestinationBankAccountId&&x.ReadyAt!=null&&x.StorageDeletedAt==null,ct);
+        return item==null?null:DataUrl(await ReadVerifiedAsync(item,ct));
     }
     public async Task MarkReplacedAsync(Guid owner, Guid? id, CancellationToken ct = default)
     {

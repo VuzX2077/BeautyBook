@@ -4,8 +4,8 @@ namespace BeautyBookBackend.DTOs;
 
 public sealed class SetBankAccountDefaultRequest
 {
-    [Required]
     public string CurrentPassword { get; set; } = string.Empty;
+    public string Otp { get; set; } = string.Empty;
 }
 
 public class BankAccountDraftRequest
@@ -18,6 +18,7 @@ public class BankAccountDraftRequest
     [Required, MaxLength(20)] public string Method { get; set; } = "BANK";
     [Url, MaxLength(1000)] public string? QrCodeUrl { get; set; }
     public Guid? FinancialQrMediaId { get; set; }
+    public string? FinancialQrAction { get; set; }
 }
 
 public sealed class UpsertBankAccountRequest : BankAccountDraftRequest

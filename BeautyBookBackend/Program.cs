@@ -291,6 +291,13 @@ if (applyMigrations)
     }
 }
 
+if (app.Environment.IsProduction())
+{
+    // Validate required financial configuration before accepting HTTP traffic.
+    using var financialScope = app.Services.CreateScope();
+    _ = financialScope.ServiceProvider.GetRequiredService<IFinancialStorage>().LocationId;
+}
+
 var verificationTask = builder.Configuration["verification-media-task"];
 if (!string.IsNullOrEmpty(verificationTask))
 {

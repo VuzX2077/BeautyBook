@@ -20,6 +20,8 @@ public sealed class BankAccount
     public bool IsActive { get; set; } = true;
     public DateTime? ReviewedAt { get; set; }
     public Guid? ReviewedBy { get; set; }
+    public string? RejectionReason { get; set; }
+    public string? ReviewNote { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
     public User? User { get; set; }

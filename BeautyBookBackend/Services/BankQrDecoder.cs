@@ -50,7 +50,7 @@ public static partial class BankQrDecoder
         if (payload.Contains("momo", StringComparison.OrdinalIgnoreCase))
         {
             var phone = PhoneRegex().Match(Uri.UnescapeDataString(payload)).Value;
-            return new("MOMO", "MOMO", string.IsNullOrWhiteSpace(phone) ? null : phone, null, payload);
+            return new("MOMO", "MOMO", string.IsNullOrWhiteSpace(phone) ? null : MomoPhone.Normalize(phone), null, payload);
         }
 
         throw new InvalidOperationException("Chỉ chấp nhận QR chuyển khoản VietQR hoặc QR cá nhân MoMo.");
@@ -71,6 +71,6 @@ public static partial class BankQrDecoder
 
     private static string? CleanName(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim().ToUpperInvariant();
 
-    [GeneratedRegex(@"(?<!\d)(?:0|84)\d{8,10}(?!\d)")]
+    [GeneratedRegex(@"(?<!\d)(?:0|84)[35789]\d{8}(?!\d)")]
     private static partial Regex PhoneRegex();
 }

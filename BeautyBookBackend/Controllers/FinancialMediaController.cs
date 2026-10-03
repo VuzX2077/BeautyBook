@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace BeautyBookBackend.Controllers;
 
 [ApiController]
-[Authorize(Roles = nameof(UserRole.MUA))]
+[Authorize(Roles = "Customer,MUA")]
 [Route("api/financial-media")]
 public sealed class FinancialMediaController(FinancialMediaService media) : ControllerBase
 {

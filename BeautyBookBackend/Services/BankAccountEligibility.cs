@@ -49,11 +49,14 @@ public static class BankAccountEligibility
         || !string.Equals(NormalizeMethod(currentMethod), NormalizeMethod(newMethod), StringComparison.Ordinal);
 
     public static bool SnapshotMatches(Refund refund, BankAccount account) =>
-        string.Equals(NormalizeCode(refund.DestinationBankCode), NormalizeCode(account.BankCode), StringComparison.Ordinal)
+        refund.DestinationCapturedAt.HasValue && account.UpdatedAt <= refund.DestinationCapturedAt.Value
+        && refund.DestinationFinancialQrMediaId == account.FinancialQrMediaId
+        && string.Equals(NormalizeCode(refund.DestinationBankCode), NormalizeCode(account.BankCode), StringComparison.Ordinal)
         && string.Equals(NormalizeCode(refund.DestinationBankBin), NormalizeCode(account.BankBin), StringComparison.Ordinal)
-        && string.Equals(NormalizeAccount(refund.DestinationAccountNumber), NormalizeAccount(account.AccountNumber), StringComparison.Ordinal)
+        && string.Equals(NormalizeRecipient(refund.DestinationBankCode,refund.DestinationAccountNumber), NormalizeRecipient(account.BankCode,account.AccountNumber), StringComparison.Ordinal)
         && string.Equals(NormalizeHolder(refund.DestinationAccountName), NormalizeHolder(account.AccountHolderName), StringComparison.Ordinal);
 
+    private static string NormalizeRecipient(string? method,string? number) { if(method!="MOMO")return NormalizeAccount(number); try{return MomoPhone.Normalize(number);}catch(BookingRuleException){return NormalizeAccount(number);} }
     public static string NormalizeCode(string? value) => (value ?? string.Empty).Trim().ToUpperInvariant();
     public static string NormalizeAccount(string? value) => string.Concat((value ?? string.Empty).Where(char.IsLetterOrDigit)).ToUpperInvariant();
     public static string NormalizeHolder(string? value) => string.Join(' ', (value ?? string.Empty).Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries)).ToUpperInvariant();

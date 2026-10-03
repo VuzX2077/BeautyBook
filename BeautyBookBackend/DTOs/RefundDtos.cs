@@ -19,6 +19,7 @@ namespace BeautyBookBackend.DTOs
         public DateTime? ProcessingAt { get; set; }
         public DateTime? CompletedAt { get; set; }
         public DateTime? FailedAt { get; set; }
+        public bool DestinationNeedsConfirmation { get; set; }
         public string? FailureCode { get; set; }
         public string? FailureMessage { get; set; }
     }
@@ -43,6 +44,7 @@ namespace BeautyBookBackend.DTOs
         public string? DestinationQrCodeUrl { get; set; }
         public int AttemptCount { get; set; }
         public string? ProviderPayoutId { get; set; }
+        public string? ProviderReferenceId { get; set; }
         public string? LastProviderState { get; set; }
     }
 

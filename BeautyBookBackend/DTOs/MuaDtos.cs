@@ -21,8 +21,10 @@ namespace BeautyBookBackend.DTOs
 
         // Từ bảng User liên kết
         public string? FullName { get; set; }
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
         public string? Email { get; set; }
         public string? AvatarUrl { get; set; }
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
         public string? PhoneNumber { get; set; }
         public bool PhoneVerified { get; set; }
 

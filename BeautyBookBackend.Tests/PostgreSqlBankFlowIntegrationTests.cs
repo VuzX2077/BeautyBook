@@ -211,9 +211,9 @@ public sealed class PostgreSqlBankFlowIntegrationTests
     [PostgreSqlFact]
     public async Task Google_default_otp_is_target_bound_single_use_and_password_users_cannot_bypass()
     {
-        await using var database=await PostgreSqlDatabase.CreateMigratedAsync();var owner=Guid.NewGuid();var first=Guid.NewGuid();var second=Guid.NewGuid();var sender=new CaptureSender();
+        await using var database=await PostgreSqlDatabase.CreateMigratedAsync();var owner=Guid.NewGuid();var first=Guid.NewGuid();var second=Guid.NewGuid();var handler=new BrevoCaptureHandler();var sender=new BrevoEmailSender(new HttpClient(handler),new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string,string?>{{"Email:BrevoApiKey","synthetic-provider-key"},{"Email:FromEmail","sender@example.test"}}).Build(),NullLogger<BrevoEmailSender>.Instance);
         await using(var seed=database.CreateContext()){var u=User(owner,UserRole.Customer);u.Email="google-only@example.test";u.PasswordHash=null;seed.Users.Add(u);seed.BankAccounts.AddRange(UsableBank(owner,first,true,"111111"),UsableBank(owner,second,false,"222222"));await seed.SaveChangesAsync();}
-        await using(var db=database.CreateContext()){var service=new BankAccountService(db,new EmailOtpService(db,sender,OtpConfig()));await service.RequestDefaultOtpAsync(owner,second);await db.EmailOtps.ExecuteUpdateAsync(x=>x.SetProperty(v=>v.ExpiresAt,DateTime.UtcNow.AddMinutes(-1)));await Assert.ThrowsAsync<BookingRuleException>(()=>service.SetDefaultWithOtpAsync(owner,second,sender.Code!));await db.EmailOtps.ExecuteUpdateAsync(x=>x.SetProperty(v=>v.ExpiresAt,DateTime.UtcNow.AddMinutes(5)));Assert.Null(await service.RequestDefaultOtpAsync(Guid.NewGuid(),second));await Assert.ThrowsAsync<BookingRuleException>(()=>service.SetDefaultWithOtpAsync(owner,first,sender.Code!));Assert.NotNull(await service.SetDefaultWithOtpAsync(owner,second,sender.Code!));await Assert.ThrowsAsync<BookingRuleException>(()=>service.SetDefaultWithOtpAsync(owner,second,sender.Code!));db.ChangeTracker.Clear();var u=await db.Users.FindAsync(owner);u!.PasswordHash="not-empty";await db.SaveChangesAsync();await Assert.ThrowsAsync<BookingRuleException>(()=>service.RequestDefaultOtpAsync(owner,first));await Assert.ThrowsAsync<BookingRuleException>(()=>service.SetDefaultWithOtpAsync(owner,first,sender.Code!));}
+        await using(var db=database.CreateContext()){var service=new BankAccountService(db,new EmailOtpService(db,sender,OtpConfig()));await service.RequestDefaultOtpAsync(owner,second);await db.EmailOtps.ExecuteUpdateAsync(x=>x.SetProperty(v=>v.ExpiresAt,DateTime.UtcNow.AddMinutes(-1)));await Assert.ThrowsAsync<BookingRuleException>(()=>service.SetDefaultWithOtpAsync(owner,second,handler.Code!));await db.EmailOtps.ExecuteUpdateAsync(x=>x.SetProperty(v=>v.ExpiresAt,DateTime.UtcNow.AddMinutes(5)));Assert.Null(await service.RequestDefaultOtpAsync(Guid.NewGuid(),second));await Assert.ThrowsAsync<BookingRuleException>(()=>service.SetDefaultWithOtpAsync(owner,first,handler.Code!));Assert.NotNull(await service.SetDefaultWithOtpAsync(owner,second,handler.Code!));await Assert.ThrowsAsync<BookingRuleException>(()=>service.SetDefaultWithOtpAsync(owner,second,handler.Code!));db.ChangeTracker.Clear();var u=await db.Users.FindAsync(owner);u!.PasswordHash="not-empty";await db.SaveChangesAsync();await Assert.ThrowsAsync<BookingRuleException>(()=>service.RequestDefaultOtpAsync(owner,first));await Assert.ThrowsAsync<BookingRuleException>(()=>service.SetDefaultWithOtpAsync(owner,first,handler.Code!));}
     }
 
     [PostgreSqlFact]
@@ -269,6 +269,21 @@ public sealed class PostgreSqlBankFlowIntegrationTests
         public Task<MuaReceivable> EnsureForCompletedBookingAsync(Booking booking)=>throw new NotSupportedException();public Task FreezeForDisputeAsync(Guid bookingId)=>Task.CompletedTask;public Task RestoreAfterMuaWinsAsync(Guid bookingId)=>Task.CompletedTask;public Task ReverseAsync(Guid bookingId)=>Task.CompletedTask;public Task<int> ReconcileStatesAsync()=>Task.FromResult(0);public Task<MuaEarningsDto> GetEarningsAsync(Guid muaId)=>throw new NotSupportedException();
     }
     private sealed class NoopProvider:IRefundPayoutProvider{public Task<RefundPayoutResult>CreateAsync(RefundPayoutRequest request,string idempotencyKey)=>throw new NotSupportedException();public Task<RefundPayoutResult>GetAsync(string payoutId)=>throw new NotSupportedException();}
+    private sealed class BrevoCaptureHandler : HttpMessageHandler
+    {
+        public string? Code { get; private set; }
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            using var json = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(cancellationToken));
+            Assert.Equal("Mã OTP xác nhận đổi tài khoản nhận tiền mặc định", json.RootElement.GetProperty("subject").GetString());
+            var text = json.RootElement.GetProperty("textContent").GetString()!;
+            Code = System.Text.RegularExpressions.Regex.Match(text, @"\b\d{6}\b").Value;
+            Assert.Equal(6, Code.Length);
+            Assert.DoesNotContain("AccountNumber", text);
+            Assert.DoesNotContain("MoMo", text);
+            return new HttpResponseMessage(System.Net.HttpStatusCode.Created);
+        }
+    }
     private sealed class CaptureSender:IEmailSender{public string? Code{get;private set;}public Task SendOtpAsync(string email,string otp,string purpose,CancellationToken cancellationToken=default){Code=otp;return Task.CompletedTask;}}
     private sealed class NeverOtp:IEmailOtpService{public Task IssueAsync(string email,string purpose,string? context=null,int resendCooldownSeconds=60,CancellationToken cancellationToken=default)=>throw new NotSupportedException();public Task<bool> ConsumeAsync(string email,string purpose,string? context,string otp,CancellationToken cancellationToken=default)=>throw new NotSupportedException();}
     private sealed class AlwaysAvailableSchedule:IMuaScheduleService

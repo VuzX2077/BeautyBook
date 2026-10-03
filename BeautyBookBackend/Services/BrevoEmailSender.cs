@@ -25,6 +25,7 @@ public sealed class BrevoEmailSender(
             "RESET_PASSWORD" => ("Mã OTP đặt lại mật khẩu", "đặt lại mật khẩu", "Nếu bạn không yêu cầu mã, hãy bỏ qua email này."),
             "BANK_ACCOUNT_ADD" => ("Mã OTP xác minh thêm tài khoản nhận tiền", "xác minh thêm tài khoản nhận tiền", "Đây là thao tác thay đổi nơi nhận tiền. Nếu bạn không thực hiện thao tác này, hãy bỏ qua email và đổi mật khẩu nếu nghi ngờ tài khoản bị truy cập."),
             "BANK_ACCOUNT_UPDATE" => ("Mã OTP xác minh thay đổi tài khoản nhận tiền", "xác minh thay đổi tài khoản nhận tiền", "Đây là thao tác thay đổi nơi nhận tiền. Nếu bạn không thực hiện thao tác này, hãy bỏ qua email và đổi mật khẩu nếu nghi ngờ tài khoản bị truy cập."),
+            "BANK_ACCOUNT_SET_DEFAULT" => ("Mã OTP xác nhận đổi tài khoản nhận tiền mặc định", "xác nhận thay đổi tài khoản nhận tiền mặc định trên BBook", "Đây là thao tác thay đổi nơi nhận tiền, không phải xác minh quyền sở hữu tài khoản ngân hàng. Nếu bạn không thực hiện thao tác này, hãy bỏ qua email và đổi mật khẩu nếu nghi ngờ tài khoản bị truy cập."),
             _ => throw new ArgumentOutOfRangeException(nameof(purpose), "Unsupported OTP purpose.")
         };
         using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.brevo.com/v3/smtp/email");

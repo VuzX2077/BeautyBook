@@ -85,6 +85,11 @@ namespace BeautyBookBackend.Services
             }
             var dto = ToMuaDetailDto(profile, styles, services, portfolio);
             if (isOwner) {
+                // Only the authenticated owner path (also used by authorized Admin review)
+                // receives account contact data; marketplace detail stays public-safe.
+                dto.Email = profile.User?.Email;
+                dto.PhoneNumber = profile.User?.PhoneNumber;
+                dto.PhoneVerified = profile.User?.PhoneVerified ?? false;
                 dto.Latitude = profile.Latitude; dto.Longitude = profile.Longitude;
                 dto.OperatingLocationLabel = profile.OperatingLocationLabel;
             }
@@ -586,10 +591,7 @@ namespace BeautyBookBackend.Services
                 TotalBookings = profile.TotalBookings,
                 PortfolioCoverUrl = profile.PortfolioCoverUrl,
                 FullName = profile.User?.FullName,
-                Email = profile.User?.Email,
                 AvatarUrl = profile.User?.AvatarUrl,
-                PhoneNumber = profile.User?.PhoneNumber,
-                PhoneVerified = profile.User?.PhoneVerified ?? false,
                 City = profile.City,
                 District = profile.District,
                 ProvinceCode = profile.ProvinceCode,
@@ -598,7 +600,7 @@ namespace BeautyBookBackend.Services
                 OperatingAreaIds = profile.OperatingAreas.Count > 0 ? profile.OperatingAreas.Select(a => a.AreaId).ToList() : profile.DistrictCode.HasValue ? new List<string> { $"legacy-district:{profile.DistrictCode}" } : new(),
                 OperatingLocationConfirmed = profile.OperatingLocationConfirmed,
                 PublicMeetingPoint = profile.PublicMeetingPoint,
-                OperatingLocationLabel = profile.PublicMeetingPoint ? profile.OperatingLocationLabel : null,
+                OperatingLocationLabel = profile.PublicMeetingPoint && profile.OperatingLocationConfirmed ? profile.OperatingLocationLabel : null,
                 Latitude = profile.PublicMeetingPoint && profile.OperatingLocationConfirmed ? profile.Latitude : null,
                 Longitude = profile.PublicMeetingPoint && profile.OperatingLocationConfirmed ? profile.Longitude : null,
                 ExperienceLevel = profile.ExperienceLevel,
@@ -631,10 +633,7 @@ namespace BeautyBookBackend.Services
                 TotalBookings = profile.TotalBookings,
                 PortfolioCoverUrl = profile.PortfolioCoverUrl,
                 FullName = profile.User?.FullName,
-                Email = profile.User?.Email,
                 AvatarUrl = profile.User?.AvatarUrl,
-                PhoneNumber = profile.User?.PhoneNumber,
-                PhoneVerified = profile.User?.PhoneVerified ?? false,
                 City = profile.City,
                 District = profile.District,
                 ProvinceCode = profile.ProvinceCode,
@@ -643,7 +642,7 @@ namespace BeautyBookBackend.Services
                 OperatingAreaIds = profile.OperatingAreas.Count > 0 ? profile.OperatingAreas.Select(a => a.AreaId).ToList() : profile.DistrictCode.HasValue ? new List<string> { $"legacy-district:{profile.DistrictCode}" } : new(),
                 OperatingLocationConfirmed = profile.OperatingLocationConfirmed,
                 PublicMeetingPoint = profile.PublicMeetingPoint,
-                OperatingLocationLabel = profile.PublicMeetingPoint ? profile.OperatingLocationLabel : null,
+                OperatingLocationLabel = profile.PublicMeetingPoint && profile.OperatingLocationConfirmed ? profile.OperatingLocationLabel : null,
                 Latitude = profile.PublicMeetingPoint && profile.OperatingLocationConfirmed ? profile.Latitude : null,
                 Longitude = profile.PublicMeetingPoint && profile.OperatingLocationConfirmed ? profile.Longitude : null,
                 ExperienceLevel = profile.ExperienceLevel,

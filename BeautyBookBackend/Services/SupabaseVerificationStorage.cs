@@ -46,8 +46,7 @@ public sealed class SupabaseVerificationStorage : IVerificationStorage
     {
         ValidateConfig();
         using var request = new HttpRequestMessage(method, $"{_origin}/storage/v1/{path}");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _secret);
-        request.Headers.Add("apikey", _secret);
+        SupabaseStorageAuthentication.Apply(request, _secret);
         if (method == HttpMethod.Post && path.StartsWith("object/", StringComparison.Ordinal) && !path.StartsWith("object/sign/", StringComparison.Ordinal))
             request.Headers.TryAddWithoutValidation("cache-control", "0");
         request.Content = body;

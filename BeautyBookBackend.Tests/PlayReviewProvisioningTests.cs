@@ -39,6 +39,8 @@ public sealed class PlayReviewProvisioningTests
             if (url.Host.Contains("brevo")) Brevo++;
             if (url.Host.Contains("expo")) Expo++;
             if (url.Host != "storage.example.test") throw new Exception("Unexpected financial or messaging network");
+            Assert.Equal(SupabaseStorageAuthenticationTests.Secret, request.Headers.GetValues("apikey").Single());
+            Assert.False(request.Headers.Contains("Authorization"));
             var path = url.AbsolutePath;
             if (path.StartsWith("/storage/v1/bucket/")) return Json("{\"public\":false}");
             if (path.StartsWith("/storage/v1/object/authenticated/")) {
@@ -78,7 +80,7 @@ public sealed class PlayReviewProvisioningTests
         public ReviewProvisioner Tool(ApplicationDbContext db)
         {
             var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> {
-                ["Supabase:Url"] = "https://storage.example.test", ["Supabase:ServiceRoleKey"] = Guid.NewGuid().ToString("N"),
+                ["Supabase:Url"] = "https://storage.example.test", ["Supabase:ServiceRoleKey"] = SupabaseStorageAuthenticationTests.Secret,
                 ["Supabase:VerificationBucket"] = "private-samples", ["Supabase:StorageBucket"] = "public-samples" }).Build();
             return new(db, Settings, new(db, new SupabaseVerificationStorage(new HttpClient(Http), config), new SupabaseImageStorage(new HttpClient(Http), config, db)));
         }
@@ -229,8 +231,19 @@ public sealed class PlayReviewProvisioningTests
         await using var database = await PostgreSqlDatabase.CreateMigratedAsync(); await using var db = database.CreateContext(); using var f = new Fixture(database.ConnectionString);
         f.Http.FailUpload = true; var error = await Assert.ThrowsAsync<ProvisioningException>(() => f.Provision(db)); Assert.DoesNotContain(f.Password, error.ToString());
         var item = await db.VerificationMedia.SingleAsync(); Assert.Null(item.ReadyAt); Assert.Null(item.AttachedAt);
+        var existingId = item.Id;
+        var hash = (await db.Users.FindAsync(f.Settings.ReviewUserId))!.PasswordHash;
         Assert.Null((await db.MakeupArtistProfiles.FindAsync(f.Settings.ReviewUserId))!.IdentityFrontUrl); Assert.Empty(await db.Bookings.ToListAsync());
         f.Http.FailUpload = false; await f.Provision(db); Assert.Equal(7, await db.Bookings.CountAsync());
+        db.ChangeTracker.Clear();
+        var recovered = await db.VerificationMedia.SingleAsync(x => x.Id == existingId);
+        Assert.NotNull(recovered.ReadyAt); Assert.NotNull(recovered.AttachedAt);
+        Assert.Equal(3, await db.VerificationMedia.CountAsync()); Assert.Equal(2, await db.Users.CountAsync());
+        Assert.Equal(hash, (await db.Users.FindAsync(f.Settings.ReviewUserId))!.PasswordHash);
+        var uploads = f.Http.Uploads;
+        await f.Provision(db);
+        Assert.Equal(uploads, f.Http.Uploads); Assert.Equal(3, await db.VerificationMedia.CountAsync());
+        Assert.Equal(2, await db.Users.CountAsync()); Assert.Equal(hash, (await db.Users.FindAsync(f.Settings.ReviewUserId))!.PasswordHash);
     }
 
     [PostgreSqlFact]

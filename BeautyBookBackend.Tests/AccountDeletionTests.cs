@@ -115,7 +115,7 @@ public sealed class AccountDeletionTests
             Assert.Equal(owner, item.OwnerId); Assert.Null(item.ReadyAt); Assert.StartsWith($"uploads/{owner:N}/", item.ObjectKey);
             Assert.Equal("ACCOUNT_DELETION_BUSY", (await Service(inspect, new Storage()).DeleteAsync(owner)).Code);
         });
-        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string,string?> { ["Supabase:Url"] = "https://storage.test", ["Supabase:ServiceRoleKey"] = "fake-local-only" }).Build();
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string,string?> { ["Supabase:Url"] = "https://storage.test", ["Supabase:ServiceRoleKey"] = SupabaseStorageAuthenticationTests.Secret }).Build();
         var result = await new SupabaseImageStorage(new HttpClient(handler), config, db).UploadOwnedPublicImageAsync(owner, new MemoryStream([1]), "image/jpeg", ".jpg");
         Assert.Equal((await db.OwnedPublicMedia.SingleAsync()).Url, result); Assert.NotNull((await db.OwnedPublicMedia.SingleAsync()).ReadyAt);
     }

@@ -126,7 +126,7 @@ public sealed class VerificationMediaSafetyTests
         new Claim(ClaimTypes.NameIdentifier, id.ToString()), new Claim(ClaimTypes.Role, role.ToString()) }, "test"));
     private static SupabaseVerificationStorage Storage(StorageHandler handler) => new(new HttpClient(handler),
         new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> {
-            ["Supabase:Url"] = "https://project.supabase.co", ["Supabase:ServiceRoleKey"] = "test-server-key", ["Supabase:StorageBucket"] = "images"
+            ["Supabase:Url"] = "https://project.supabase.co", ["Supabase:ServiceRoleKey"] = SupabaseStorageAuthenticationTests.Jwt, ["Supabase:StorageBucket"] = "images"
         }).Build());
     private sealed class StorageHandler(bool isPublic) : HttpMessageHandler
     {
@@ -135,7 +135,7 @@ public sealed class VerificationMediaSafetyTests
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
             Methods.Add(request.Method);
-            Assert.Equal("test-server-key", request.Headers.Authorization?.Parameter);
+            Assert.Equal(SupabaseStorageAuthenticationTests.Jwt, request.Headers.Authorization?.Parameter);
             if (request.Content != null) Body = await request.Content.ReadAsStringAsync(ct);
             return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(request.Method == HttpMethod.Get
                 ? $"{{\"public\":{isPublic.ToString().ToLowerInvariant()}}}"

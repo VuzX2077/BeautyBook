@@ -64,15 +64,14 @@ namespace BeautyBookBackend.Services
             var encodedPath = string.Join('/', objectPath.Split('/').Select(Uri.EscapeDataString));
             var uploadUrl = $"{_supabaseUrl}/storage/v1/object/{encodedBucket}/{encodedPath}";
             var publicUrl = $"{_supabaseUrl}/storage/v1/object/public/{encodedBucket}/{encodedPath}";
+            using var request = new HttpRequestMessage(HttpMethod.Post, uploadUrl);
+            SupabaseStorageAuthentication.Apply(request, _serviceRoleKey);
             if (item != null) {
                 item.ObjectKey = objectPath; item.Url = publicUrl;
                 _db!.OwnedPublicMedia.Add(item);
                 await _db.SaveChangesAsync(cancellationToken);
             }
 
-            using var request = new HttpRequestMessage(HttpMethod.Post, uploadUrl);
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _serviceRoleKey);
-            request.Headers.Add("apikey", _serviceRoleKey);
             request.Headers.Add("x-upsert", "false");
             request.Content = new StreamContent(content);
             request.Content.Headers.ContentType = new MediaTypeHeaderValue(contentType);

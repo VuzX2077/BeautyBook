@@ -15,7 +15,7 @@ public sealed class FinancialStorageTests
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(request.RequestUri.AbsolutePath.Contains("/bucket/") ? "{\"public\":" + Public.ToString().ToLowerInvariant() + "}" : "{}") });
         }
     }
-    private static IConfiguration Config(string bucket) => new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string,string?> { ["Supabase:Url"]="https://storage.example.test",["Supabase:ServiceRoleKey"]="local-test-only",["Supabase:FinancialBucket"]=bucket,["Supabase:VerificationBucket"]="verification-private",["Supabase:StorageBucket"]="images" }).Build();
+    private static IConfiguration Config(string bucket) => new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string,string?> { ["Supabase:Url"]="https://storage.example.test",["Supabase:ServiceRoleKey"]=SupabaseStorageAuthenticationTests.Secret,["Supabase:FinancialBucket"]=bucket,["Supabase:VerificationBucket"]="verification-private",["Supabase:StorageBucket"]="images" }).Build();
 
     [Theory]
     [InlineData("")]

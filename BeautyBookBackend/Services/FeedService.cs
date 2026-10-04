@@ -23,11 +23,11 @@ namespace BeautyBookBackend.Services
         }
 
         private sealed record Snapshot(Guid? UserId, int Limit, Guid[] Ids, HashSet<Guid> Boosted, Dictionary<Guid, Guid> Authors, Guid? Last = null, int Run = 0);
-        private IQueryable<Portfolio> PublicPosts => _dbContext.Portfolios.AsNoTracking().Where(p =>
+        private IQueryable<Portfolio> PublicPosts(Guid? viewer) => ModerationService.VisiblePortfolios(_dbContext, _dbContext.Portfolios.AsNoTracking().Where(p =>
             p.MakeupArtistProfile != null && p.MakeupArtistProfile.Status == MuaStatus.Listed &&
             p.MakeupArtistProfile.VerificationStatus == MuaVerificationStatus.Approved &&
             p.MakeupArtistProfile.User != null && p.MakeupArtistProfile.User.IsActive &&
-            p.MakeupArtistProfile.User.DeletedAt == null && !p.IsHidden);
+            p.MakeupArtistProfile.User.DeletedAt == null && !p.IsHidden), viewer);
 
         private async Task<Snapshot> BuildSnapshot(Guid? userId, int limit)
         {
@@ -38,7 +38,7 @@ namespace BeautyBookBackend.Services
                 : new List<Guid>();
             // Only ranking metadata is materialized here, not likes/comments/services.
             // No total per-artist quota and no 100-post cutoff.
-            var rows = await PublicPosts
+            var rows = await PublicPosts(userId)
                 .OrderByDescending(p => p.MakeupArtistProfile!.ProfileQualityScore + (followed.Contains(p.MUAId) && p.CreatedAt >= recentSince ? 5 : 0))
                 .ThenByDescending(p => p.CreatedAt).ThenBy(p => p.PortfolioId)
                 .Select(p => new { p.PortfolioId, p.MUAId, p.ImageUrls, p.MakeupArtistProfile!.ProfileQualityScore, p.MakeupArtistProfile.ListedAt })
@@ -53,7 +53,7 @@ namespace BeautyBookBackend.Services
 
         private async Task<List<FeedItemDto>> LoadPosts(Guid[] ids, Guid? userId, HashSet<Guid> boosted)
         {
-            var posts = await PublicPosts.Where(p => ids.Contains(p.PortfolioId))
+            var posts = await PublicPosts(userId).Where(p => ids.Contains(p.PortfolioId))
                 .Include(p => p.MakeupArtistProfile).ThenInclude(m => m!.User)
                 .Include(p => p.Likes).Include(p => p.Saves).Include(p => p.Comments).Include(p => p.Service)
                 .AsSplitQuery().ToListAsync();
@@ -96,7 +96,7 @@ namespace BeautyBookBackend.Services
             }
             // Recheck current visibility before choosing separators; hidden posts must
             // not accidentally join three same-author posts across a page boundary.
-            var visible = await PublicPosts.Where(p => snapshot.Ids.Contains(p.PortfolioId))
+            var visible = await PublicPosts(userId).Where(p => snapshot.Ids.Contains(p.PortfolioId))
                 .Select(p => new { p.PortfolioId, p.ImageUrls }).ToListAsync();
             var valid = visible.Where(p => p.ImageUrls.Any(MuaEligibilityService.IsValidPublicUrl)).Select(p => p.PortfolioId).ToHashSet();
             var remaining = snapshot.Ids.Where(valid.Contains).ToList();

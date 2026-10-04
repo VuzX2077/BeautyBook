@@ -10,6 +10,8 @@ namespace BeautyBookBackend.Data
         {
         }
 
+        public DbSet<ContentReport> ContentReports { get; set; } = null!;
+        public DbSet<UserBlock> UserBlocks { get; set; } = null!;
         public DbSet<VerificationMedia> VerificationMedia { get; set; } = null!;
         public DbSet<AccountDeletionRequest> AccountDeletionRequests { get; set; } = null!;
         public DbSet<OwnedPublicMedia> OwnedPublicMedia { get; set; } = null!;
@@ -73,6 +75,26 @@ namespace BeautyBookBackend.Data
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
+            modelBuilder.Entity<UserBlock>(b => {
+                b.HasKey(x => new { x.BlockerId, x.BlockedId });
+                b.HasIndex(x => x.BlockedId);
+                b.HasOne<User>().WithMany().HasForeignKey(x => x.BlockerId).OnDelete(DeleteBehavior.Restrict);
+                b.HasOne<User>().WithMany().HasForeignKey(x => x.BlockedId).OnDelete(DeleteBehavior.Restrict);
+            });
+            modelBuilder.Entity<ContentReport>(b => {
+                b.HasKey(x => x.Id);
+                b.Property(x => x.TargetType).HasMaxLength(20);
+                b.Property(x => x.Reason).HasMaxLength(40);
+                b.Property(x => x.Description).HasMaxLength(1000);
+                b.Property(x => x.Status).HasMaxLength(20);
+                b.Property(x => x.DecisionNote).HasMaxLength(1000);
+                b.HasIndex(x => new { x.ReporterId, x.TargetType, x.TargetId }).IsUnique();
+                b.HasIndex(x => new { x.Status, x.CreatedAt });
+                b.HasIndex(x => new { x.TargetType, x.TargetId, x.Status });
+                b.HasOne<User>().WithMany().HasForeignKey(x => x.ReporterId).OnDelete(DeleteBehavior.Restrict);
+                b.HasOne<User>().WithMany().HasForeignKey(x => x.TargetOwnerId).OnDelete(DeleteBehavior.Restrict);
+                b.HasOne<User>().WithMany().HasForeignKey(x => x.ReviewedBy).OnDelete(DeleteBehavior.Restrict);
+            });
             modelBuilder.Entity<User>().Property(x => x.IsDemoAccount).HasDefaultValue(false);
             modelBuilder.Entity<Booking>().Property(x => x.IsDemo).HasDefaultValue(false);
             modelBuilder.Entity<AccountDeletionRequest>(b => {

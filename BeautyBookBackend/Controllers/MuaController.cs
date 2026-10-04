@@ -127,7 +127,7 @@ namespace BeautyBookBackend.Controllers
 
         [HttpGet("portfolio/{portfolioId:guid}/comments")]
         public async Task<IActionResult> GetPortfolioComments(Guid portfolioId) =>
-            Ok(await _muaService.GetPortfolioCommentsAsync(portfolioId));
+            Ok(await _muaService.GetPortfolioCommentsAsync(portfolioId, CurrentUserIdOrNull));
 
         [Authorize]
         [HttpPost("portfolio/{portfolioId:guid}/comments")]

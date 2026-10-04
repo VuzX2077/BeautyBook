@@ -49,6 +49,8 @@ public sealed class VerificationMediaController(VerificationMediaService media, 
         {
             var member = await db.ChatRooms.AnyAsync(x => x.ChatRoomId == item.ContextId && (x.CustomerId == UserId || x.MUAId == UserId));
             if (!member || (item.OwnerId != UserId && !item.AttachedAt.HasValue)) return NotFound();
+            var reference = VerificationMediaService.Reference(item.Id);
+            if (await db.Messages.AnyAsync(m => m.ImageUrl == reference && db.ContentReports.Any(r => r.TargetType == "Message" && r.TargetId == m.MessageId && r.Status == "Removed"))) return NotFound();
         }
         else
         {

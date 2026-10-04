@@ -17,24 +17,27 @@ public class FollowService(ApplicationDbContext db)
     }
     public async Task<FollowStatus?> SetFollowing(Guid muaId, Guid userId, bool following)
     {
+        await using var scope = await ModerationWriteScope.Start(db, userId, muaId);
         await new PlayReviewPolicy(db).EnsureSameDomainAsync(userId, muaId);
         if (muaId == userId) throw new ArgumentException("Bạn không thể tự theo dõi mình.");
         if (!await db.Users.AnyAsync(u => u.UserId == userId && u.IsActive && u.DeletedAt == null))
             throw new UnauthorizedAccessException();
         if (following)
         {
+            await new ModerationService(db).EnsureInteraction(userId, muaId);
             if (!await PublicMuas.AnyAsync(m => m.MUAId == muaId)) return null;
             var now = DateTime.UtcNow;
             await db.Database.ExecuteSqlInterpolatedAsync($@"INSERT INTO ""MuaFollows"" (""UserId"", ""MuaId"", ""CreatedAt"")
                 VALUES ({userId}, {muaId}, {now}) ON CONFLICT (""UserId"", ""MuaId"") DO NOTHING");
         }
         else await db.MuaFollows.Where(f => f.UserId == userId && f.MuaId == muaId).ExecuteDeleteAsync();
+        await scope.Commit();
         // Allow removing an unavailable artist from the following list.
         return await GetStatus(muaId, userId) ?? new FollowStatus(muaId, false, 0);
     }
     public async Task<List<FollowedMua>> GetFollowing(Guid userId, int page, int limit)
     {
-        return await db.MuaFollows.AsNoTracking().Where(f => f.UserId == userId && PublicMuas.Any(m => m.MUAId == f.MuaId))
+        return await db.MuaFollows.AsNoTracking().Where(f => f.UserId == userId && PublicMuas.Any(m => m.MUAId == f.MuaId) && !db.UserBlocks.Any(b => (b.BlockerId == userId && b.BlockedId == f.MuaId) || (b.BlockerId == f.MuaId && b.BlockedId == userId)))
             .OrderByDescending(f => f.CreatedAt).ThenBy(f => f.MuaId)
             .Skip((page - 1) * limit).Take(limit)
             .Select(f => new FollowedMua(f.MuaId, f.Mua.User!.FullName ?? "Chuyên gia", f.Mua.User.AvatarUrl)).ToListAsync();

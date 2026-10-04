@@ -84,6 +84,8 @@ namespace BeautyBookBackend.Services
             var styles = await _muaRepository.GetStyleNamesByMuaIdAsync(muaId);
             var services = await _muaRepository.GetServicesByMuaIdAsync(muaId);
             var portfolio = await _muaRepository.GetPortfolioByMuaIdAsync(muaId);
+            var visibleIds = await ModerationService.VisiblePortfolios(_dbContext, _dbContext.Portfolios.Where(p => p.MUAId == muaId), currentUserId).Select(p => p.PortfolioId).ToListAsync();
+            portfolio = portfolio.Where(p => visibleIds.Contains(p.PortfolioId)).ToList();
             if (!isOwner)
             {
                 services = services.Where(x => x.IsActive).ToList();
@@ -279,7 +281,7 @@ namespace BeautyBookBackend.Services
 
         public async Task<List<PortfolioDto>> GetMuaPortfolioAsync(Guid muaId, Guid? currentUserId = null)
         {
-            var portfolios = await _dbContext.Portfolios
+            var portfolios = await ModerationService.VisiblePortfolios(_dbContext, _dbContext.Portfolios, currentUserId)
                 .Include(p => p.Likes)
                 .Include(p => p.Saves)
                 .Include(p => p.Comments)
@@ -366,6 +368,7 @@ namespace BeautyBookBackend.Services
             var portfolio = await _muaRepository.GetPortfolioByIdForMuaAsync(portfolioId, muaId);
             if (portfolio == null) return false;
 
+            if (!isHidden) await new ModerationService(_dbContext).EnsureContent("Portfolio", portfolioId);
             portfolio.IsHidden = isHidden;
             await _unitOfWork.SaveChangesAsync();
             await _eligibilityService.EvaluateAsync(muaId);
@@ -395,7 +398,11 @@ namespace BeautyBookBackend.Services
         // Portfolio Interactions
         public async Task<bool> TogglePortfolioLikeAsync(Guid userId, Guid portfolioId)
         {
+            await using var scope = await ModerationWriteScope.Start(_dbContext, userId);
         await new PlayReviewPolicy(_dbContext).EnsurePortfolioDomainAsync(userId, portfolioId);
+            await new ModerationService(_dbContext).EnsureContent("Portfolio", portfolioId);
+            var owner = await _dbContext.Portfolios.Where(p => p.PortfolioId == portfolioId).Select(p => p.MUAId).SingleAsync();
+            await new ModerationService(_dbContext).EnsureInteraction(userId, owner);
             if (!await _dbContext.Portfolios.AnyAsync(p => p.PortfolioId == portfolioId)) return false;
             var existingLike = await _dbContext.PortfolioLikes
                 .FirstOrDefaultAsync(l => l.UserId == userId && l.PortfolioId == portfolioId);
@@ -415,12 +422,18 @@ namespace BeautyBookBackend.Services
                 });
             }
 
-            return await _dbContext.SaveChangesAsync() > 0;
+            var saved = await _dbContext.SaveChangesAsync();
+            await scope.Commit();
+            return saved > 0;
         }
 
         public async Task<bool> TogglePortfolioSaveAsync(Guid userId, Guid portfolioId)
         {
+            await using var scope = await ModerationWriteScope.Start(_dbContext, userId);
         await new PlayReviewPolicy(_dbContext).EnsurePortfolioDomainAsync(userId, portfolioId);
+            await new ModerationService(_dbContext).EnsureContent("Portfolio", portfolioId);
+            var owner = await _dbContext.Portfolios.Where(p => p.PortfolioId == portfolioId).Select(p => p.MUAId).SingleAsync();
+            await new ModerationService(_dbContext).EnsureInteraction(userId, owner);
             if (!await _dbContext.Portfolios.AnyAsync(p => p.PortfolioId == portfolioId)) return false;
             var existingSave = await _dbContext.PortfolioSaves
                 .FirstOrDefaultAsync(s => s.UserId == userId && s.PortfolioId == portfolioId);
@@ -440,12 +453,18 @@ namespace BeautyBookBackend.Services
                 });
             }
 
-            return await _dbContext.SaveChangesAsync() > 0;
+            var saved = await _dbContext.SaveChangesAsync();
+            await scope.Commit();
+            return saved > 0;
         }
 
         public async Task<PortfolioCommentDto?> AddPortfolioCommentAsync(Guid userId, Guid portfolioId, string content)
         {
+            await using var scope = await ModerationWriteScope.Start(_dbContext, userId);
         await new PlayReviewPolicy(_dbContext).EnsurePortfolioDomainAsync(userId, portfolioId);
+            await new ModerationService(_dbContext).EnsureContent("Portfolio", portfolioId);
+            var owner = await _dbContext.Portfolios.Where(p => p.PortfolioId == portfolioId).Select(p => p.MUAId).SingleAsync();
+            await new ModerationService(_dbContext).EnsureInteraction(userId, owner);
             var user = await _userRepository.GetByIdAsync(userId);
             if (user == null || !await _dbContext.Portfolios.AnyAsync(p => p.PortfolioId == portfolioId)) return null;
 
@@ -460,6 +479,7 @@ namespace BeautyBookBackend.Services
 
             _dbContext.PortfolioComments.Add(comment);
             await _dbContext.SaveChangesAsync();
+            await scope.Commit();
 
             return new PortfolioCommentDto
             {
@@ -473,10 +493,11 @@ namespace BeautyBookBackend.Services
             };
         }
 
-        public async Task<List<PortfolioCommentDto>> GetPortfolioCommentsAsync(Guid portfolioId)
+        public async Task<List<PortfolioCommentDto>> GetPortfolioCommentsAsync(Guid portfolioId, Guid? viewer = null)
         {
+            if (!await ModerationService.VisiblePortfolios(_dbContext, _dbContext.Portfolios.Where(p => p.PortfolioId == portfolioId), viewer).AnyAsync()) return new();
             var comments = await _dbContext.PortfolioComments
-                .Where(c => c.PortfolioId == portfolioId)
+                .Where(c => (!viewer.HasValue || !_dbContext.UserBlocks.Any(b => (b.BlockerId == viewer.Value && b.BlockedId == c.UserId) || (b.BlockedId == viewer.Value && b.BlockerId == c.UserId))) && c.PortfolioId == portfolioId && !_dbContext.ContentReports.Any(r => r.TargetType == "Comment" && r.TargetId == c.Id && r.Status == "Removed"))
                 .OrderByDescending(c => c.CreatedAt)
                 .Join(_dbContext.Users,
                       c => c.UserId,
@@ -502,15 +523,22 @@ namespace BeautyBookBackend.Services
 
         public async Task<PortfolioCommentDto?> ReplyToPortfolioCommentAsync(Guid userId, Guid portfolioId, Guid parentCommentId, string content)
         {
+            await using var scope = await ModerationWriteScope.Start(_dbContext, userId);
         await new PlayReviewPolicy(_dbContext).EnsurePortfolioDomainAsync(userId, portfolioId);
+            await new ModerationService(_dbContext).EnsureContent("Portfolio", portfolioId);
+            var owner = await _dbContext.Portfolios.Where(p => p.PortfolioId == portfolioId).Select(p => p.MUAId).SingleAsync();
+            await new ModerationService(_dbContext).EnsureInteraction(userId, owner);
             var parent = await _dbContext.PortfolioComments.AsNoTracking().FirstOrDefaultAsync(c => c.Id == parentCommentId && c.PortfolioId == portfolioId);
             if (parent == null) return null;
+            await new ModerationService(_dbContext).EnsureContent("Comment", parentCommentId);
+            await new ModerationService(_dbContext).EnsureInteraction(userId, parent.UserId);
             await new PlayReviewPolicy(_dbContext).EnsureSameDomainAsync(userId, parent.UserId);
             var user = await _userRepository.GetByIdAsync(userId);
             if (user == null) return null;
             var reply = new PortfolioComment { UserId = userId, PortfolioId = portfolioId, ParentCommentId = parentCommentId, Content = content };
             _dbContext.PortfolioComments.Add(reply);
             await _dbContext.SaveChangesAsync();
+            await scope.Commit();
             return new PortfolioCommentDto { Id = reply.Id, PortfolioId = portfolioId, UserId = userId, ParentCommentId = parentCommentId, UserName = user.FullName, UserAvatarUrl = user.AvatarUrl, Content = content, CreatedAt = reply.CreatedAt };
         }
 
@@ -520,6 +548,7 @@ namespace BeautyBookBackend.Services
                 .Include(p => p.Likes).Include(p => p.Saves).Include(p => p.Comments)
                 .Include(p => p.MakeupArtistProfile).ThenInclude(m => m.User)
                 .Include(p => p.Service).AsQueryable();
+            query = ModerationService.VisiblePortfolios(_dbContext, query, userId);
             query = query.Where(p => !p.IsHidden
                 && p.MakeupArtistProfile != null
                 && p.MakeupArtistProfile.Status == Models.Enums.MuaStatus.Listed

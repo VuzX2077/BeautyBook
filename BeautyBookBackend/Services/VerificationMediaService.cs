@@ -59,6 +59,7 @@ public sealed class VerificationMediaService(ApplicationDbContext db, IVerificat
     public async Task<string?> ResolveChatAsync(string? reference, Guid roomId)
     {
         if (!TryId(reference, out var id)) return null;
+        if (await db.Messages.AnyAsync(m => m.ChatRoomId == roomId && m.ImageUrl == reference && db.ContentReports.Any(r => r.TargetType == "Message" && r.TargetId == m.MessageId && r.Status == "Removed"))) return null;
         var item = await db.VerificationMedia.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && x.ContextId == roomId && x.Purpose == "chat" && x.ReadyAt != null && x.DeletedAt == null);
         return item == null ? null : await storage.SignAsync(item.ObjectKey);
     }

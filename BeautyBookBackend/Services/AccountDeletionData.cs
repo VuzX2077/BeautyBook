@@ -30,6 +30,11 @@ public sealed partial class AccountDeletionService
 
     private async Task MinimizeRelatedDataAsync(Guid userId, string? email)
     {
+        await _context.UserBlocks.Where(x => x.BlockerId == userId || x.BlockedId == userId).ExecuteDeleteAsync();
+        // Keep decisions/IDs to avoid resurrecting removed content; erase free-text identifiers.
+        await _context.ContentReports.Where(x => x.ReporterId == userId || x.TargetOwnerId == userId || x.ReviewedBy == userId)
+            .ExecuteUpdateAsync(x => x.SetProperty(r => r.Description, "").SetProperty(r => r.DecisionNote, "")
+                .SetProperty(r => r.Status, r => r.Status == "Pending" ? "Dismissed" : r.Status));
         if (email != null) await _context.EmailOtps.Where(x => x.Email.ToLower() == email.ToLower()).ExecuteDeleteAsync();
         // Notifications are platform-created copies of names/chat previews, even
         // when the recipient is another account. Keep IDs, remove those snapshots.

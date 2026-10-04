@@ -50,16 +50,65 @@ public sealed class SupabaseVerificationStorage : IVerificationStorage
         if (method == HttpMethod.Post && path.StartsWith("object/", StringComparison.Ordinal) && !path.StartsWith("object/sign/", StringComparison.Ordinal))
             request.Headers.TryAddWithoutValidation("cache-control", "0");
         request.Content = body;
+        var expectedUri = request.RequestUri!;
         var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
         if (!response.IsSuccessStatusCode)
         {
-            var status = (int)response.StatusCode;
-            response.Dispose();
-            if (status == 404 && path.StartsWith("object/authenticated/", StringComparison.Ordinal)) throw new StorageObjectMissingException();
-            // Never include provider bodies, URLs or service credentials in client-visible errors.
-            throw new InvalidOperationException($"Verification storage request failed ({status}).");
+            using (response)
+            {
+                var status = (int)response.StatusCode;
+                if (status == 404 && path.StartsWith("object/authenticated/", StringComparison.Ordinal)) throw new StorageObjectMissingException();
+                if (status == 400 && method == HttpMethod.Get
+                    && path.StartsWith($"object/authenticated/{Uri.EscapeDataString(_bucket)}/", StringComparison.Ordinal)
+                    && await IsMissingObjectAsync(response, expectedUri, ct)) throw new StorageObjectMissingException();
+                // Never include provider bodies, URLs or service credentials in client-visible errors.
+                throw new InvalidOperationException($"Verification storage request failed ({status}).");
+            }
         }
         return response;
+    }
+
+    private static async Task<bool> IsMissingObjectAsync(HttpResponseMessage response, Uri expectedUri, CancellationToken ct)
+    {
+        const int limit = 4096;
+        // Only parse JSON from the exact requested endpoint, never a redirect target.
+        if (response.RequestMessage?.RequestUri != expectedUri
+            || !string.Equals(response.Content.Headers.ContentType?.MediaType, "application/json", StringComparison.OrdinalIgnoreCase)
+            || response.Content.Headers.ContentLength > limit) return false;
+        try
+        {
+            await using var stream = await response.Content.ReadAsStreamAsync(ct);
+            var bytes = new byte[limit + 1];
+            var count = 0;
+            while (count < bytes.Length)
+            {
+                var read = await stream.ReadAsync(bytes.AsMemory(count), ct);
+                if (read == 0) break;
+                count += read;
+            }
+            if (count == 0 || count > limit) return false;
+            using var json = JsonDocument.Parse(bytes.AsMemory(0, count), new JsonDocumentOptions { MaxDepth = 8 });
+            var root = json.RootElement;
+            if (root.ValueKind != JsonValueKind.Object) return false;
+            var names = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var property in root.EnumerateObject()) if (!names.Add(property.Name)) return false;
+            var hasStatus = false;
+            foreach (var field in new[] { "statusCode", "httpStatusCode" })
+            {
+                if (!root.TryGetProperty(field, out var status)) continue;
+                hasStatus = true;
+                if (!(status.ValueKind == JsonValueKind.String && status.GetString() == "404")
+                    && !(status.ValueKind == JsonValueKind.Number && status.TryGetInt32(out var number) && number == 404)) return false;
+            }
+            var hasCode = root.TryGetProperty("code", out var code);
+            if (hasCode && (code.ValueKind != JsonValueKind.String || code.GetString() is not ("NoSuchKey" or "not_found"))) return false;
+            var hasError = root.TryGetProperty("error", out var error);
+            if (hasError && (error.ValueKind != JsonValueKind.String || error.GetString() is not ("NoSuchKey" or "not_found" or "Not found"))) return false;
+            // Legacy error-only bodies require an explicit logical 404.
+            return hasCode || (hasError && error.GetString() == "not_found" && hasStatus);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch { return false; } // Malformed/truncated/unreadable bodies remain ordinary failures.
     }
     public async Task EnsurePrivateAsync(CancellationToken ct = default)
     {

@@ -31,6 +31,7 @@ public sealed class PlayReviewProvisioningTests
         public Dictionary<string, byte[]> Objects = new();
         public int Uploads, PayOs, Brevo, Expo;
         public bool FailUpload;
+        public string? MissingBody;
         public TaskCompletionSource? UploadStarted, ReleaseUpload;
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
@@ -45,7 +46,9 @@ public sealed class PlayReviewProvisioningTests
             if (path.StartsWith("/storage/v1/bucket/")) return Json("{\"public\":false}");
             if (path.StartsWith("/storage/v1/object/authenticated/")) {
                 var key = path["/storage/v1/object/authenticated/".Length..];
-                return Objects.TryGetValue(key, out var bytes) ? new(HttpStatusCode.OK) { Content = new ByteArrayContent(bytes) } : new(HttpStatusCode.NotFound);
+                return Objects.TryGetValue(key, out var bytes) ? new(HttpStatusCode.OK) { Content = new ByteArrayContent(bytes) }
+                    : MissingBody == null ? new(HttpStatusCode.NotFound)
+                    : new(HttpStatusCode.BadRequest) { RequestMessage = request, Content = new StringContent(MissingBody, Encoding.UTF8, "application/json") };
             }
             if (request.Method == HttpMethod.Post && path.StartsWith("/storage/v1/object/")) {
                 Uploads++; UploadStarted?.TrySetResult();
@@ -244,6 +247,39 @@ public sealed class PlayReviewProvisioningTests
         await f.Provision(db);
         Assert.Equal(uploads, f.Http.Uploads); Assert.Equal(3, await db.VerificationMedia.CountAsync());
         Assert.Equal(2, await db.Users.CountAsync()); Assert.Equal(hash, (await db.Users.FindAsync(f.Settings.ReviewUserId))!.PasswordHash);
+    }
+
+    [PostgreSqlFact]
+    public async Task Pending_row_recovers_from_400_missing_variants_without_duplicate_or_credential_change()
+    {
+        foreach (var body in new[] {
+            "{\"statusCode\":\"404\",\"code\":\"NoSuchKey\",\"error\":\"not_found\",\"message\":\"Object not found\"}",
+            "{\"code\":\"not_found\",\"message\":\"Object not found\"}",
+            "{\"statusCode\":\"404\",\"error\":\"not_found\",\"message\":\"Object not found\"}" })
+        {
+            await using var database = await PostgreSqlDatabase.CreateMigratedAsync();
+            await using var db = database.CreateContext(); using var f = new Fixture(database.ConnectionString);
+            f.Http.FailUpload = true; await Assert.ThrowsAsync<ProvisioningException>(() => f.Provision(db));
+            var pending = await db.VerificationMedia.SingleAsync();
+            var id = pending.Id; var key = pending.ObjectKey; var hash = pending.Sha256;
+            var passwordHash = (await db.Users.FindAsync(f.Settings.ReviewUserId))!.PasswordHash;
+            Assert.Null(pending.ReadyAt); Assert.Null(pending.AttachedAt); Assert.Empty(await db.Bookings.ToListAsync());
+            f.Http.MissingBody = body; f.Http.FailUpload = false; await f.Provision(db);
+            db.ChangeTracker.Clear();
+            var recovered = await db.VerificationMedia.SingleAsync(x => x.Id == id);
+            Assert.Equal(key, recovered.ObjectKey); Assert.Equal(hash, recovered.Sha256);
+            Assert.NotNull(recovered.ReadyAt); Assert.NotNull(recovered.AttachedAt);
+            var bytes = f.Http.Objects["private-samples/" + key];
+            Assert.Equal(recovered.Size, bytes.Length);
+            Assert.Equal(hash, Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)));
+            Assert.Equal(VerificationMediaService.Reference(id), (await db.MakeupArtistProfiles.FindAsync(f.Settings.ReviewUserId))!.IdentityFrontUrl);
+            Assert.Equal(passwordHash, (await db.Users.FindAsync(f.Settings.ReviewUserId))!.PasswordHash);
+            Assert.Equal(3, await db.VerificationMedia.CountAsync()); Assert.Equal(7, await db.Bookings.CountAsync());
+            var uploads = f.Http.Uploads; await f.Provision(db);
+            Assert.Equal(uploads, f.Http.Uploads); Assert.Equal(3, await db.VerificationMedia.CountAsync());
+            Assert.Equal(passwordHash, (await db.Users.FindAsync(f.Settings.ReviewUserId))!.PasswordHash);
+            Assert.Equal(0, f.Http.PayOs + f.Http.Brevo + f.Http.Expo);
+        }
     }
 
     [PostgreSqlFact]

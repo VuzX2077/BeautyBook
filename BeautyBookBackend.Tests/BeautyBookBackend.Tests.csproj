@@ -20,5 +20,6 @@
   <ItemGroup>
     <ProjectReference Include="..\BeautyBookBackend\BeautyBookBackend.csproj" />
     <ProjectReference Include="..\BeautyBook.PlayReviewProvisioning\BeautyBook.PlayReviewProvisioning.csproj" />
+    <ProjectReference Include="..\BeautyBook.StorageDiagnostics\BeautyBook.StorageDiagnostics.csproj" />
   </ItemGroup>
 </Project>

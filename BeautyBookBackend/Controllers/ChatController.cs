@@ -44,7 +44,7 @@ namespace BeautyBookBackend.Controllers
             try
             {
                 var userId = GetCurrentUserId();
-                await _chatService.EnsureRoomAccessAsync(roomId, userId);
+                await _chatService.EnsureRoomInteractionAsync(roomId, userId);
                 if (file == null || file.Length <= 0 || file.Length > VerificationImage.MaxBytes) return BadRequest(new { Message = "Ảnh không hợp lệ hoặc vượt quá 10 MB." });
                 var db = HttpContext.RequestServices.GetRequiredService<BeautyBookBackend.Data.ApplicationDbContext>();
                 if (await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.CountAsync(db.VerificationMedia.Where(x => x.OwnerId == userId && x.CreatedAt > DateTime.UtcNow.AddHours(-1))) >= 60)

@@ -15,14 +15,13 @@ public class FollowServiceTests
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
         await using var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlite(connection).Options);
-        await db.Database.ExecuteSqlRawAsync("""
-            CREATE TABLE "Users" ("UserId" TEXT PRIMARY KEY, "FullName" TEXT, "AvatarUrl" TEXT, "IsActive" INTEGER, "DeletedAt" TEXT, "IsDemoAccount" INTEGER NOT NULL DEFAULT 0);
-            CREATE TABLE "MakeupArtistProfiles" ("MUAId" TEXT PRIMARY KEY, "Status" INTEGER, "VerificationStatus" INTEGER);
-            CREATE TABLE "MuaFollows" ("UserId" TEXT, "MuaId" TEXT, "CreatedAt" TEXT, PRIMARY KEY ("UserId", "MuaId"), CHECK ("UserId" <> "MuaId"));
-            """);
+        // Use the actual model so new interaction guards are covered without a partial hand-written schema.
+        var schema = db.Database.GenerateCreateScript().Replace("INTERVAL '0'", "0").Replace("INTERVAL '1 day'", "86400");
+        await db.Database.ExecuteSqlRawAsync(schema);
         var user = Guid.NewGuid(); var mua = Guid.NewGuid();
-        await db.Database.ExecuteSqlInterpolatedAsync($"INSERT INTO Users (UserId, IsActive) VALUES ({user}, 1), ({mua}, 1)");
-        await db.Database.ExecuteSqlInterpolatedAsync($"INSERT INTO MakeupArtistProfiles (MUAId, Status, VerificationStatus) VALUES ({mua}, {(int)MuaStatus.Listed}, {(int)MuaVerificationStatus.Approved})");
+        db.Users.AddRange(new User { UserId = user, IsActive = true }, new User { UserId = mua, IsActive = true });
+        db.MakeupArtistProfiles.Add(new MakeupArtistProfile { MUAId = mua, Status = MuaStatus.Listed, VerificationStatus = MuaVerificationStatus.Approved });
+        await db.SaveChangesAsync();
         var service = new FollowService(db);
         Assert.False((await service.GetStatus(mua, user))!.IsFollowing);
         Assert.True((await service.SetFollowing(mua, user, true))!.IsFollowing);

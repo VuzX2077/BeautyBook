@@ -722,6 +722,7 @@ namespace BeautyBookBackend.Services
 
         public async Task<bool> AddReviewAsync(Guid bookingId, Guid customerId, ReviewCreateDto reviewDto)
         {
+            await using var scope = await ModerationWriteScope.Start(_context, customerId);
         await new PlayReviewPolicy(_context).EnsureBookingDomainAsync(bookingId);
             var booking = await _bookingRepository.GetByIdForCustomerAsync(bookingId, customerId);
             if (booking == null || (booking.Status != BookingStatus.Completed && booking.Status != BookingStatus.AutoCompleted))
@@ -733,6 +734,7 @@ namespace BeautyBookBackend.Services
             {
                 return false;
             }
+            await new ModerationService(_context).EnsureInteraction(customerId, booking.MUAId);
 
             await _reviewRepository.AddAsync(new Review
             {
@@ -759,11 +761,13 @@ namespace BeautyBookBackend.Services
                 }
             }
 
+            await scope.Commit();
             return true;
         }
 
         public async Task<bool> ReplyReviewAsync(Guid reviewId, Guid muaId, string replyContent, bool isAdmin = false)
         {
+            await using var scope = await ModerationWriteScope.Start(_context, muaId);
             var review = await _reviewRepository.GetByIdAsync(reviewId);
             if (review == null) return false;
             await new PlayReviewPolicy(_context).EnsureBookingDomainAsync(review.BookingId);
@@ -773,17 +777,23 @@ namespace BeautyBookBackend.Services
             else await new PlayReviewPolicy(_context).EnsureSameDomainAsync(muaId, review.CustomerId);
 
             if (!isAdmin && review.MUAId != muaId) return false;
+            await new ModerationService(_context).EnsureContent("Review", reviewId);
+            if (!isAdmin) await new ModerationService(_context).EnsureInteraction(muaId, review.CustomerId);
 
             review.MuaReply = replyContent;
             review.MuaReplyAt = DateTime.UtcNow;
 
             await _unitOfWork.SaveChangesAsync();
+            await scope.Commit();
             return true;
         }
 
-        public async Task<List<ReviewDto>> GetMuaReviewsAsync(Guid muaId)
+        public async Task<List<ReviewDto>> GetMuaReviewsAsync(Guid muaId, Guid? viewer = null)
         {
             var reviews = await _reviewRepository.GetByMuaIdAsync(muaId);
+            var removed = await _context.ContentReports.Where(x => x.TargetType == "Review" && x.Status == "Removed").Select(x => x.TargetId).ToListAsync();
+            var blocked = viewer.HasValue ? await _context.UserBlocks.Where(b => b.BlockerId == viewer || b.BlockedId == viewer).Select(b => b.BlockerId == viewer ? b.BlockedId : b.BlockerId).ToListAsync() : new List<Guid>();
+            reviews = reviews.Where(x => !removed.Contains(x.ReviewId) && !blocked.Contains(x.CustomerId)).ToList();
             return reviews.Select(r => new ReviewDto
             {
                 ReviewId = r.ReviewId,

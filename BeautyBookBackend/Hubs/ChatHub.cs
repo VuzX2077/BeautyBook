@@ -59,7 +59,7 @@ namespace BeautyBookBackend.Hubs
         {
             await RequireActiveAsync();
             var userId = CurrentUserId();
-            await _chatService.EnsureRoomAccessAsync(roomId, userId);
+            await _chatService.EnsureRoomInteractionAsync(roomId, userId);
             await Clients.OthersInGroup(roomId.ToString()).SendAsync("TypingChanged", new { RoomId = roomId, UserId = userId, IsTyping = isTyping });
         }
 

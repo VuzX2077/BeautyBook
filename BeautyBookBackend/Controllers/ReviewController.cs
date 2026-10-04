@@ -33,7 +33,7 @@ namespace BeautyBookBackend.Controllers
         [HttpGet("mua/{muaId}")]
         public async Task<IActionResult> GetReviewsByMua(Guid muaId)
         {
-            var reviews = await _bookingService.GetMuaReviewsAsync(muaId);
+            var reviews = await _bookingService.GetMuaReviewsAsync(muaId, CurrentUserId == Guid.Empty ? null : CurrentUserId);
             return Ok(reviews);
         }
 

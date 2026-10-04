@@ -31,7 +31,9 @@ namespace BeautyBookBackend.Services
 
         public async Task<ChatRoomDto> GetOrCreateChatRoomAsync(Guid customerId, Guid muaId)
         {
+            await using var scope = await ModerationWriteScope.Start(_context, customerId, muaId);
         await new PlayReviewPolicy(_context).EnsureSameDomainAsync(customerId, muaId);
+            await new ModerationService(_context).EnsureInteraction(customerId, muaId);
             if (customerId == muaId) throw new ArgumentException("Không thể tự tạo cuộc trò chuyện với chính mình.");
             var customer = await _context.Users.AsNoTracking().FirstOrDefaultAsync(x => x.UserId == customerId && x.IsActive && x.DeletedAt == null);
             if (customer == null || customer.Role == UserRole.Admin) throw new UnauthorizedAccessException("Tài khoản không thể tạo cuộc trò chuyện này.");
@@ -45,6 +47,7 @@ namespace BeautyBookBackend.Services
             dto.MUAName = DisplayName(mua.User?.FullName);
             dto.MUAAvatar = mua.User?.AvatarUrl;
             SetOtherParticipant(dto, customerId);
+            await scope.Commit();
             return dto;
         }
 
@@ -114,6 +117,13 @@ namespace BeautyBookBackend.Services
             return (room.CustomerId, room.MUAId);
         }
 
+        public async Task EnsureRoomInteractionAsync(Guid roomId, Guid userId)
+        {
+            await EnsureRoomAccessAsync(roomId, userId);
+            var participants = await GetParticipantsAsync(roomId, userId);
+            await new ModerationService(_context).EnsureInteraction(userId, participants.CustomerId == userId ? participants.MuaId : participants.CustomerId);
+        }
+
         public async Task<int> MarkReadAsync(Guid roomId, Guid userId)
         {
             await EnsureRoomAccessAsync(roomId, userId);
@@ -124,6 +134,7 @@ namespace BeautyBookBackend.Services
 
         public async Task<MessageDto> SendMessageAsync(Guid roomId, Guid senderId, string? content, string? imageUrl, Guid? replyToMessageId)
         {
+            await using var scope = await ModerationWriteScope.Start(_context, senderId);
 
             var room = await _chatRepository.GetChatRoomByIdAsync(roomId);
             if (room == null)
@@ -137,11 +148,12 @@ namespace BeautyBookBackend.Services
             }
 
             await new PlayReviewPolicy(_context).EnsureChatDomainAsync(roomId, senderId);
+            await new ModerationService(_context).EnsureInteraction(senderId, room.CustomerId == senderId ? room.MUAId : room.CustomerId);
             if (string.IsNullOrWhiteSpace(content) && string.IsNullOrWhiteSpace(imageUrl))
                 throw new ArgumentException("Tin nhắn phải có nội dung hoặc hình ảnh.");
             if (content?.Trim().Length > 2000) throw new ArgumentException("Tin nhắn không được vượt quá 2000 ký tự.");
             VerificationMedia? attachment = null;
-            await using var imageTransaction = !string.IsNullOrWhiteSpace(imageUrl) && _context.Database.IsNpgsql() ? await _context.Database.BeginTransactionAsync() : null;
+            await using var imageTransaction = !string.IsNullOrWhiteSpace(imageUrl) && _context.Database.IsNpgsql() && _context.Database.CurrentTransaction == null ? await _context.Database.BeginTransactionAsync() : null;
             if (!string.IsNullOrWhiteSpace(imageUrl))
             {
                 if (_media == null || !VerificationMediaService.TryId(imageUrl, out var imageId)) throw new ArgumentException("Vui lòng tải ảnh qua kho ảnh chat riêng tư.");
@@ -179,6 +191,7 @@ namespace BeautyBookBackend.Services
 
             var savedMessage = await _chatRepository.AddMessageAsync(message);
             if (imageTransaction != null) await imageTransaction.CommitAsync();
+            await scope.Commit();
             try
             {
                 await _chatNotifications.QueueMessageAsync(room, savedMessage);
@@ -194,6 +207,7 @@ namespace BeautyBookBackend.Services
 
         public async Task<MessageDto> ToggleReactionAsync(Guid roomId, Guid messageId, Guid userId, string emoji)
         {
+            await using var scope = await ModerationWriteScope.Start(_context, userId);
         await new PlayReviewPolicy(_context).EnsureChatDomainAsync(roomId, userId);
             emoji = emoji.Trim();
             var allowedEmoji = new HashSet<string> { "❤️", "👍", "😀", "😂", "😍", "🔥", "👏", "😢" };
@@ -204,12 +218,15 @@ namespace BeautyBookBackend.Services
             var message = await _context.Messages.Include(m => m.ReplyToMessage).Include(m => m.Reactions)
                 .FirstOrDefaultAsync(m => m.MessageId == messageId && m.ChatRoomId == roomId)
                 ?? throw new ArgumentException("Không tìm thấy tin nhắn.");
+            await EnsureRoomInteractionAsync(roomId, userId);
+            await new ModerationService(_context).EnsureContent("Message", messageId);
             var existing = message.Reactions.FirstOrDefault(r => r.UserId == userId);
             if (existing != null && existing.Emoji == emoji) _context.MessageReactions.Remove(existing);
             else if (existing != null) existing.Emoji = emoji;
             else _context.MessageReactions.Add(new MessageReaction { MessageId = messageId, UserId = userId, Emoji = emoji });
             await _context.SaveChangesAsync();
             await _context.Entry(message).Collection(m => m.Reactions).LoadAsync();
+            await scope.Commit();
             return await MapToMessageDtoAsync(message, userId);
         }
 
@@ -242,6 +259,8 @@ namespace BeautyBookBackend.Services
 
         private async Task<MessageDto> MapToMessageDtoAsync(Message message, Guid? currentUserId = null)
         {
+            var removed = await _context.ContentReports.AnyAsync(x => x.TargetType == "Message" && x.TargetId == message.MessageId && x.Status == "Removed");
+            var replyRemoved = message.ReplyToMessageId.HasValue && await _context.ContentReports.AnyAsync(x => x.TargetType == "Message" && x.TargetId == message.ReplyToMessageId && x.Status == "Removed");
             async Task<string?> Preview(string? reference)
             {
                 try { return _media == null ? null : await _media.ResolveChatAsync(reference, message.ChatRoomId); }
@@ -253,17 +272,17 @@ namespace BeautyBookBackend.Services
                 MessageId = message.MessageId,
                 ChatRoomId = message.ChatRoomId,
                 SenderId = message.SenderId,
-                Content = message.Content,
+                Content = removed ? "Nội dung đã được ẩn bởi kiểm duyệt." : message.Content,
                 SentAt = message.SentAt,
                 IsRead = message.IsRead
                 ,ReadAt = message.ReadAt
-                ,ImageUrl = await Preview(message.ImageUrl)
-                ,ImageMediaId = VerificationMediaService.TryId(message.ImageUrl, out var imageId) ? imageId : null
+                ,ImageUrl = removed ? null : await Preview(message.ImageUrl)
+                ,ImageMediaId = !removed && VerificationMediaService.TryId(message.ImageUrl, out var imageId) ? imageId : null
                 ,ReplyToMessageId = message.ReplyToMessageId
-                ,ReplyToContent = message.ReplyToMessage?.Content
-                ,ReplyToImageUrl = await Preview(message.ReplyToMessage?.ImageUrl)
-                ,ReplyToImageMediaId = VerificationMediaService.TryId(message.ReplyToMessage?.ImageUrl, out var replyImageId) ? replyImageId : null
-                ,Reactions = message.Reactions.GroupBy(r => r.Emoji).Select(g => new MessageReactionDto
+                ,ReplyToContent = replyRemoved ? "Nội dung đã được ẩn bởi kiểm duyệt." : message.ReplyToMessage?.Content
+                ,ReplyToImageUrl = replyRemoved ? null : await Preview(message.ReplyToMessage?.ImageUrl)
+                ,ReplyToImageMediaId = !replyRemoved && VerificationMediaService.TryId(message.ReplyToMessage?.ImageUrl, out var replyImageId) ? replyImageId : null
+                ,Reactions = message.Reactions.Where(r => !removed).GroupBy(r => r.Emoji).Select(g => new MessageReactionDto
                 {
                     Emoji = g.Key,
                     Count = g.Count(),

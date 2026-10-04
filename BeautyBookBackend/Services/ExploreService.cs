@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using BeautyBookBackend.Data;
@@ -10,14 +11,16 @@ using Microsoft.EntityFrameworkCore;
 
 namespace BeautyBookBackend.Services;
 
-public sealed class ExploreService(ApplicationDbContext db, IDataProtectionProvider protection)
+public sealed class ExploreService(ApplicationDbContext db, IDataProtectionProvider protection, IHttpContextAccessor? http = null)
 {
+    private Guid? Viewer => http?.HttpContext?.User.Identity?.IsAuthenticated == true && Guid.TryParse(http.HttpContext.User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : null;
     private readonly IDataProtector protector = protection.CreateProtector("BBook.Explore.Cursor.v1");
     private sealed record CursorState(string Filter, DateTime Cutoff, DateTime Expires,
         Guid Id, DateTime? CreatedAt = null, decimal? Value = null, double? Score = null);
     public IQueryable<MakeupArtistProfile> PublicArtists => db.MakeupArtistProfiles.AsNoTracking().IgnoreAutoIncludes()
         .Where(p => p.Status == MuaStatus.Listed && p.VerificationStatus == MuaVerificationStatus.Approved &&
-            p.User != null && p.User.IsActive && p.User.DeletedAt == null);
+            p.User != null && p.User.IsActive && p.User.DeletedAt == null &&
+            (!Viewer.HasValue || !db.UserBlocks.Any(b => (b.BlockerId == Viewer.Value && b.BlockedId == p.MUAId) || (b.BlockedId == Viewer.Value && b.BlockerId == p.MUAId))));
 
     // All filters run in SQL before paging. Never expose onboarding or identity documents.
     private IQueryable<MakeupArtistProfile> FilterArtists(ExploreQuery request)
@@ -79,7 +82,7 @@ public sealed class ExploreService(ApplicationDbContext db, IDataProtectionProvi
                 (p.MakeupArtistProfile!.User!.FullName ?? "").ToLower().Contains(text) ||
                 p.Tags.Any(t => t.ToLower().Contains(text)));
         }
-        return posts;
+        return ModerationService.VisiblePortfolios(db, posts, Viewer);
     }
 
     private static IQueryable<ExplorePost> ProjectPosts(IQueryable<Portfolio> posts) => posts.Select(p => new ExplorePost {

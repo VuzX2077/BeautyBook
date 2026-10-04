@@ -24,7 +24,7 @@ namespace BeautyBookBackend.Services
         
         // Reviews
         Task<bool> AddReviewAsync(Guid bookingId, Guid customerId, ReviewCreateDto reviewDto);
-        Task<List<ReviewDto>> GetMuaReviewsAsync(Guid muaId);
+        Task<List<ReviewDto>> GetMuaReviewsAsync(Guid muaId, Guid? viewer = null);
         Task<bool> ReplyReviewAsync(Guid reviewId, Guid muaId, string replyContent, bool isAdmin = false);
     }
 }

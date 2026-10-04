@@ -13,6 +13,7 @@ namespace BeautyBookBackend.Services
         Task<MessageDto> SendMessageAsync(Guid roomId, Guid senderId, string? content, string? imageUrl, Guid? replyToMessageId);
         Task<MessageDto> ToggleReactionAsync(Guid roomId, Guid messageId, Guid userId, string emoji);
         Task EnsureRoomAccessAsync(Guid roomId, Guid userId);
+        Task EnsureRoomInteractionAsync(Guid roomId, Guid userId);
         Task<(Guid CustomerId, Guid MuaId)> GetParticipantsAsync(Guid roomId, Guid userId);
         Task<int> MarkReadAsync(Guid roomId, Guid userId);
     }

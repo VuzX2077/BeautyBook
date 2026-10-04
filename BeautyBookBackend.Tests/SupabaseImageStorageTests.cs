@@ -15,7 +15,7 @@ public sealed class SupabaseImageStorageTests
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["Supabase:Url"] = "https://project.supabase.co",
-                ["Supabase:ServiceRoleKey"] = "server-secret",
+                ["Supabase:ServiceRoleKey"] = SupabaseStorageAuthenticationTests.Jwt,
                 ["Supabase:StorageBucket"] = "public-images"
             })
             .Build();
@@ -35,8 +35,8 @@ public sealed class SupabaseImageStorageTests
             "https://project.supabase.co/storage/v1/object/public-images/uploads/",
             handler.RequestUri?.ToString());
         Assert.Equal("Bearer", handler.AuthorizationScheme);
-        Assert.Equal("server-secret", handler.AuthorizationValue);
-        Assert.Equal("server-secret", handler.ApiKey);
+        Assert.Equal(SupabaseStorageAuthenticationTests.Jwt, handler.AuthorizationValue);
+        Assert.Equal(SupabaseStorageAuthenticationTests.Jwt, handler.ApiKey);
         Assert.Equal("image/jpeg", handler.ContentType);
     }
 

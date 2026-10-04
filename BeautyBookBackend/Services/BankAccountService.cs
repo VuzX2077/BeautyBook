@@ -13,6 +13,7 @@ public sealed class BankAccountService(ApplicationDbContext db, IEmailOtpService
     private static readonly Dictionary<string, string> CodeToBin = new(StringComparer.OrdinalIgnoreCase)
     { ["MB"]="970422",["VCB"]="970436",["TCB"]="970407",["ACB"]="970416",["VPB"]="970432",["BIDV"]="970418",["ICB"]="970415",["VBA"]="970405",["STB"]="970403",["TPB"]="970423",["VIB"]="970441",["SHB"]="970443",["HDB"]="970437",["OCB"]="970448" };
     internal static bool BankBinMatchesKnownCode(string code, string? bin) => !CodeToBin.TryGetValue(code, out var expected) || expected == bin;
+    public static bool IsKnownBankPair(string code, string bin) => CodeToBin.TryGetValue(code, out var expected) && expected == bin;
 
     public async Task<IReadOnlyList<BankAccountDto>> GetAsync(Guid userId) =>
         (await db.BankAccounts.AsNoTracking().Where(x => x.UserId == userId && x.IsActive)
@@ -21,6 +22,7 @@ public sealed class BankAccountService(ApplicationDbContext db, IEmailOtpService
 
     public async Task<BankAccountOtpResponse?> RequestAddOtpAsync(Guid userId, BankAccountDraftRequest request)
     {
+        await new PlayReviewPolicy(db).EnsureNormalUserAsync(userId);
         var email = await GetActiveEmailAsync(userId);
         if (email == null) return null;
         var value = Normalize(request);
@@ -31,6 +33,7 @@ public sealed class BankAccountService(ApplicationDbContext db, IEmailOtpService
 
     public async Task<BankAccountOtpResponse?> RequestUpdateOtpAsync(Guid userId, Guid id, BankAccountDraftRequest request)
     {
+        await new PlayReviewPolicy(db).EnsureNormalUserAsync(userId);
         var email = await GetActiveEmailAsync(userId);
         if (email == null) return null;
         if (!await db.BankAccounts.AsNoTracking().AnyAsync(x => x.Id == id && x.UserId == userId && x.IsActive)) return null;
@@ -43,6 +46,7 @@ public sealed class BankAccountService(ApplicationDbContext db, IEmailOtpService
 
     public async Task<BankAccountDto> AddAsync(Guid userId, UpsertBankAccountRequest request)
     {
+        await new PlayReviewPolicy(db).EnsureNormalUserAsync(userId);
         var value = Normalize(request);
         var email = await GetActiveEmailAsync(userId) ?? throw Inactive();
         var now = DateTime.UtcNow;
@@ -76,6 +80,7 @@ public sealed class BankAccountService(ApplicationDbContext db, IEmailOtpService
 
     public async Task<BankAccountDto?> UpdateAsync(Guid userId, Guid id, UpsertBankAccountRequest request)
     {
+        await new PlayReviewPolicy(db).EnsureNormalUserAsync(userId);
         var value = Normalize(request);
         var email = await GetActiveEmailAsync(userId);
         if (email == null) return null;
@@ -126,6 +131,7 @@ public sealed class BankAccountService(ApplicationDbContext db, IEmailOtpService
 
     public async Task<BankAccountDto?> SetDefaultAsync(Guid userId, Guid id)
     {
+        await new PlayReviewPolicy(db).EnsureNormalUserAsync(userId);
         await using var tx=await db.Database.BeginTransactionAsync(); await BankAccountDefaultManager.LockOwnerAsync(db,userId);
         if(!await db.BankAccounts.AnyAsync(x=>x.Id==id&&x.UserId==userId)) return null;
         await BankAccountDefaultManager.SetDefaultAsync(db,userId,id,DateTime.UtcNow); await tx.CommitAsync();
@@ -134,6 +140,7 @@ public sealed class BankAccountService(ApplicationDbContext db, IEmailOtpService
 
     public async Task<bool> DeactivateAsync(Guid userId, Guid id)
     {
+        await new PlayReviewPolicy(db).EnsureNormalUserAsync(userId);
         await using var tx=await db.Database.BeginTransactionAsync(); await BankAccountDefaultManager.LockOwnerAsync(db,userId);
         var entity=await db.BankAccounts.FirstOrDefaultAsync(x=>x.Id==id&&x.UserId==userId&&x.IsActive); if(entity==null)return false;
         var wasDefault=entity.IsDefault; var now=DateTime.UtcNow; entity.IsActive=false;entity.IsDefault=false;entity.UpdatedAt=now;
@@ -193,6 +200,7 @@ public sealed class BankAccountService(ApplicationDbContext db, IEmailOtpService
         };
     }
     public async Task<BankAccountOtpResponse?> RequestDefaultOtpAsync(Guid userId, Guid id) {
+        await new PlayReviewPolicy(db).EnsureNormalUserAsync(userId);
         var user=await db.Users.AsNoTracking().FirstOrDefaultAsync(x=>x.UserId==userId && x.IsActive && x.DeletedAt==null);
         if(user==null || !await db.BankAccounts.AnyAsync(x=>x.Id==id && x.UserId==userId)) return null;
         if(!string.IsNullOrWhiteSpace(user.PasswordHash)) throw new BookingRuleException("PASSWORD_CONFIRMATION_REQUIRED","Vui lòng xác nhận bằng mật khẩu hiện tại.",409);
@@ -201,6 +209,7 @@ public sealed class BankAccountService(ApplicationDbContext db, IEmailOtpService
         return OtpResponse(user.Email);
     }
     public async Task<BankAccountDto?> SetDefaultWithOtpAsync(Guid userId,Guid id,string otp) {
+        await new PlayReviewPolicy(db).EnsureNormalUserAsync(userId);
         await using var tx=await db.Database.BeginTransactionAsync(); await BankAccountDefaultManager.LockOwnerAsync(db,userId);
         var user=await db.Users.AsNoTracking().FirstOrDefaultAsync(x=>x.UserId==userId && x.IsActive && x.DeletedAt==null);
         if(user==null || !await db.BankAccounts.AnyAsync(x=>x.Id==id&&x.UserId==userId)) return null;

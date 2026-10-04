@@ -16,6 +16,7 @@ namespace BeautyBookBackend.Models
         public UserRole Role { get; set; }
         public DateTime CreatedAt { get; set; }
         public bool IsActive { get; set; }
+        public bool IsDemoAccount { get; set; }
         public DateTime? DeletedAt { get; set; }
         // New registrations use the owner-tracked uploader. Existing rows default false
         // in the additive migration: old unreferenced uploads cannot be inferred from DB.

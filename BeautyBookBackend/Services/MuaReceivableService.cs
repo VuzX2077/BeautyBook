@@ -9,9 +9,22 @@ namespace BeautyBookBackend.Services
     public class MuaReceivableService : IMuaReceivableService
     {
         private readonly ApplicationDbContext _context;
-        public MuaReceivableService(ApplicationDbContext context) => _context = context;
+        private readonly PlayReviewPolicy _playReview;
+        public MuaReceivableService(ApplicationDbContext context, PlayReviewPolicy? playReview = null) { _context = context; _playReview = playReview ?? new(context); }
 
         public async Task<MuaReceivable> EnsureForCompletedBookingAsync(Booking booking)
+        {
+        await new PlayReviewPolicy(_context).EnsureNormalBookingAsync(booking.BookingId);
+            return await EnsureCompletedCoreAsync(booking);
+        }
+        public async Task<MuaReceivable> EnsureForDemoCompletedBookingAsync(Booking booking, Guid initiator)
+        {
+            await _playReview.EnsureDemoBookingAsync(booking.BookingId, initiator);
+            if (booking.CustomerId != initiator || booking.Status != BookingStatus.WaitingCustomer || !booking.CompletedAt.HasValue
+                || !await _context.BookingPayments.AnyAsync(x => x.BookingId == booking.BookingId && x.Status == BookingPaymentStatus.Paid && x.PaidAt != null)) throw new PlayReviewOperationException();
+            return await EnsureCompletedCoreAsync(booking);
+        }
+        private async Task<MuaReceivable> EnsureCompletedCoreAsync(Booking booking)
         {
             var now = DateTime.UtcNow;
             if (!booking.CompletedAt.HasValue)
@@ -19,8 +32,8 @@ namespace BeautyBookBackend.Services
             var blocked = await _context.BookingComplaints.AnyAsync(c => c.BookingId == booking.BookingId && c.IsOpen)
                 || await _context.Refunds.AnyAsync(r => r.BookingId == booking.BookingId && r.Status != RefundStatus.Completed);
             var existing = await _context.MuaReceivables.FirstOrDefaultAsync(x => x.BookingId == booking.BookingId);
-            if (existing != null)
-            {
+            if (existing != null) {
+                if (existing.MuaId != booking.MUAId) throw new PlayReviewOperationException();
                 // Never reopen committed, paid, reversed or explicitly frozen funds.
                 if (existing.Status == MuaReceivableStatus.OnHold)
                 {
@@ -49,6 +62,7 @@ namespace BeautyBookBackend.Services
 
         private async Task SetStatusAsync(Guid bookingId, MuaReceivableStatus target)
         {
+        await new PlayReviewPolicy(_context).EnsureNormalBookingAsync(bookingId);
             var receivable = await _context.MuaReceivables.FirstOrDefaultAsync(x => x.BookingId == bookingId);
             if (receivable == null || receivable.Status is MuaReceivableStatus.PayoutPending or MuaReceivableStatus.PaidOut or MuaReceivableStatus.Reversed)
                 return;
@@ -75,7 +89,7 @@ namespace BeautyBookBackend.Services
         public async Task<int> ReconcileStatesAsync()
         {
             var candidates = await _context.MuaReceivables.AsNoTracking()
-                .Where(x => (x.Status == MuaReceivableStatus.OnHold || x.Status == MuaReceivableStatus.Frozen)
+                .Where(x => x.Booking != null && !x.Booking.IsDemo && (x.Status == MuaReceivableStatus.OnHold || x.Status == MuaReceivableStatus.Frozen)
                     && _context.Users.Any(u => u.UserId == x.MuaId && u.DeletedAt == null && u.IsActive))
                 .Select(x => new { x.Id, x.BookingId })
                 .ToListAsync();
@@ -85,6 +99,8 @@ namespace BeautyBookBackend.Services
                 await using var tx = await _context.Database.BeginTransactionAsync();
                 var booking = await _context.Bookings.FromSqlInterpolated($"SELECT * FROM \"Bookings\" WHERE \"BookingId\"={candidate.BookingId} FOR UPDATE").FirstAsync();
                 var item = await _context.MuaReceivables.FromSqlInterpolated($"SELECT * FROM \"MuaReceivables\" WHERE \"Id\"={candidate.Id} FOR UPDATE").FirstAsync();
+                if (!await new PlayReviewPolicy(_context).CanProcessBookingAsync(booking.BookingId)) continue;
+                if (item.MuaId != booking.MUAId) continue;
                 // A payout may have claimed the row since the initial scan.
                 if (item.Status is not (MuaReceivableStatus.OnHold or MuaReceivableStatus.Frozen)) { await tx.CommitAsync(); continue; }
                 // Recheck after taking the booking lock; a deletion may follow the initial scan.
@@ -120,8 +136,16 @@ namespace BeautyBookBackend.Services
             var rows = await _context.MuaReceivables.AsNoTracking().Where(x => x.MuaId == muaId)
                 .OrderByDescending(x => x.CreatedAt).ToListAsync();
             decimal Total(MuaReceivableStatus status) => rows.Where(x => x.Status == status).Sum(x => x.NetAmount);
+            var sampleBank = await _playReview.GetSampleBankCapabilityAsync(muaId);
+            var canSimulatePayout = sampleBank.HasValue && Total(MuaReceivableStatus.Available) > 0;
+            if (canSimulatePayout)
+                foreach (var row in rows.Where(x => x.Status == MuaReceivableStatus.Available))
+                    try { await _playReview.EnsureDemoAvailableReceivableAsync(row, muaId); }
+                    catch (PlayReviewOperationException) { canSimulatePayout = false; break; }
             return new MuaEarningsDto
             {
+                PermittedSimulationBankAccountId = sampleBank,
+                CanRequestSimulatedPayout = canSimulatePayout,
                 OnHoldTotal=Total(MuaReceivableStatus.OnHold), AvailableTotal=Total(MuaReceivableStatus.Available),
                 FrozenTotal=Total(MuaReceivableStatus.Frozen), PayoutPendingTotal=Total(MuaReceivableStatus.PayoutPending),
                 PaidOutTotal=Total(MuaReceivableStatus.PaidOut),

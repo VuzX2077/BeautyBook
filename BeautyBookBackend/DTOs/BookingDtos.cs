@@ -17,6 +17,7 @@ namespace BeautyBookBackend.DTOs
 
     public class BookingDto
     {
+        public IReadOnlyList<string> AvailableDemoActions { get; set; } = Array.Empty<string>();
         public Guid BookingId { get; set; }
         public Guid CustomerId { get; set; }
         public string? CustomerName { get; set; }
@@ -74,6 +75,7 @@ namespace BeautyBookBackend.DTOs
 
     public class BookingPaymentDto
     {
+        public PaymentProvider Provider { get; set; }
         public Guid PaymentId { get; set; }
         public Guid BookingId { get; set; }
         public long OrderCode { get; set; }

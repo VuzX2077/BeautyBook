@@ -19,7 +19,7 @@ public sealed class AdminBankAccountController(ApplicationDbContext db, Financia
     public async Task<IActionResult> Pending()
     {
         var rows=await db.BankAccounts.AsNoTracking()
-        .Where(x=>x.IsActive&&x.VerificationStatus==BankAccountEligibility.Pending)
+        .Where(x=>x.User != null && !x.User.IsDemoAccount && x.IsActive&&x.VerificationStatus==BankAccountEligibility.Pending)
          .Include(x=>x.User)
         .OrderBy(x=>x.CreatedAt).ThenBy(x=>x.Id).ToListAsync();
         Response.Headers.CacheControl = "no-store";
@@ -34,6 +34,7 @@ public sealed class AdminBankAccountController(ApplicationDbContext db, Financia
         await using var tx=await db.Database.BeginTransactionAsync();
         var initial=await db.BankAccounts.AsNoTracking().FirstOrDefaultAsync(x=>x.Id==id);
         if(initial==null)return ConflictResult();
+        await new PlayReviewPolicy(db).EnsureNormalUserAsync(initial.UserId);
         await BankAccountDefaultManager.LockOwnerAsync(db,initial.UserId);
         var account=await db.BankAccounts.FromSqlInterpolated($"SELECT * FROM \"BankAccounts\" WHERE \"Id\"={id} FOR UPDATE").FirstOrDefaultAsync(x=>x.IsActive&&x.VerificationStatus==BankAccountEligibility.Pending);
         if(account==null)return ConflictResult();

@@ -11,15 +11,27 @@ namespace BeautyBookBackend.Services
     {
         private readonly HttpClient _httpClient;
         private readonly IConfiguration _configuration;
+        private readonly BeautyBookBackend.Data.ApplicationDbContext? _db;
+        private readonly IHttpContextAccessor? _httpContextAccessor;
 
-        public PayOsService(HttpClient httpClient, IConfiguration configuration)
+        public PayOsService(HttpClient httpClient, IConfiguration configuration, BeautyBookBackend.Data.ApplicationDbContext? db = null, IHttpContextAccessor? httpContextAccessor = null)
         {
             _httpClient = httpClient;
             _configuration = configuration;
+            _db = db;
+            _httpContextAccessor = httpContextAccessor;
         }
 
         public async Task<PayOsCreatePaymentResult> CreatePaymentLinkAsync(PayOsCreatePaymentRequest request)
         {
+            if (_db == null) throw new InvalidOperationException("Cannot resolve persisted payment.");
+            var payment = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.SingleOrDefaultAsync(
+                _db.BookingPayments.Where(x => x.ProviderOrderCode == request.OrderCode));
+            if (payment == null || payment.Amount != request.Amount)
+                throw new InvalidOperationException("Cannot resolve matching persisted payment.");
+            var policy = new PlayReviewPolicy(_db);
+            await policy.EnsureNormalPaymentAsync(payment.PaymentId);
+            await policy.EnsureExternalActorAsync(_httpContextAccessor);
             var clientId = GetRequiredConfig("PayOS:ClientId");
             var apiKey = GetRequiredConfig("PayOS:ApiKey");
 

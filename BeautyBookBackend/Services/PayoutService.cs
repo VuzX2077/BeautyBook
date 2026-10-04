@@ -10,17 +10,20 @@ namespace BeautyBookBackend.Services
     {
         private readonly ApplicationDbContext _context;
         private readonly IMuaEligibilityService _eligibility;
-        public PayoutService(ApplicationDbContext context, IMuaEligibilityService eligibility) { _context=context; _eligibility=eligibility; }
+        private readonly PlayReviewPolicy _playReview;
+        public PayoutService(ApplicationDbContext context, IMuaEligibilityService eligibility, PlayReviewPolicy? playReview = null) { _context=context; _eligibility=eligibility; _playReview=playReview ?? new(context); }
 
         public async Task<PayoutDto> CreateAsync(Guid muaId,CreatePayoutRequest request)
         {
+        if (await _playReview.IsDemoUserAsync(muaId)) return await CreateSimulatedAsync(muaId, request);
+            await new PlayReviewPolicy(_context).EnsureNormalUserAsync(muaId);
             if(string.IsNullOrWhiteSpace(request.IdempotencyKey))throw new InvalidOperationException("IdempotencyKey là bắt buộc.");
             var key=request.IdempotencyKey.Trim();
             await using var tx=await _context.Database.BeginTransactionAsync();
             var lockKey="payout:"+muaId.ToString("N")+":"+key;
             await _context.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({lockKey}, 0))");
             var existing=await _context.Payouts.Include(x=>x.Items).FirstOrDefaultAsync(x=>x.MuaId==muaId&&x.IdempotencyKey==key);
-            if(existing!=null){await tx.CommitAsync();return ToDto(existing);}
+            if(existing!=null){await new PlayReviewPolicy(_context).EnsureNormalPayoutAsync(existing.Id);await tx.CommitAsync();return ToDto(existing);}
             var bank=await _context.BankAccounts.FromSqlInterpolated($"SELECT * FROM \"BankAccounts\" WHERE \"Id\"={request.BankAccountId} FOR UPDATE").AsNoTracking().FirstOrDefaultAsync();
             if(bank==null||bank.UserId!=muaId)throw BankUnavailable("BANK_ACCOUNT_NOT_FOUND");
             var bankReason=BankAccountEligibility.GetUnavailableReason(bank.IsActive,bank.VerificationStatus,bank.ActivatedAt,DateTime.UtcNow);
@@ -36,6 +39,7 @@ namespace BeautyBookBackend.Services
             foreach(var rid in identities.Select(x=>x.Id).OrderBy(x=>x)) {var row=await _context.MuaReceivables.FromSqlInterpolated($"SELECT * FROM \"MuaReceivables\" WHERE \"Id\"={rid} FOR UPDATE").FirstAsync();locked.Add(row);}
             if(locked.Any(x=>x.MuaId!=muaId||x.Status!=MuaReceivableStatus.Available))throw new InvalidOperationException("Tất cả khoản được chọn phải đang Available.");
             var bookingIds=locked.Select(x=>x.BookingId).ToList();
+            foreach (var bid in bookingIds) await new PlayReviewPolicy(_context).EnsureNormalBookingAsync(bid);
             if (await _context.BookingComplaints.AnyAsync(c => bookingIds.Contains(c.BookingId) && c.IsOpen)
                 || locked.Any(r => r.AvailableAt > DateTime.UtcNow))
                 throw new InvalidOperationException("Khoản thu nhập đang trong thời hạn khiếu nại hoặc có hồ sơ chưa xử lý.");
@@ -48,10 +52,79 @@ namespace BeautyBookBackend.Services
             await MoveOnePendingToManualAsync(payout.Id);return ToDto((await GetPayoutAsync(payout.Id))!);
         }
 
+        private async Task<PayoutDto> CreateSimulatedAsync(Guid caller, CreatePayoutRequest request)
+        {
+            await _playReview.EnsureReviewPairAsync(caller, _playReview.Simulation.CounterpartUserId, caller);
+            if (string.IsNullOrWhiteSpace(request.IdempotencyKey) || request.IdempotencyKey.Length > 100
+                || _playReview.Simulation.SampleBankAccountId == Guid.Empty || request.BankAccountId != _playReview.Simulation.SampleBankAccountId)
+                throw new PlayReviewOperationException();
+            var key = request.IdempotencyKey.Trim();
+            await using var tx = await _context.Database.BeginTransactionAsync();
+            var lockKey = "payout:" + caller.ToString("N") + ":" + key;
+            await _context.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({lockKey}, 0))");
+            await _playReview.EnsureReviewPairAsync(caller, _playReview.Simulation.CounterpartUserId, caller);
+            var bank = await _context.BankAccounts.FromSqlInterpolated($"SELECT * FROM \"BankAccounts\" WHERE \"Id\"={request.BankAccountId} FOR UPDATE").SingleOrDefaultAsync();
+            if (bank == null || bank.UserId != caller || !bank.IsActive || bank.VerificationStatus != BankAccountEligibility.Pending
+                || bank.Id != _playReview.Simulation.SampleBankAccountId || bank.FinancialQrMediaId.HasValue) throw new PlayReviewOperationException();
+            var existing = await _context.Payouts.Include(x => x.Items).SingleOrDefaultAsync(x => x.MuaId == caller && x.IdempotencyKey == key);
+            if (existing != null)
+            {
+                if (existing.Provider != PayoutProvider.Simulated || existing.Status != PayoutStatus.Paid || existing.BankAccountId != bank.Id
+                    || existing.RequestedBy != caller || !existing.PaidAt.HasValue || existing.Amount <= 0
+                    || existing.Items.Count == 0 || existing.Items.Any(x => !x.IsActive) || existing.Amount != existing.Items.Sum(x => x.Amount)) throw new PlayReviewOperationException();
+                var requestedIds = request.ReceivableIds?.Distinct().OrderBy(x => x).ToArray();
+                if (requestedIds?.Length > 0 && !requestedIds.SequenceEqual(existing.Items.Select(x => x.MuaReceivableId).OrderBy(x => x))) throw new PlayReviewOperationException();
+                foreach (var item in existing.Items)
+                {
+                    var row = await _context.MuaReceivables.SingleOrDefaultAsync(x => x.Id == item.MuaReceivableId);
+                    if (row == null || row.MuaId != caller || row.Status != MuaReceivableStatus.PaidOut || item.Amount != row.NetAmount) throw new PlayReviewOperationException();
+                    await _playReview.EnsureDemoBookingAsync(row.BookingId, caller);
+                    if (!await _context.Bookings.AnyAsync(x => x.BookingId == row.BookingId && x.MUAId == caller && x.CompletedAt != null
+                        && (x.Status == BookingStatus.Completed || x.Status == BookingStatus.AutoCompleted) && x.PaymentStatus == PaymentStatus.Released)
+                        || !await _context.BookingPayments.AnyAsync(x => x.BookingId == row.BookingId && x.Status == BookingPaymentStatus.Paid && x.PaidAt != null)) throw new PlayReviewOperationException();
+                }
+                await tx.CommitAsync(); return ToDto(existing);
+            }
+            var requested = request.ReceivableIds?.Distinct().OrderBy(x => x).ToList() ?? new();
+            var identities = await _context.MuaReceivables.AsNoTracking().Where(x => x.MuaId == caller && x.Status == MuaReceivableStatus.Available
+                && (requested.Count == 0 || requested.Contains(x.Id))).OrderBy(x => x.BookingId).ToListAsync();
+            if (identities.Count == 0 || (requested.Count > 0 && identities.Count != requested.Count)) throw new PlayReviewOperationException();
+            foreach (var id in identities.Select(x => x.BookingId).Distinct().OrderBy(x => x))
+                await _context.Bookings.FromSqlInterpolated($"SELECT * FROM \"Bookings\" WHERE \"BookingId\"={id} FOR UPDATE").LoadAsync();
+            var rows = new List<MuaReceivable>();
+            foreach (var id in identities.Select(x => x.Id).OrderBy(x => x))
+                rows.Add(await _context.MuaReceivables.FromSqlInterpolated($"SELECT * FROM \"MuaReceivables\" WHERE \"Id\"={id} FOR UPDATE").SingleAsync());
+            foreach (var row in rows)
+            {
+                await _playReview.EnsureDemoAvailableReceivableAsync(row, caller);
+            }
+            await _playReview.EnsureReviewPairAsync(caller, _playReview.Simulation.CounterpartUserId, caller);
+            var now = DateTime.UtcNow;
+            var payout = new Payout { Id = Guid.NewGuid(), MuaId = caller, RequestedBy = caller, BankAccountId = bank.Id,
+                Amount = rows.Sum(x => x.NetAmount), Provider = PayoutProvider.Simulated, Status = PayoutStatus.Paid,
+                BankCodeSnapshot = bank.BankCode, BankNameSnapshot = bank.BankName, AccountNumberSnapshot = bank.AccountNumber,
+                AccountHolderNameSnapshot = bank.AccountHolderName, IdempotencyKey = key, CreatedAt = now, UpdatedAt = now, PaidAt = now, ReconciledAt = now };
+            foreach (var row in rows)
+            {
+                payout.Items.Add(new PayoutItem { Id = Guid.NewGuid(), MuaReceivableId = row.Id, Amount = row.NetAmount, IsActive = true });
+                row.Status = MuaReceivableStatus.PaidOut; row.PaidOutAt = now; row.UpdatedAt = now;
+            }
+            _context.Payouts.Add(payout); await _context.SaveChangesAsync(); await tx.CommitAsync(); return ToDto(payout);
+        }
         public async Task<IReadOnlyList<PayoutDto>> GetOwnAsync(Guid muaId)=>(await _context.Payouts.AsNoTracking().Include(x=>x.Items).Where(x=>x.MuaId==muaId).OrderByDescending(x=>x.CreatedAt).ToListAsync()).Select(ToDto).ToList();
         public async Task<PayoutDto?> GetOwnByIdAsync(Guid muaId,Guid payoutId){var payout=await _context.Payouts.AsNoTracking().Include(x=>x.Items).FirstOrDefaultAsync(x=>x.Id==payoutId&&x.MuaId==muaId);return payout==null?null:ToDto(payout);}
-        public async Task<IReadOnlyList<PayoutDto>> GetPendingAdminAsync()=>(await _context.Payouts.AsNoTracking().Include(x=>x.Items).Where(x=>x.Status==PayoutStatus.Pending||x.Status==PayoutStatus.ManualActionRequired||x.Status==PayoutStatus.Processing||(x.Status==PayoutStatus.Failed&&x.ReconciledAt==null)).OrderBy(x=>x.CreatedAt).ToListAsync()).Select(ToDto).ToList();
-        public async Task<AdminPayoutDto?> GetAdminByIdAsync(Guid payoutId){var payout=await _context.Payouts.AsNoTracking().Include(x=>x.Items).FirstOrDefaultAsync(x=>x.Id==payoutId);return payout==null?null:ToAdminDto(payout);}
+        public async Task<IReadOnlyList<PayoutDto>> GetPendingAdminAsync() {
+            var safe = new List<PayoutDto>();
+            foreach (var item in await GetPendingAdminCandidatesAsync())
+                if (await new PlayReviewPolicy(_context).CanProcessPayoutAsync(item.Id)) safe.Add(item);
+            return safe;
+        }
+        private async Task<IReadOnlyList<PayoutDto>> GetPendingAdminCandidatesAsync()=>(await _context.Payouts.AsNoTracking().Include(x=>x.Items).Where(x=>x.Status==PayoutStatus.Pending||x.Status==PayoutStatus.ManualActionRequired||x.Status==PayoutStatus.Processing||(x.Status==PayoutStatus.Failed&&x.ReconciledAt==null)).OrderBy(x=>x.CreatedAt).ToListAsync()).Select(ToDto).ToList();
+        public async Task<AdminPayoutDto?> GetAdminByIdAsync(Guid payoutId){
+            var payout=await _context.Payouts.AsNoTracking().Include(x=>x.Items).FirstOrDefaultAsync(x=>x.Id==payoutId);
+            if (payout != null) await new PlayReviewPolicy(_context).EnsureNormalPayoutAsync(payoutId);
+            return payout==null?null:ToAdminDto(payout);
+        }
         public Task<PayoutDto?> StartProcessingAsync(Guid id,Guid admin,string? reference)=>TransitionAsync(id,admin,PayoutStatus.Processing,reference,null,null,false);
         public Task<PayoutDto?> CompleteAsync(Guid id,Guid admin,string reference)=>TransitionAsync(id,admin,PayoutStatus.Paid,reference,null,null,false);
         public Task<PayoutDto?> FailAsync(Guid id,Guid admin,string code,string message,bool confirmed)=>confirmed?TransitionAsync(id,admin,PayoutStatus.Failed,null,code,message,true):TransitionAsync(id,admin,PayoutStatus.ManualActionRequired,null,code,message,false);
@@ -60,6 +133,7 @@ namespace BeautyBookBackend.Services
         {
             await using var tx=await _context.Database.BeginTransactionAsync();var p=await _context.Payouts.FromSqlInterpolated($"SELECT * FROM \"Payouts\" WHERE \"Id\"={id} FOR UPDATE").FirstOrDefaultAsync();if(p==null)return null;
             await _context.Entry(p).Collection(x=>x.Items).LoadAsync();
+            await new PlayReviewPolicy(_context).EnsureNormalPayoutAsync(id);
             if(p.Status==target){await tx.CommitAsync();return ToDto(p);}
             var allowed=target switch{PayoutStatus.Processing=>p.Status is PayoutStatus.Pending or PayoutStatus.ManualActionRequired,PayoutStatus.Paid=>p.Status==PayoutStatus.Processing&&!string.IsNullOrWhiteSpace(reference),PayoutStatus.Failed=>p.Status==PayoutStatus.Processing&&confirmedFailure,PayoutStatus.ManualActionRequired=>p.Status==PayoutStatus.Processing,_=>false};if(!allowed)return null;
             var receivableIds = p.Items.Where(i => i.IsActive).Select(i => i.MuaReceivableId).ToList();
@@ -67,6 +141,7 @@ namespace BeautyBookBackend.Services
             foreach (var bid in identities.Select(r => r.BookingId).Distinct().OrderBy(b => b))
                 await _context.Bookings.FromSqlInterpolated($"SELECT * FROM \"Bookings\" WHERE \"BookingId\"={bid} FOR UPDATE").LoadAsync();
             var receivables=new List<MuaReceivable>();foreach(var item in p.Items.Where(x=>x.IsActive).OrderBy(x=>x.MuaReceivableId)){receivables.Add(await _context.MuaReceivables.FromSqlInterpolated($"SELECT * FROM \"MuaReceivables\" WHERE \"Id\"={item.MuaReceivableId} FOR UPDATE").FirstAsync());}
+            await new PlayReviewPolicy(_context).EnsureNormalPayoutAsync(id);
             if(target is PayoutStatus.Processing or PayoutStatus.Paid){var bookingIds=receivables.Select(x=>x.BookingId).ToList();var blocked=await _context.Bookings.AnyAsync(x=>bookingIds.Contains(x.BookingId)&&(x.Status==BookingStatus.Disputed||x.PaymentStatus==PaymentStatus.Frozen||x.PaymentStatus==PaymentStatus.RefundPending))||await _context.Refunds.AnyAsync(x=>bookingIds.Contains(x.BookingId)&&x.Status!=RefundStatus.Completed)
                 || await _context.BookingComplaints.AnyAsync(c => bookingIds.Contains(c.BookingId) && c.IsOpen)
                 || receivables.Any(r => r.AvailableAt > DateTime.UtcNow);if(blocked)return null;}
@@ -79,7 +154,7 @@ namespace BeautyBookBackend.Services
         }
 
         public async Task<int> MovePendingToManualActionRequiredAsync(){var ids=await _context.Payouts.AsNoTracking().Where(x=>x.Status==PayoutStatus.Pending).Select(x=>x.Id).ToListAsync();var n=0;foreach(var id in ids)if(await MoveOnePendingToManualAsync(id))n++;return n;}
-        private async Task<bool> MoveOnePendingToManualAsync(Guid id){await using var tx=await _context.Database.BeginTransactionAsync();var p=await _context.Payouts.FromSqlInterpolated($"SELECT * FROM \"Payouts\" WHERE \"Id\"={id} FOR UPDATE").FirstOrDefaultAsync();if(p?.Status!=PayoutStatus.Pending)return false;p.Status=PayoutStatus.ManualActionRequired;p.UpdatedAt=DateTime.UtcNow;await _context.SaveChangesAsync();await tx.CommitAsync();return true;}
+        private async Task<bool> MoveOnePendingToManualAsync(Guid id){await using var tx=await _context.Database.BeginTransactionAsync();var p=await _context.Payouts.FromSqlInterpolated($"SELECT * FROM \"Payouts\" WHERE \"Id\"={id} FOR UPDATE").FirstOrDefaultAsync();if(p?.Status!=PayoutStatus.Pending)return false;if (!await new PlayReviewPolicy(_context).CanProcessPayoutAsync(id)) return false;p.Status=PayoutStatus.ManualActionRequired;p.UpdatedAt=DateTime.UtcNow;await _context.SaveChangesAsync();await tx.CommitAsync();return true;}
         public Task<bool> HasPendingForBookingAsync(Guid bookingId)=>_context.PayoutItems.AnyAsync(x=>x.IsActive&&x.MuaReceivable!.BookingId==bookingId&&x.MuaReceivable.Status==MuaReceivableStatus.PayoutPending);
         private Task<Payout?> GetPayoutAsync(Guid id)=>_context.Payouts.AsNoTracking().Include(x=>x.Items).FirstOrDefaultAsync(x=>x.Id==id);
         private static string Mask(string x)=>x.Length<=4?new string('*',x.Length):new string('*',x.Length-4)+x[^4..];

@@ -34,6 +34,9 @@ namespace BeautyBookBackend.Services
         private readonly IMuaEligibilityService _eligibilityService;
         private readonly IMuaScheduleService _scheduleService;
         private readonly BookingTimeService _bookingTime;
+        private readonly IHttpContextAccessor? _httpContextAccessor;
+        private readonly PlayReviewPolicy _playReview;
+        private readonly ILogger<BookingService> _simulationLogger;
 
         public BookingService(
             IBookingRepository bookingRepository,
@@ -49,7 +52,7 @@ namespace BeautyBookBackend.Services
             IConfiguration configuration,
             IMuaEligibilityService eligibilityService,
             IMuaScheduleService scheduleService,
-            BookingTimeService bookingTime)
+            BookingTimeService bookingTime, IHttpContextAccessor? httpContextAccessor = null, PlayReviewPolicy? playReview = null, ILogger<BookingService>? simulationLogger = null)
         {
             _bookingRepository = bookingRepository;
             _muaRepository = muaRepository;
@@ -65,10 +68,15 @@ namespace BeautyBookBackend.Services
             _eligibilityService = eligibilityService;
             _scheduleService = scheduleService;
             _bookingTime = bookingTime;
+            _httpContextAccessor = httpContextAccessor;
+            _playReview = playReview ?? new PlayReviewPolicy(context);
+            _simulationLogger = simulationLogger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<BookingService>.Instance;
         }
 
         public async Task<BookingDto?> CreateBookingAsync(Guid customerId, BookingCreateDto createDto)
         {
+        var isDemo = await new PlayReviewPolicy(_context).EnsureSameDomainAsync(customerId, createDto.MUAId);
+            if (isDemo) await _playReview.EnsureReviewPairAsync(customerId, customerId, createDto.MUAId);
             if (string.IsNullOrWhiteSpace(createDto.IdempotencyKey))
                 throw new BookingRuleException("INVALID_IDEMPOTENCY_KEY", "IdempotencyKey là bắt buộc.");
             if (createDto.Services == null || createDto.Services.Count == 0 || createDto.MUAId == Guid.Empty)
@@ -91,6 +99,7 @@ namespace BeautyBookBackend.Services
                 await transaction.CommitAsync();
                 var existing = await _bookingRepository.GetByIdWithDetailsForUserAsync(existingId.Value, customerId);
                 if (existing == null) return null;
+                await new PlayReviewPolicy(_context).EnsureBookingDomainAsync(existing.BookingId);
                 var requestedServices = createDto.Services.OrderBy(x => x.ServiceId)
                     .Select(x => (x.ServiceId, x.ParticipantsCount)).ToList();
                 var existingServices = existing.BookingServices.OrderBy(x => x.ServiceId)
@@ -114,12 +123,14 @@ namespace BeautyBookBackend.Services
                 .FromSqlInterpolated($"SELECT * FROM \"Users\" WHERE \"UserId\" = {createDto.MUAId} FOR SHARE")
                 .FirstOrDefaultAsync();
             if (muaProfile == null || muaUser == null || !muaUser.IsActive || muaUser.DeletedAt.HasValue
-                || muaProfile.Status != MuaStatus.Listed || muaProfile.Status == MuaStatus.Suspended
-                || muaProfile.VerificationStatus != MuaVerificationStatus.Approved)
+                || (!isDemo && muaProfile.Status != MuaStatus.Listed) || muaProfile.Status == MuaStatus.Suspended
+                || (!isDemo && muaProfile.VerificationStatus != MuaVerificationStatus.Approved))
                 throw new BookingRuleException("MUA_NOT_ACCEPTING_BOOKINGS", "Makeup Artist hiện chưa thể nhận booking.");
 
-            var eligibility = await _eligibilityService.EvaluateAsync(createDto.MUAId);
-            if (eligibility?.CanReceiveBookings != true)
+            if (isDemo != await new PlayReviewPolicy(_context).EnsureSameDomainAsync(customerId, createDto.MUAId)) throw new PlayReviewOperationException();
+            var eligibility = await _eligibilityService.EvaluateAsync(createDto.MUAId, updateStatus: !isDemo);
+            if (isDemo) await _playReview.EnsureDemoMuaCapabilityAsync(customerId, customerId, createDto.MUAId, eligibility);
+            else if (eligibility?.CanReceiveBookings != true)
                 throw new BookingRuleException("MUA_NOT_ACCEPTING_BOOKINGS", "Makeup Artist hiện chưa thể nhận booking.");
 
             // ServiceAddress is the canonical booking snapshot. Address remains an
@@ -183,6 +194,7 @@ namespace BeautyBookBackend.Services
             var booking = new Booking
             {
                 BookingId = bookingId,
+                IsDemo = isDemo,
                 CustomerId = customerId,
                 MUAId = createDto.MUAId,
                 IdempotencyKey = idempotencyKey,
@@ -217,6 +229,8 @@ namespace BeautyBookBackend.Services
 
         public async Task<BookingPaymentDto?> CreateDepositPaymentAsync(Guid bookingId, Guid customerId)
         {
+            if (await _context.Bookings.AnyAsync(x => x.BookingId == bookingId && x.IsDemo)) return await CreateDemoDepositAsync(bookingId, customerId);
+        await new PlayReviewPolicy(_context).EnsureNormalBookingAsync(bookingId);
             BookingPayment payment;
             await using (var transaction = await _context.Database.BeginTransactionAsync())
             {
@@ -461,26 +475,59 @@ namespace BeautyBookBackend.Services
             return booking == null ? null : await ToBookingDtoAsync(booking);
         }
 
-        public async Task<BookingDto?> UpdateBookingStatusAsync(Guid bookingId, Guid userId, BookingStatus newStatus, string? reason = null)
+        public Task<BookingDto?> UpdateBookingStatusAsync(Guid bookingId, Guid userId, BookingStatus newStatus, string? reason = null)
+            => TransitionBookingAsync(bookingId, userId, newStatus, reason, counterpartAction: false);
+
+        public Task<BookingDto?> DemoCounterpartAcceptAsync(Guid bookingId, Guid userId)
+            => AuditCounterpartAsync(bookingId, userId, BookingStatus.Approved);
+
+        public Task<BookingDto?> DemoCounterpartRejectAsync(Guid bookingId, Guid userId)
+            => AuditCounterpartAsync(bookingId, userId, BookingStatus.Rejected);
+        private async Task<BookingDto?> AuditCounterpartAsync(Guid id, Guid initiator, BookingStatus action)
+        {
+            try
+            {
+                var result = await TransitionBookingAsync(id, initiator, action, "Demo counterpart action", counterpartAction: true);
+                _simulationLogger.LogInformation("PlayReview initiator={Initiator} booking={Booking} businessCounterpart={Counterpart} action={Action} simulation={Simulation} result={Result}",
+                    initiator, id, result?.MUAId, action, true, result == null ? "NotFoundOrRejected" : "Succeeded");
+                return result;
+            }
+            catch (Exception)
+            {
+                _simulationLogger.LogWarning("PlayReview initiator={Initiator} booking={Booking} businessCounterpart={Counterpart} action={Action} simulation={Simulation} result={Result}",
+                    initiator, id, _playReview.Simulation.CounterpartUserId, action, true, "Failed");
+                throw;
+            }
+        }
+        private async Task<BookingDto?> TransitionBookingAsync(Guid bookingId, Guid userId, BookingStatus newStatus, string? reason, bool counterpartAction)
         {
             var observedStatus = await _context.Bookings.AsNoTracking()
                 .Where(x => x.BookingId == bookingId && (x.MUAId == userId || x.CustomerId == userId))
                 .Select(x => (BookingStatus?)x.Status)
                 .FirstOrDefaultAsync();
-            if (!observedStatus.HasValue) return null;
+            if (!observedStatus.HasValue) { if (counterpartAction) throw new PlayReviewOperationException(); return null; }
 
             await using var transaction = await _context.Database.BeginTransactionAsync();
-            var booking = await GetBookingForUpdateAsync(bookingId);
+            var demo = await _context.Bookings.AsNoTracking().AnyAsync(x => x.BookingId == bookingId && x.IsDemo);
+            var booking = demo ? await LoadDemoBookingForUpdateAsync(bookingId, userId) : await GetBookingForUpdateAsync(bookingId);
             if (booking == null || (booking.MUAId != userId && booking.CustomerId != userId)) return null;
+            if (counterpartAction && !demo) throw new PlayReviewOperationException();
+            var businessUserId = counterpartAction ? booking.MUAId : userId;
+            if (counterpartAction && (userId != booking.CustomerId || booking.MUAId != _playReview.Simulation.CounterpartUserId || newStatus is not (BookingStatus.Approved or BookingStatus.Rejected))) throw new PlayReviewOperationException();
+            if (demo && !IsDemoParticipantAction(booking, userId, newStatus, counterpartAction)) throw new PlayReviewOperationException();
+            if (counterpartAction && booking.Status != BookingStatus.PendingConfirmation && booking.Status != newStatus) throw new BookingConcurrencyException("Demo counterpart action is no longer available.");
             if (booking.Status != observedStatus.Value)
                 throw new BookingConcurrencyException("Booking vừa được cập nhật bởi một thao tác khác. Vui lòng tải lại trạng thái.");
+            if (counterpartAction && booking.Status != BookingStatus.Rejected) await RequireDemoPaidAsync(booking, userId);
+            if (counterpartAction && booking.Status == BookingStatus.Rejected) await ValidateDemoRejectedAsync(booking, userId);
             if (booking.Status == newStatus)
             {
                 await transaction.CommitAsync();
                 return await GetBookingByIdAsync(bookingId, userId);
             }
+            if (demo && !counterpartAction && RequiresHeldDeposit(newStatus)) await RequireDemoPaidAsync(booking, userId);
             if (IsFinalStatus(booking.Status)
-                || !IsValidStatusTransition(booking.Status, newStatus, userId, booking.MUAId, booking.CustomerId)) return null;
+                || !IsValidStatusTransition(booking.Status, newStatus, businessUserId, booking.MUAId, booking.CustomerId)) return null;
             if (await _context.BookingComplaints.AnyAsync(c => c.BookingId == bookingId && c.IsOpen)
                 && newStatus is BookingStatus.Completed or BookingStatus.Cancelled or BookingStatus.Rejected or BookingStatus.Disputed)
                 throw new BookingRuleException("COMPLAINT_OPEN", "Booking đang có khiếu nại. Vui lòng chờ admin xử lý.", 409);
@@ -494,13 +541,16 @@ namespace BeautyBookBackend.Services
 
             if (newStatus == BookingStatus.Completed)
             {
-                if (!await CompleteBookingAsync(booking)) return null;
+                if (!await CompleteBookingAsync(booking, demo ? userId : null)) return null;
                 booking.CompletedAt ??= DateTime.UtcNow;
             }
             else if (newStatus == BookingStatus.Cancelled || newStatus == BookingStatus.Rejected)
             {
+                if (demo && await _context.PayoutItems.AnyAsync(x => x.IsActive && x.MuaReceivable!.BookingId == bookingId
+                    && (x.MuaReceivable.Status == MuaReceivableStatus.PayoutPending || x.MuaReceivable.Status == MuaReceivableStatus.PaidOut)))
+                    throw new PlayReviewOperationException();
                 var now = DateTime.UtcNow;
-                var actor = userId == booking.CustomerId
+                var actor = businessUserId == booking.CustomerId
                     ? BookingCancellationActor.Customer
                     : BookingCancellationActor.Mua;
                 var paymentId = await _context.BookingPayments.AsNoTracking()
@@ -508,7 +558,7 @@ namespace BeautyBookBackend.Services
                     .OrderByDescending(x => x.PaidAt)
                     .Select(x => (Guid?)x.PaymentId)
                     .FirstOrDefaultAsync();
-                var payment = paymentId.HasValue ? await GetPaymentForUpdateAsync(paymentId.Value) : null;
+                var payment = paymentId.HasValue ? demo ? await LoadDemoPaymentForUpdateAsync(paymentId.Value, booking, userId) : await GetPaymentForUpdateAsync(paymentId.Value) : null;
                 var decision = _refundPolicyService.Calculate(
                     booking,
                     newStatus,
@@ -526,13 +576,13 @@ namespace BeautyBookBackend.Services
 
                 if (decision.RefundAmount > 0m)
                 {
-                    if (payment == null || !await RefundBookingAsync(
+                    if (payment == null || !(demo ? await SettleDemoRefundAsync(booking, payment, decision, userId) : await RefundBookingAsync(
                         booking,
                         payment,
                         decision.RefundAmount,
                         decision.ReasonCode,
                         $"{decision.PolicyRule}: hoàn {decision.RefundPercentage:0.##}% tiền cọc.",
-                        userId)) return null;
+                        userId))) return null;
                 }
                 else if (payment != null)
                 {
@@ -569,7 +619,7 @@ namespace BeautyBookBackend.Services
             booking.UpdatedAt = DateTime.UtcNow;
             if (newStatus == BookingStatus.Cancelled || newStatus == BookingStatus.Rejected)
                 await _notificationService.CancelPendingAsync(booking.BookingId);
-            await _notificationService.QueueBookingStatusAsync(booking, newStatus, userId);
+            await _notificationService.QueueBookingStatusAsync(booking, newStatus, businessUserId);
             await _unitOfWork.SaveChangesAsync();
             await transaction.CommitAsync();
             return await GetBookingByIdAsync(bookingId, userId);
@@ -618,8 +668,9 @@ namespace BeautyBookBackend.Services
         {
             var bookings = await _bookingRepository.GetOverdueCustomerConfirmationsAsync(DateTime.UtcNow);
             var count = 0;
-            foreach (var candidate in bookings)
+            foreach (var candidate in bookings.Where(x => !x.IsDemo))
             {
+                if (!await new PlayReviewPolicy(_context).CanProcessBookingAsync(candidate.BookingId)) continue;
                 await using var transaction = await _context.Database.BeginTransactionAsync();
                 var booking = await GetBookingForUpdateAsync(candidate.BookingId);
                 if (booking == null || booking.Status != BookingStatus.WaitingCustomer
@@ -643,7 +694,7 @@ namespace BeautyBookBackend.Services
         {
             var now = DateTime.UtcNow;
             var bookingIds = await _context.Bookings.AsNoTracking()
-                .Where(x => x.Status == BookingStatus.PendingPayment
+                .Where(x => !x.IsDemo && x.Status == BookingStatus.PendingPayment
                     && x.PaymentExpiresAt != null
                     && x.PaymentExpiresAt <= now)
                 .Select(x => x.BookingId)
@@ -652,6 +703,7 @@ namespace BeautyBookBackend.Services
             var expiredCount = 0;
             foreach (var bookingId in bookingIds)
             {
+                if (!await new PlayReviewPolicy(_context).CanProcessBookingAsync(bookingId)) continue;
                 await using var transaction = await _context.Database.BeginTransactionAsync();
                 var booking = await GetBookingForUpdateAsync(bookingId);
                 if (booking == null || booking.Status != BookingStatus.PendingPayment
@@ -670,6 +722,7 @@ namespace BeautyBookBackend.Services
 
         public async Task<bool> AddReviewAsync(Guid bookingId, Guid customerId, ReviewCreateDto reviewDto)
         {
+        await new PlayReviewPolicy(_context).EnsureBookingDomainAsync(bookingId);
             var booking = await _bookingRepository.GetByIdForCustomerAsync(bookingId, customerId);
             if (booking == null || (booking.Status != BookingStatus.Completed && booking.Status != BookingStatus.AutoCompleted))
             {
@@ -713,6 +766,11 @@ namespace BeautyBookBackend.Services
         {
             var review = await _reviewRepository.GetByIdAsync(reviewId);
             if (review == null) return false;
+            await new PlayReviewPolicy(_context).EnsureBookingDomainAsync(review.BookingId);
+            var reviewBooking = await _context.Bookings.AsNoTracking().SingleAsync(x => x.BookingId == review.BookingId);
+            if (review.CustomerId != reviewBooking.CustomerId || review.MUAId != reviewBooking.MUAId) throw new PlayReviewOperationException();
+            if (isAdmin) await new PlayReviewPolicy(_context).EnsureNormalBookingAsync(review.BookingId);
+            else await new PlayReviewPolicy(_context).EnsureSameDomainAsync(muaId, review.CustomerId);
 
             if (!isAdmin && review.MUAId != muaId) return false;
 
@@ -742,7 +800,7 @@ namespace BeautyBookBackend.Services
             }).ToList();
         }
 
-        private async Task<bool> CompleteBookingAsync(Booking booking)
+        private async Task<bool> CompleteBookingAsync(Booking booking, Guid? demoInitiator = null)
         {
             if ((booking.PaymentStatus != PaymentStatus.DepositHeld
                     && booking.PaymentStatus != PaymentStatus.Paid
@@ -761,7 +819,9 @@ namespace BeautyBookBackend.Services
 
             // Establish one completion timestamp before opening the receivable in this transaction.
             booking.CompletedAt ??= DateTime.UtcNow;
-            await _receivableService.EnsureForCompletedBookingAsync(booking);
+            if (demoInitiator.HasValue)
+                await _receivableService.EnsureForDemoCompletedBookingAsync(booking, demoInitiator.Value);
+            else await _receivableService.EnsureForCompletedBookingAsync(booking);
 
             var muaProfile = await _muaRepository.GetProfileWithFullDetailsAsync(booking.MUAId);
             if (muaProfile != null)
@@ -814,11 +874,145 @@ namespace BeautyBookBackend.Services
             return true;
         }
 
+        private async Task<Booking> LoadDemoBookingForUpdateAsync(Guid id, Guid caller)
+        {
+            var booking = await _context.Bookings.FromSqlInterpolated($"SELECT * FROM \"Bookings\" WHERE \"BookingId\"={id} FOR UPDATE").SingleOrDefaultAsync()
+                ?? throw new PlayReviewOperationException();
+            await _playReview.EnsureDemoBookingAsync(id, caller);
+            return booking;
+        }
+
+        private async Task<BookingPayment> LoadDemoPaymentForUpdateAsync(Guid id, Booking booking, Guid caller)
+        {
+            var payment = await _context.BookingPayments.FromSqlInterpolated($"SELECT * FROM \"BookingPayments\" WHERE \"PaymentId\"={id} FOR UPDATE").SingleOrDefaultAsync()
+                ?? throw new PlayReviewOperationException();
+            await _playReview.EnsureDemoPaymentAsync(booking, payment, caller);
+            return payment;
+        }
+
+        private async Task<BookingPayment> RequireDemoPaidAsync(Booking booking, Guid caller)
+        {
+            var payments = await _context.BookingPayments.AsNoTracking().Where(x => x.BookingId == booking.BookingId).ToListAsync();
+            if (payments.Count != 1 || payments[0].Status != BookingPaymentStatus.Paid || !payments[0].PaidAt.HasValue
+                || booking.PaymentStatus != PaymentStatus.DepositHeld || booking.DepositPaidAt != payments[0].PaidAt)
+                throw new PlayReviewOperationException();
+            return await LoadDemoPaymentForUpdateAsync(payments[0].PaymentId, booking, caller);
+        }
+
+        private async Task<BookingPaymentDto> CreateDemoDepositAsync(Guid id, Guid caller)
+        {
+            await using var tx = await _context.Database.BeginTransactionAsync();
+            var booking = await LoadDemoBookingForUpdateAsync(id, caller);
+            if (booking.CustomerId != caller || booking.Status != BookingStatus.PendingPayment
+                || booking.PaymentStatus != PaymentStatus.Unpaid || booking.PaymentExpiresAt <= DateTime.UtcNow || !booking.PaymentExpiresAt.HasValue)
+                throw new PlayReviewOperationException();
+            var attempts = await _context.BookingPayments.Where(x => x.BookingId == id).ToListAsync();
+            if (attempts.Count > 1) throw new PlayReviewOperationException();
+            if (attempts.Count == 1)
+            {
+                var existing = await LoadDemoPaymentForUpdateAsync(attempts[0].PaymentId, booking, caller);
+                if (existing.Status != BookingPaymentStatus.Pending || existing.ExpiresAt <= DateTime.UtcNow) throw new PlayReviewOperationException();
+                await tx.CommitAsync(); return ToPaymentDto(existing);
+            }
+            var now = DateTime.UtcNow;
+            var payment = new BookingPayment { PaymentId = Guid.NewGuid(), BookingId = id, CustomerId = caller,
+                Provider = PaymentProvider.Simulated, ProviderOrderCode = await GenerateSimulatedOrderCodeAsync(),
+                Amount = booking.DepositAmount, Status = BookingPaymentStatus.Pending, ExpiresAt = booking.PaymentExpiresAt.Value,
+                CreatedAt = now, UpdatedAt = now };
+            _context.BookingPayments.Add(payment); await _unitOfWork.SaveChangesAsync(); await tx.CommitAsync(); return ToPaymentDto(payment);
+        }
+
+        public async Task<BookingDto?> DemoPaymentSucceedAsync(Guid id, Guid caller)
+        {
+            await using var tx = await _context.Database.BeginTransactionAsync();
+            var booking = await LoadDemoBookingForUpdateAsync(id, caller);
+            if (booking.CustomerId != caller) throw new PlayReviewOperationException();
+            var attempts = await _context.BookingPayments.AsNoTracking().Where(x => x.BookingId == id).ToListAsync();
+            if (attempts.Count != 1) throw new PlayReviewOperationException();
+            var payment = await LoadDemoPaymentForUpdateAsync(attempts[0].PaymentId, booking, caller);
+            if (booking.Status == BookingStatus.PendingConfirmation && payment.Status == BookingPaymentStatus.Paid)
+            {
+                await RequireDemoPaidAsync(booking, caller); await tx.CommitAsync(); return await GetBookingByIdAsync(id, caller);
+            }
+            var now = DateTime.UtcNow;
+            if (booking.Status != BookingStatus.PendingPayment || booking.PaymentStatus != PaymentStatus.Unpaid
+                || payment.Status != BookingPaymentStatus.Pending || payment.ExpiresAt <= now
+                || !booking.PaymentExpiresAt.HasValue || booking.PaymentExpiresAt <= now) throw new PlayReviewOperationException();
+            payment.Status = BookingPaymentStatus.Paid; payment.PaidAt = now; payment.UpdatedAt = now;
+            booking.PaymentStatus = PaymentStatus.DepositHeld; booking.DepositPaidAt = now;
+            booking.Status = BookingStatus.PendingConfirmation; booking.UpdatedAt = now;
+            await _notificationService.QueueBookingStatusAsync(booking, booking.Status, caller);
+            await _unitOfWork.SaveChangesAsync(); await tx.CommitAsync(); return await GetBookingByIdAsync(id, caller);
+        }
+
+        private static bool IsDemoParticipantAction(Booking booking, Guid caller, BookingStatus target, bool counterpart)
+        {
+            if (counterpart) return target is BookingStatus.Approved or BookingStatus.Rejected;
+            return caller == booking.MUAId
+                ? target is BookingStatus.Approved or BookingStatus.Rejected or BookingStatus.Cancelled or BookingStatus.InProgress or BookingStatus.WaitingCustomer
+                : caller == booking.CustomerId && target is BookingStatus.Cancelled or BookingStatus.Completed;
+        }
+
+        private async Task ValidateDemoRejectedAsync(Booking booking, Guid caller)
+        {
+            await _playReview.EnsureDemoBookingAsync(booking.BookingId, caller);
+            var payment = await _context.BookingPayments.SingleOrDefaultAsync(x => x.BookingId == booking.BookingId);
+            var refund = await _context.Refunds.SingleOrDefaultAsync(x => x.BookingId == booking.BookingId);
+            if (payment?.Status != BookingPaymentStatus.Refunded || booking.PaymentStatus != PaymentStatus.Refunded
+                || refund?.Status != RefundStatus.Completed || refund.BookingPaymentId != payment.PaymentId
+                || refund.Amount != payment.Amount || !booking.RejectedAt.HasValue) throw new PlayReviewOperationException();
+        }
+
+        private async Task<bool> SettleDemoRefundAsync(Booking booking, BookingPayment payment, BookingRefundDecision decision, Guid initiator)
+        {
+            await _playReview.EnsureDemoPaymentAsync(booking, payment, initiator);
+            if (payment.Status != BookingPaymentStatus.Paid || decision.RefundAmount <= 0 || decision.RefundAmount > payment.Amount)
+                throw new PlayReviewOperationException();
+            if (await _context.Refunds.AnyAsync(x => x.BookingPaymentId == payment.PaymentId)
+                || await _context.PayoutItems.AnyAsync(x => x.IsActive && x.MuaReceivable!.BookingId == booking.BookingId
+                    && (x.MuaReceivable.Status == MuaReceivableStatus.PayoutPending || x.MuaReceivable.Status == MuaReceivableStatus.PaidOut)))
+                throw new PlayReviewOperationException();
+            var now = DateTime.UtcNow;
+            _context.Refunds.Add(new Refund { RefundId = Guid.NewGuid(), BookingId = booking.BookingId, BookingPaymentId = payment.PaymentId,
+                Amount = decision.RefundAmount, Status = RefundStatus.Completed, ReasonCode = decision.ReasonCode,
+                Reason = decision.PolicyRule, RequestedBy = initiator, CreatedAt = now, CompletedAt = now, UpdatedAt = now });
+            payment.Status = decision.RefundAmount == payment.Amount ? BookingPaymentStatus.Refunded : BookingPaymentStatus.PartiallyRefunded;
+            payment.RefundRequestedAt = now; payment.RefundedAt = now; payment.UpdatedAt = now;
+            booking.PaymentStatus = decision.RefundAmount == payment.Amount ? PaymentStatus.Refunded : PaymentStatus.PartiallyRefunded;
+            return true;
+        }
+
+        private async Task<IReadOnlyList<string>> GetDemoActionsAsync(Booking booking)
+        {
+            var claim = _httpContextAccessor?.HttpContext?.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(claim, out var caller) || !booking.IsDemo || caller != booking.CustomerId) return Array.Empty<string>();
+            try
+            {
+                await _playReview.EnsureDemoBookingAsync(booking.BookingId, caller);
+                var payment = await _context.BookingPayments.AsNoTracking().SingleOrDefaultAsync(x => x.BookingId == booking.BookingId);
+                if (payment == null) return Array.Empty<string>();
+                if (booking.Status == BookingStatus.PendingPayment && booking.PaymentStatus == PaymentStatus.Unpaid
+                    && payment.Status == BookingPaymentStatus.Pending && payment.ExpiresAt > DateTime.UtcNow && booking.PaymentExpiresAt > DateTime.UtcNow)
+                    return new[] { "paymentSucceed" };
+                if (booking.Status == BookingStatus.PendingConfirmation && booking.PaymentStatus == PaymentStatus.DepositHeld
+                    && payment.Status == BookingPaymentStatus.Paid && payment.PaidAt.HasValue && booking.DepositPaidAt == payment.PaidAt
+                    && booking.MUAId == _playReview.Simulation.CounterpartUserId
+                    && !await _context.BookingComplaints.AnyAsync(x => x.BookingId == booking.BookingId && x.IsOpen))
+                {
+                    var actions = new List<string> { "counterpartAccept" };
+                    if (_bookingTime.ToUtc(booking.BookingDate, booking.StartTime) > DateTime.UtcNow && !booking.StartedAt.HasValue) actions.Add("counterpartReject");
+                    return actions;
+                }
+            }
+            catch (InvalidOperationException) { }
+            return Array.Empty<string>();
+        }
         private async Task<BookingDto> ToBookingDtoAsync(Booking booking)
         {
             var refund = await _refundService.GetByBookingAsync(booking.BookingId);
             var dto = new BookingDto
             {
+                AvailableDemoActions = await GetDemoActionsAsync(booking),
                 BookingId = booking.BookingId,
                 CustomerId = booking.CustomerId,
                 CustomerName = booking.Customer?.FullName,
@@ -889,8 +1083,15 @@ namespace BeautyBookBackend.Services
 
         public async Task<List<TimeSpan>> GetAvailableSlotsAsync(Guid muaId, DateTime date, int totalDurationMinutes)
         {
-            var eligibility = await _eligibilityService.EvaluateAsync(muaId);
-            if (eligibility?.CanReceiveBookings != true || totalDurationMinutes <= 0) return new List<TimeSpan>();
+            var viewerClaim = _httpContextAccessor?.HttpContext?.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            var demoViewer = Guid.TryParse(viewerClaim, out var viewerId) && await new PlayReviewPolicy(_context).IsDemoUserAsync(viewerId);
+            var eligibility = await _eligibilityService.EvaluateAsync(muaId, updateStatus: !demoViewer);
+            if (demoViewer && await _playReview.IsDemoUserAsync(muaId))
+            {
+                await _playReview.EnsureDemoMuaCapabilityAsync(viewerId, viewerId, muaId, eligibility);
+            }
+            else if (eligibility?.CanReceiveBookings != true) return new List<TimeSpan>();
+            if (totalDurationMinutes <= 0) return new List<TimeSpan>();
             var bookings = await _bookingRepository.GetBookingsByDateAsync(muaId, date);
             var starts = await _scheduleService.GetAvailableStartsAsync(muaId, date, totalDurationMinutes);
             var requiredDuration = TimeSpan.FromMinutes(totalDurationMinutes);
@@ -947,18 +1148,22 @@ namespace BeautyBookBackend.Services
                 || status == BookingStatus.Rejected;
         }
 
-        private Task<Booking?> GetBookingForUpdateAsync(Guid bookingId)
+        private async Task<Booking?> GetBookingForUpdateAsync(Guid bookingId)
         {
-            return _context.Bookings
+            var booking = await _context.Bookings
                 .FromSqlInterpolated($"SELECT * FROM \"Bookings\" WHERE \"BookingId\" = {bookingId} FOR UPDATE")
                 .FirstOrDefaultAsync();
+            if (booking != null) await new PlayReviewPolicy(_context).EnsureNormalBookingAsync(bookingId);
+            return booking;
         }
 
-        private Task<BookingPayment?> GetPaymentForUpdateAsync(Guid paymentId)
+        private async Task<BookingPayment?> GetPaymentForUpdateAsync(Guid paymentId)
         {
-            return _context.BookingPayments
+            var payment = await _context.BookingPayments
                 .FromSqlInterpolated($"SELECT * FROM \"BookingPayments\" WHERE \"PaymentId\" = {paymentId} FOR UPDATE")
                 .FirstOrDefaultAsync();
+            if (payment != null) await new PlayReviewPolicy(_context).EnsureNormalPaymentAsync(paymentId);
+            return payment;
         }
 
         private async Task ExpirePaymentAttemptsAsync(Guid bookingId, DateTime now)
@@ -1006,6 +1211,15 @@ namespace BeautyBookBackend.Services
             await transaction.CommitAsync();
         }
 
+        private async Task<long> GenerateSimulatedOrderCodeAsync()
+        {
+            for (var attempt = 0; attempt < 10; attempt++)
+            {
+                var code = -RandomNumberGenerator.GetInt32(1, int.MaxValue);
+                if (!await _context.BookingPayments.AnyAsync(x => x.ProviderOrderCode == code)) return code;
+            }
+            throw new PlayReviewOperationException();
+        }
         private async Task<long> GeneratePaymentOrderCodeAsync()
         {
             for (var i = 0; i < 10; i++)
@@ -1049,6 +1263,7 @@ namespace BeautyBookBackend.Services
         private static BookingPaymentDto ToPaymentDto(BookingPayment payment) => new()
         {
             PaymentId = payment.PaymentId,
+            Provider = payment.Provider,
             BookingId = payment.BookingId,
             OrderCode = payment.ProviderOrderCode,
             Amount = payment.Amount,

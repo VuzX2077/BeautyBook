@@ -151,6 +151,7 @@ public class ComplaintService(ApplicationDbContext db, IMuaReceivableService rec
         Authorize(b!, user, admin); return b!;
     }
     private async Task<Booking> LockBooking(Guid id) {
+        await new PlayReviewPolicy(db).EnsureNormalBookingAsync(id);
         var b = await db.Bookings.FromSqlInterpolated($"SELECT * FROM \"Bookings\" WHERE \"BookingId\" = {id} FOR UPDATE").FirstOrDefaultAsync();
         if (b == null) Fail("NOT_FOUND", "Không tìm thấy booking.", 404); return b!;
     }

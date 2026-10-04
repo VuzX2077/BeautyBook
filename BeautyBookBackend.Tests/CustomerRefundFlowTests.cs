@@ -93,11 +93,13 @@ public sealed class CustomerRefundFlowTests
         {
             var connection = new SqliteConnection("Data Source=:memory:");
             await connection.OpenAsync();
-            var db = new RefundTestDbContext(new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlite(connection).Options);
-            await db.Database.EnsureCreatedAsync();
+            var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlite(connection).Options);
+            await db.Database.ExecuteSqlRawAsync(db.Database.GenerateCreateScript().Replace("INTERVAL '0'", "0").Replace("INTERVAL '1 day'", "86400"));
             var store = new RefundStore(connection, db);
             var now = DateTime.UtcNow;
             db.Users.Add(new User { UserId=store.CustomerId, Email="customer@example.com", Role=UserRole.Customer, IsActive=true, CreatedAt=now });
+            db.Users.Add(new User { UserId=store.MuaId, Role=UserRole.MUA, IsActive=true, CreatedAt=now });
+            db.MakeupArtistProfiles.Add(new MakeupArtistProfile { MUAId=store.MuaId });
             store.Booking = new Booking { BookingId=Guid.NewGuid(), CustomerId=store.CustomerId, MUAId=store.MuaId,
                 Status=BookingStatus.Rejected, PaymentStatus=PaymentStatus.RefundPending, BookingDate=now,
                 StartTime=TimeSpan.FromHours(8), EndTime=TimeSpan.FromHours(9), CreatedAt=now, UpdatedAt=now };
@@ -117,65 +119,6 @@ public sealed class CustomerRefundFlowTests
         public async ValueTask DisposeAsync() { await Db.DisposeAsync(); await _connection.DisposeAsync(); }
     }
 
-    private sealed class RefundTestDbContext : ApplicationDbContext
-    {
-        public RefundTestDbContext(DbContextOptions<ApplicationDbContext> options) : base(options) { }
-
-        protected override void OnModelCreating(ModelBuilder modelBuilder)
-        {
-            var allowed = new HashSet<Type>
-            {
-                typeof(User), typeof(Booking), typeof(BookingPayment),
-                typeof(BankAccount), typeof(Refund), typeof(AppNotification)
-            };
-            foreach (var entityType in modelBuilder.Model.GetEntityTypes().Select(x => x.ClrType).Where(x => !allowed.Contains(x)).ToList())
-                modelBuilder.Ignore(entityType);
-            modelBuilder.Entity<User>(b =>
-            {
-                b.HasKey(x => x.UserId);
-                b.Ignore(x => x.MakeupArtistProfile);
-                b.Ignore(x => x.BankAccounts);
-            });
-            modelBuilder.Entity<Booking>(b =>
-            {
-                b.HasKey(x => x.BookingId);
-                b.Ignore(x => x.MakeupArtistProfile);
-                b.Ignore(x => x.BookingServices);
-                b.Ignore(x => x.Payments);
-                b.HasOne(x => x.Customer).WithMany().HasForeignKey(x => x.CustomerId);
-            });
-            modelBuilder.Entity<BookingPayment>(b =>
-            {
-                b.HasKey(x => x.PaymentId);
-                b.Ignore(x => x.Booking);
-                b.Ignore(x => x.Customer);
-            });
-            modelBuilder.Entity<BankAccount>(b =>
-            {
-                b.HasKey(x => x.Id);
-                b.Ignore(x => x.User);
-            });
-            modelBuilder.Entity<Refund>(b =>
-            {
-                b.HasKey(x => x.RefundId);
-                b.Ignore(x => x.BookingPayment);
-                b.Ignore(x => x.RequestedByUser);
-                b.Ignore(x => x.LastHandledByUser);
-                b.Ignore(x => x.DestinationBankAccount);
-                b.HasOne(x => x.Booking).WithMany().HasForeignKey(x => x.BookingId);
-                b.HasIndex(x => x.BookingPaymentId).IsUnique();
-            });
-            modelBuilder.Entity<AppNotification>(b =>
-            {
-                b.HasKey(x => x.Id);
-                b.Ignore(x => x.User);
-                b.Ignore(x => x.Booking);
-                b.Ignore(x => x.Message);
-                b.Ignore(x => x.Campaign);
-            });
-        }
-    }
-
     private sealed class UnusedProvider : IRefundPayoutProvider
     {
         public Task<RefundPayoutResult> CreateAsync(RefundPayoutRequest request, string idempotencyKey) => throw new NotSupportedException();
@@ -184,6 +127,7 @@ public sealed class CustomerRefundFlowTests
 
     private sealed class UnusedReceivables : IMuaReceivableService
     {
+        public Task<MuaReceivable> EnsureForDemoCompletedBookingAsync(Booking booking, Guid initiator) => throw new NotSupportedException();
         public Task<MuaReceivable> EnsureForCompletedBookingAsync(Booking booking) => throw new NotSupportedException();
         public Task FreezeForDisputeAsync(Guid bookingId) => throw new NotSupportedException();
         public Task RestoreAfterMuaWinsAsync(Guid bookingId) => throw new NotSupportedException();

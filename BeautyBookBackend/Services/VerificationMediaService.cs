@@ -25,6 +25,8 @@ public sealed class VerificationMediaService(ApplicationDbContext db, IVerificat
         UploadCoreAsync(owner, FinancialMediaService.Purpose, input, null, ct, financialStorage, "financial");
     private async Task<VerificationMedia> UploadCoreAsync(Guid owner, string purpose, byte[] input, Guid? contextId, CancellationToken ct, IVerificationStorage? storageOverride = null, string prefix = "verification")
     {
+        if (purpose == "chat" && contextId.HasValue) await new PlayReviewPolicy(db).EnsureChatDomainAsync(contextId.Value, owner);
+        else await new PlayReviewPolicy(db).EnsureNormalUserAsync(owner);
         var targetStorage = storageOverride ?? storage;
         await using var operation = new MediaOperationLock(db);
         await operation.AcquireAsync(ct);

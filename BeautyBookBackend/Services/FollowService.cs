@@ -17,6 +17,7 @@ public class FollowService(ApplicationDbContext db)
     }
     public async Task<FollowStatus?> SetFollowing(Guid muaId, Guid userId, bool following)
     {
+        await new PlayReviewPolicy(db).EnsureSameDomainAsync(userId, muaId);
         if (muaId == userId) throw new ArgumentException("Bạn không thể tự theo dõi mình.");
         if (!await db.Users.AnyAsync(u => u.UserId == userId && u.IsActive && u.DeletedAt == null))
             throw new UnauthorizedAccessException();

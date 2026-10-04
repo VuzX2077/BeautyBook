@@ -55,7 +55,10 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseNpgsql(connectionString));
 
 // Add services to the container.
-builder.Services.AddControllers();
+builder.Services.AddControllers(options => options.Filters.Add<PlayReviewExceptionFilter>());
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<PlayReviewPolicy>();
+builder.Services.Configure<PlayReviewOptions>(builder.Configuration.GetSection("PlayReview"));
 builder.Logging.AddFilter("System.Net.Http.HttpClient.LocationService", LogLevel.None);
 builder.Services.AddHttpClient<LocationService>(client => client.Timeout = TimeSpan.FromSeconds(8));
 builder.Services.AddRateLimiter(options => { options.RejectionStatusCode = StatusCodes.Status429TooManyRequests; options.AddPolicy("location-lookup", context =>

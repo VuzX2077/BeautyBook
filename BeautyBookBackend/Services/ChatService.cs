@@ -31,6 +31,7 @@ namespace BeautyBookBackend.Services
 
         public async Task<ChatRoomDto> GetOrCreateChatRoomAsync(Guid customerId, Guid muaId)
         {
+        await new PlayReviewPolicy(_context).EnsureSameDomainAsync(customerId, muaId);
             if (customerId == muaId) throw new ArgumentException("Không thể tự tạo cuộc trò chuyện với chính mình.");
             var customer = await _context.Users.AsNoTracking().FirstOrDefaultAsync(x => x.UserId == customerId && x.IsActive && x.DeletedAt == null);
             if (customer == null || customer.Role == UserRole.Admin) throw new UnauthorizedAccessException("Tài khoản không thể tạo cuộc trò chuyện này.");
@@ -99,6 +100,7 @@ namespace BeautyBookBackend.Services
 
         public async Task EnsureRoomAccessAsync(Guid roomId, Guid userId)
         {
+        await new PlayReviewPolicy(_context).EnsureChatDomainAsync(roomId, userId);
             var room = await _chatRepository.GetChatRoomByIdAsync(roomId);
             if (room == null || (room.CustomerId != userId && room.MUAId != userId))
                 throw new UnauthorizedAccessException("Bạn không thuộc cuộc trò chuyện này.");
@@ -122,6 +124,7 @@ namespace BeautyBookBackend.Services
 
         public async Task<MessageDto> SendMessageAsync(Guid roomId, Guid senderId, string? content, string? imageUrl, Guid? replyToMessageId)
         {
+
             var room = await _chatRepository.GetChatRoomByIdAsync(roomId);
             if (room == null)
             {
@@ -133,6 +136,7 @@ namespace BeautyBookBackend.Services
                 throw new UnauthorizedAccessException("You are not part of this chat room.");
             }
 
+            await new PlayReviewPolicy(_context).EnsureChatDomainAsync(roomId, senderId);
             if (string.IsNullOrWhiteSpace(content) && string.IsNullOrWhiteSpace(imageUrl))
                 throw new ArgumentException("Tin nhắn phải có nội dung hoặc hình ảnh.");
             if (content?.Trim().Length > 2000) throw new ArgumentException("Tin nhắn không được vượt quá 2000 ký tự.");
@@ -190,6 +194,7 @@ namespace BeautyBookBackend.Services
 
         public async Task<MessageDto> ToggleReactionAsync(Guid roomId, Guid messageId, Guid userId, string emoji)
         {
+        await new PlayReviewPolicy(_context).EnsureChatDomainAsync(roomId, userId);
             emoji = emoji.Trim();
             var allowedEmoji = new HashSet<string> { "❤️", "👍", "😀", "😂", "😍", "🔥", "👏", "😢" };
             if (!allowedEmoji.Contains(emoji)) throw new ArgumentException("Cảm xúc không được hỗ trợ.");

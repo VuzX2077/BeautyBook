@@ -13,6 +13,7 @@ public sealed class FinancialMediaService(ApplicationDbContext db, VerificationM
 
     public async Task<(VerificationMedia Media, BankQrData Decoded)> UploadAsync(Guid owner, byte[] input, CancellationToken ct)
     {
+        await new PlayReviewPolicy(db).EnsureNormalUserAsync(owner);
         if (!await db.Users.AnyAsync(x => x.UserId == owner && (x.Role == UserRole.MUA || x.Role == UserRole.Customer) && x.IsActive && x.DeletedAt == null, ct))
             throw new UnauthorizedAccessException();
         if (await db.VerificationMedia.CountAsync(x => x.OwnerId == owner && x.Purpose == Purpose && x.CreatedAt > DateTime.UtcNow.AddHours(-1), ct) >= 30)
@@ -32,6 +33,7 @@ public sealed class FinancialMediaService(ApplicationDbContext db, VerificationM
 
     public async Task AttachAsync(Guid owner, Guid bankId, string accountNumber, Guid id, CancellationToken ct = default)
     {
+        await new PlayReviewPolicy(db).EnsureNormalUserAsync(owner);
         var item = await db.VerificationMedia.FirstOrDefaultAsync(x => x.Id == id && x.OwnerId == owner && x.Purpose == Purpose && x.ReadyAt != null && x.DeletedAt == null && x.StorageDeletedAt == null, ct)
             ?? throw new BookingRuleException("FINANCIAL_QR_INVALID", "QR MoMo không còn khả dụng hoặc không thuộc tài khoản của bạn.", 409);
         if (item.ContextId.HasValue && item.ContextId != bankId) throw new BookingRuleException("FINANCIAL_QR_INVALID", "QR đã gắn với tài khoản nhận tiền khác.", 409);
@@ -49,6 +51,7 @@ public sealed class FinancialMediaService(ApplicationDbContext db, VerificationM
     }
     public async Task<string?> PayoutImageAsync(Guid payoutId, CancellationToken ct)
     {
+        await new PlayReviewPolicy(db).EnsureNormalPayoutAsync(payoutId);
         var payout = await db.Payouts.AsNoTracking().FirstOrDefaultAsync(x => x.Id == payoutId && x.BankCodeSnapshot == "MOMO", ct);
         if (payout == null || payout.Status is not (PayoutStatus.Pending or PayoutStatus.ManualActionRequired or PayoutStatus.Processing) || !payout.FinancialQrMediaIdSnapshot.HasValue) return null;
         var item = await db.VerificationMedia.AsNoTracking().FirstOrDefaultAsync(x => x.Id == payout.FinancialQrMediaIdSnapshot && x.OwnerId == payout.MuaId && x.Purpose == Purpose && x.ContextId == payout.BankAccountId && x.ReadyAt != null && x.StorageDeletedAt == null, ct);
@@ -58,10 +61,12 @@ public sealed class FinancialMediaService(ApplicationDbContext db, VerificationM
     public async Task<string?> ReviewImageAsync(Guid accountId,CancellationToken ct) {
         var bank=await db.BankAccounts.AsNoTracking().FirstOrDefaultAsync(x=>x.Id==accountId&&x.IsActive&&x.VerificationStatus==BankAccountEligibility.Pending&&x.Method=="MOMO",ct);
         if(bank?.FinancialQrMediaId==null)return null;
+        await new PlayReviewPolicy(db).EnsureNormalUserAsync(bank.UserId);
         var item=await db.VerificationMedia.AsNoTracking().FirstOrDefaultAsync(x=>x.Id==bank.FinancialQrMediaId&&x.OwnerId==bank.UserId&&x.Purpose==Purpose&&x.ContextId==bank.Id&&x.ReadyAt!=null&&x.DeletedAt==null&&x.StorageDeletedAt==null,ct);
         return item==null?null:DataUrl(await ReadVerifiedAsync(item,ct));
     }
     public async Task<string?> RefundImageAsync(Guid refundId,CancellationToken ct) {
+        await new PlayReviewPolicy(db).EnsureNormalRefundAsync(refundId);
         var refund=await db.Refunds.AsNoTracking().FirstOrDefaultAsync(x=>x.RefundId==refundId&&x.DestinationBankCode=="MOMO",ct);
         if(refund==null || refund.Status is not (RefundStatus.Pending or RefundStatus.ManualActionRequired or RefundStatus.Processing) || !refund.DestinationFinancialQrMediaId.HasValue)return null;
         var owner=await db.Bookings.Where(x=>x.BookingId==refund.BookingId).Select(x=>x.CustomerId).SingleAsync(ct);

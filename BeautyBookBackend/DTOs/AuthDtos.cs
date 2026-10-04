@@ -77,5 +77,6 @@ namespace BeautyBookBackend.DTOs
         public string Email { get; set; } = null!;
         public UserRole Role { get; set; }
         public bool HasMuaProfile { get; set; }
+        public bool IsDemoAccount { get; set; }
     }
 }

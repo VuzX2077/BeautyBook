@@ -51,9 +51,30 @@ namespace BeautyBookBackend.Data
         public DbSet<EmailOtp> EmailOtps { get; set; } = null!;
 
         public DbSet<MuaOperatingArea> MuaOperatingAreas { get; set; } = null!;
+
+        private void ValidateBookingSnapshots()
+        {
+            foreach (var entry in ChangeTracker.Entries<Booking>().Where(x => x.State == EntityState.Modified))
+                if (entry.Property(x => x.IsDemo).IsModified)
+                    throw new InvalidOperationException("Booking domain snapshot is immutable.");
+        }
+
+        public override int SaveChanges(bool acceptAllChangesOnSuccess)
+        {
+            ValidateBookingSnapshots();
+            return base.SaveChanges(acceptAllChangesOnSuccess);
+        }
+
+        public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+        {
+            ValidateBookingSnapshots();
+            return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+        }
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
+            modelBuilder.Entity<User>().Property(x => x.IsDemoAccount).HasDefaultValue(false);
+            modelBuilder.Entity<Booking>().Property(x => x.IsDemo).HasDefaultValue(false);
             modelBuilder.Entity<AccountDeletionRequest>(b => {
                 b.HasKey(x => x.UserId);
                 b.Property(x => x.Status).HasMaxLength(40);

@@ -55,7 +55,10 @@ namespace BeautyBookBackend.Controllers
         [HttpGet("{id}")]
         public async Task<IActionResult> GetMuaById(Guid id)
         {
-            var mua = await _muaService.GetMuaByIdAsync(id);
+            // Marketplace detail remains a public projection, even for its owner.
+            // Viewer identity is only needed to authorize a different Draft counterpart.
+            var viewer = CurrentUserIdOrNull;
+            var mua = await _muaService.GetMuaByIdAsync(id, viewer == id ? null : viewer);
             if (mua == null)
             {
                 return NotFound(new { Message = "Không tìm thấy thông tin Make Up Artist này." });

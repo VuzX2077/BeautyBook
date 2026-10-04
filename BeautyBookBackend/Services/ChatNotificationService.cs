@@ -42,7 +42,7 @@ public sealed class ChatNotificationService : IChatNotificationService
                 notificationId
             }),
             ScheduledAt = DateTime.UtcNow,
-            Status = "Pending",
+            Status = await new PlayReviewPolicy(_db).ExternalDeliveryAllowedAsync(new AppNotification { UserId = recipientId, MessageId = message.MessageId }) ? "Pending" : "Skipped",
             CreatedAt = DateTime.UtcNow
         });
         await _db.SaveChangesAsync(cancellationToken);

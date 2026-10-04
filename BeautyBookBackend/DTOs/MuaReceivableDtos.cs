@@ -19,6 +19,8 @@ namespace BeautyBookBackend.DTOs
 
     public class MuaEarningsDto
     {
+        public Guid? PermittedSimulationBankAccountId { get; set; }
+        public bool CanRequestSimulatedPayout { get; set; }
         public decimal OnHoldTotal { get; set; }
         public decimal AvailableTotal { get; set; }
         public decimal FrozenTotal { get; set; }

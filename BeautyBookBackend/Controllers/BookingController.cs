@@ -33,6 +33,20 @@ namespace BeautyBookBackend.Controllers
             }
         }
 
+        [HttpPost("{id}/demo-payment/succeed")]
+        public async Task<IActionResult> DemoPaymentSucceed(Guid id) => await DemoResultAsync(() => _bookingService.DemoPaymentSucceedAsync(id, CurrentUserId));
+
+        [HttpPost("{id}/demo-counterpart/accept")]
+        public async Task<IActionResult> DemoCounterpartAccept(Guid id) => await DemoResultAsync(() => _bookingService.DemoCounterpartAcceptAsync(id, CurrentUserId));
+
+        [HttpPost("{id}/demo-counterpart/reject")]
+        public async Task<IActionResult> DemoCounterpartReject(Guid id) => await DemoResultAsync(() => _bookingService.DemoCounterpartRejectAsync(id, CurrentUserId));
+        private async Task<IActionResult> DemoResultAsync(Func<Task<BookingDto?>> action)
+        {
+            try { var result = await action(); return result == null ? NotFound() : Ok(result); }
+            catch (BookingConcurrencyException ex) { return Conflict(new { Code = "BOOKING_CONFLICT", Message = ex.Message }); }
+            catch (BookingRuleException ex) { return StatusCode(ex.StatusCode, new { ex.Code, Message = ex.Message }); }
+        }
         [HttpPost("create")]
         public async Task<IActionResult> CreateBooking([FromBody] BookingCreateDto createDto)
         {

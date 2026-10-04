@@ -13,6 +13,8 @@ namespace BeautyBookBackend.DTOs
         public DateTime CreatedAt { get; set; }
         public bool IsActive { get; set; }
         public bool HasMuaProfile { get; set; }
+        public bool IsDemoAccount { get; set; }
+        public Guid? DemoCounterpartMuaId { get; set; }
     }
 
     public class UserUpdateDto

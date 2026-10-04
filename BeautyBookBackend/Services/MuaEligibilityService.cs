@@ -52,7 +52,7 @@ namespace BeautyBookBackend.Services
 
             var canPublish = requirements.All(x => x.IsMet);
             var hasValidSchedule = await _scheduleService.HasValidScheduleAsync(muaId);
-            if (updateStatus && profile.Status != MuaStatus.Suspended)
+            if (updateStatus && !profile.User.IsDemoAccount && profile.Status != MuaStatus.Suspended)
             {
                 if (canPublish && hasValidSchedule && profile.VerificationStatus == MuaVerificationStatus.Approved && profile.Status == MuaStatus.Draft)
                 {
@@ -88,9 +88,9 @@ namespace BeautyBookBackend.Services
             {
                 CompletionPercentage = (int)Math.Round(requirements.Count(x => x.IsMet) * 100m / requirements.Count),
                 ProfileStatus = profile.Status.ToString(),
-                CanPublishProfile = operational && profile.Status == MuaStatus.Listed && canPublish && hasValidSchedule && profile.VerificationStatus == MuaVerificationStatus.Approved,
+                CanPublishProfile = !profile.User.IsDemoAccount && operational && profile.Status == MuaStatus.Listed && canPublish && hasValidSchedule && profile.VerificationStatus == MuaVerificationStatus.Approved,
                 CanReceiveBookings = operational && profile.Status == MuaStatus.Listed && canPublish && hasValidSchedule && profile.VerificationStatus == MuaVerificationStatus.Approved,
-                CanWithdraw = operational && hasUsableBankAccount && hasWithdrawableReceivable,
+                CanWithdraw = !profile.User.IsDemoAccount && operational && hasUsableBankAccount && hasWithdrawableReceivable,
                 VerificationStatus = profile.VerificationStatus.ToString(),
                 RejectionReason = profile.RejectionReason,
                 SubmittedAt = profile.SubmittedAt,
@@ -131,6 +131,7 @@ namespace BeautyBookBackend.Services
 
         public async Task<(bool Success, string? Error)> SubmitForReviewAsync(Guid muaId)
         {
+        await new PlayReviewPolicy(_db).EnsureNormalUserAsync(muaId);
             var result = await EvaluateAsync(muaId);
             if (result == null) return (false, "Không tìm thấy hồ sơ MUA.");
             if (result.MissingRequirements.Count > 0)
@@ -169,6 +170,7 @@ namespace BeautyBookBackend.Services
 
         public async Task<(bool Success, string? Error)> UpdateIdentityVerificationAsync(Guid muaId, MuaIdentityVerificationRequestDto request)
         {
+        await new PlayReviewPolicy(_db).EnsureNormalUserAsync(muaId);
             await using var identityTransaction = await _db.Database.BeginTransactionAsync();
             if (_db.Database.IsNpgsql())
             {
@@ -223,6 +225,7 @@ namespace BeautyBookBackend.Services
 
         public async Task<bool> ReviewAsync(Guid muaId, Guid adminId, bool approved, string? reason = null, IReadOnlyList<string>? reasonCodes = null, IReadOnlyList<MuaApplicationRejectionItemDto>? items = null)
         {
+        await new PlayReviewPolicy(_db).EnsureNormalUserAsync(muaId);
             await using var transaction = await _db.Database.BeginTransactionAsync();
             if (_db.Database.IsNpgsql())
             {
@@ -279,7 +282,8 @@ namespace BeautyBookBackend.Services
 
         public async Task<List<AdminMuaApplicationListItemDto>> GetApplicationsAsync(string? status, int page, int pageSize)
         {
-            var query = _db.MakeupArtistProfiles.AsNoTracking().Include(x => x.User).Include(x => x.Services).Include(x => x.Portfolios).AsQueryable();
+            var query = _db.MakeupArtistProfiles.AsNoTracking().Include(x => x.User).Include(x => x.Services).Include(x => x.Portfolios)
+                .Where(x => x.User != null && !x.User.IsDemoAccount);
             if (!string.IsNullOrWhiteSpace(status) && Enum.TryParse<MuaVerificationStatus>(status, true, out var parsed)) query = query.Where(x => x.VerificationStatus == parsed);
             var rows = await query.OrderByDescending(x => x.SubmittedAt ?? DateTime.MinValue).Skip((Math.Max(page, 1) - 1) * Math.Clamp(pageSize, 1, 50)).Take(Math.Clamp(pageSize, 1, 50)).ToListAsync();
             var result = new List<AdminMuaApplicationListItemDto>();

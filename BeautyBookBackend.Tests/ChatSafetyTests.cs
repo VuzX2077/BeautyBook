@@ -67,7 +67,8 @@ public sealed class ChatSafetyTests
     public async Task Service_RejectsOutsiderAndUnsupportedReaction()
     {
         var customerId = Guid.NewGuid(); var muaId = Guid.NewGuid(); var roomId = Guid.NewGuid();
-        using var context = CreateContext();
+        await using var store = await PlayReviewTestStore.CreateAsync();
+        var context = store.Db;
         var service = CreateService(context, new ChatRoom { ChatRoomId = roomId, CustomerId = customerId, MUAId = muaId });
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.SendMessageAsync(roomId, Guid.NewGuid(), "hello", null, null));
         await Assert.ThrowsAsync<ArgumentException>(() => service.ToggleReactionAsync(roomId, Guid.NewGuid(), customerId, "not-an-emoji"));
@@ -77,7 +78,8 @@ public sealed class ChatSafetyTests
     public async Task PushFailure_DoesNotFailPersistedMessage()
     {
         var customerId = Guid.NewGuid(); var muaId = Guid.NewGuid(); var roomId = Guid.NewGuid();
-        using var context = CreateContext();
+        await using var store = await PlayReviewTestStore.CreateAsync();
+        var context = store.Db;
         var service = CreateService(context, new ChatRoom { ChatRoomId = roomId, CustomerId = customerId, MUAId = muaId }, true);
 
         var result = await service.SendMessageAsync(roomId, customerId, "hello", null, null);
@@ -86,8 +88,12 @@ public sealed class ChatSafetyTests
         Assert.Equal(roomId, result.ChatRoomId);
     }
 
-    private static ChatService CreateService(ApplicationDbContext context, ChatRoom room, bool throwOnPush = false) =>
-        new(new FakeChatRepository(room), context, new FakeChatNotificationService(throwOnPush), NullLogger<ChatService>.Instance);
+    private static ChatService CreateService(ApplicationDbContext context, ChatRoom room, bool throwOnPush = false) {
+        context.Users.AddRange(new User { UserId=room.CustomerId, IsActive=true }, new User { UserId=room.MUAId, IsActive=true });
+        context.MakeupArtistProfiles.Add(new MakeupArtistProfile { MUAId=room.MUAId });
+        context.ChatRooms.Add(room); context.SaveChanges();
+        return new(new FakeChatRepository(room), context, new FakeChatNotificationService(throwOnPush), NullLogger<ChatService>.Instance);
+    }
 
     private sealed class FakeChatNotificationService(bool throwOnPush = false) : IChatNotificationService
     {

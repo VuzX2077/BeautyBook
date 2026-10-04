@@ -6,7 +6,8 @@ using System.Text.Json;
 namespace BeautyBookBackend.Services;
 
 public sealed class BrevoEmailSender(
-    HttpClient client, IConfiguration configuration, ILogger<BrevoEmailSender> logger) : IEmailSender
+    HttpClient client, IConfiguration configuration, ILogger<BrevoEmailSender> logger,
+    BeautyBookBackend.Data.ApplicationDbContext? db = null, IHttpContextAccessor? httpContextAccessor = null) : IEmailSender
 {
     public async Task SendOtpAsync(string email, string otp, string purpose, CancellationToken cancellationToken = default)
     {
@@ -18,6 +19,11 @@ public sealed class BrevoEmailSender(
             logger.LogError("Configure Email:BrevoApiKey and a valid Email:FromEmail to send OTP emails.");
             throw new EmailDeliveryException("Email provider is not configured.");
         }
+
+        if (db == null) throw new PlayReviewOperationException();
+        var policy = new PlayReviewPolicy(db);
+        await policy.EnsureExternalActorAsync(httpContextAccessor);
+        await policy.EnsureEmailDeliveryAsync(email, purpose);
 
         var (subject, action, warning) = purpose switch
         {

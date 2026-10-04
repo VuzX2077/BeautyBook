@@ -25,6 +25,9 @@ public class BookingNotificationService : IBookingNotificationService
             throw new InvalidOperationException("Expo push token không hợp lệ.");
         var now = DateTime.UtcNow;
         var existing = await _db.DevicePushTokens.FirstOrDefaultAsync(x => x.ExpoPushToken == token);
+        var policy = new PlayReviewPolicy(_db);
+        await policy.IsDemoUserAsync(userId);
+        if (existing != null) await policy.EnsureSameDomainAsync(userId, existing.UserId);
         if (existing == null)
         {
             _db.DevicePushTokens.Add(new DevicePushToken { Id = Guid.NewGuid(), UserId = userId, ExpoPushToken = token, Platform = platform, DeviceName = deviceName, CreatedAt = now, UpdatedAt = now, LastSeenAt = now });
@@ -119,7 +122,7 @@ public class BookingNotificationService : IBookingNotificationService
     private async Task AddUniqueAsync(Booking booking, Guid userId, string type, string title, string body, DateTime scheduledAt)
     {
         if (scheduledAt <= DateTime.UtcNow.AddMinutes(-1) || await _db.AppNotifications.AnyAsync(x => x.BookingId == booking.BookingId && x.UserId == userId && x.Type == type)) return;
-        _db.AppNotifications.Add(new AppNotification { Id = Guid.NewGuid(), UserId = userId, BookingId = booking.BookingId, Type = type, Title = title, Body = body, DataJson = JsonSerializer.Serialize(new { url = $"/booking/{booking.BookingId}", bookingId = booking.BookingId }), ScheduledAt = scheduledAt, Status = "Pending", CreatedAt = DateTime.UtcNow });
+        _db.AppNotifications.Add(new AppNotification { Id = Guid.NewGuid(), UserId = userId, BookingId = booking.BookingId, Type = type, Title = title, Body = body, DataJson = JsonSerializer.Serialize(new { url = $"/booking/{booking.BookingId}", bookingId = booking.BookingId }), ScheduledAt = scheduledAt, Status = await new PlayReviewPolicy(_db).ExternalDeliveryAllowedAsync(new AppNotification { UserId = userId, BookingId = booking.BookingId }) ? "Pending" : "Skipped", CreatedAt = DateTime.UtcNow });
     }
 
     private static string ReminderBody(DateTime startUtc, TimeSpan offset) => offset.TotalHours >= 1

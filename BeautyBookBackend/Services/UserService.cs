@@ -18,8 +18,9 @@ namespace BeautyBookBackend.Services
         private readonly IUnitOfWork _unitOfWork;
         private readonly ApplicationDbContext _context;
         private readonly AccountDeletionService _deletion;
+        private readonly PlayReviewPolicy _playReview;
 
-        public UserService(IUserRepository userRepository, IMuaRepository muaRepository, IMuaService muaService, IUnitOfWork unitOfWork, ApplicationDbContext context, AccountDeletionService deletion)
+        public UserService(IUserRepository userRepository, IMuaRepository muaRepository, IMuaService muaService, IUnitOfWork unitOfWork, ApplicationDbContext context, AccountDeletionService deletion, PlayReviewPolicy? playReview = null)
         {
             _userRepository = userRepository;
             _muaRepository = muaRepository;
@@ -27,6 +28,7 @@ namespace BeautyBookBackend.Services
             _unitOfWork = unitOfWork;
             _context = context;
             _deletion = deletion;
+            _playReview = playReview ?? new(context);
         }
 
         public async Task<UserDto?> GetProfileAsync(Guid userId)
@@ -34,7 +36,7 @@ namespace BeautyBookBackend.Services
             var user = await _userRepository.GetByIdAsync(userId);
             if (user == null) return null;
             bool hasMuaProfile = await _muaRepository.ProfileExistsAsync(user.UserId);
-            return ToDto(user, hasMuaProfile);
+            return await ToDtoAsync(user, hasMuaProfile);
         }
 
         public async Task<UserProfileDto?> GetFullUserProfileAsync(Guid userId)
@@ -43,7 +45,7 @@ namespace BeautyBookBackend.Services
             if (user == null) return null;
 
             bool hasMuaProfile = await _muaRepository.ProfileExistsAsync(user.UserId);
-            var dto = ToDto(user, hasMuaProfile);
+            var dto = await ToDtoAsync(user, hasMuaProfile);
 
             var profileDto = new UserProfileDto
             {
@@ -55,7 +57,9 @@ namespace BeautyBookBackend.Services
                 Role = dto.Role,
                 CreatedAt = dto.CreatedAt,
                 IsActive = dto.IsActive,
-                HasMuaProfile = dto.HasMuaProfile
+                HasMuaProfile = dto.HasMuaProfile,
+                IsDemoAccount = dto.IsDemoAccount,
+                DemoCounterpartMuaId = dto.DemoCounterpartMuaId
             };
 
             if (hasMuaProfile)
@@ -82,15 +86,17 @@ namespace BeautyBookBackend.Services
             await _unitOfWork.SaveChangesAsync();
             bool hasMuaProfile = await _muaRepository.ProfileExistsAsync(user.UserId);
             if (hasMuaProfile) await _muaService.RecalculateProfileStateAsync(user.UserId);
-            return ToDto(user, hasMuaProfile);
+            return await ToDtoAsync(user, hasMuaProfile);
         }
 
         public Task<AccountDeletionResultDto> DeleteOwnAccountAsync(Guid userId) => _deletion.DeleteAsync(userId);
 
-        private static UserDto ToDto(User user, bool hasMuaProfile)
+        private async Task<UserDto> ToDtoAsync(User user, bool hasMuaProfile)
         {
             return new UserDto
             {
+                IsDemoAccount = user.IsDemoAccount,
+                DemoCounterpartMuaId = await _playReview.GetCounterpartEntryAsync(user.UserId),
                 UserId = user.UserId,
                 FullName = user.FullName,
                 Email = user.Email,

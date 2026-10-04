@@ -4,12 +4,15 @@ using BeautyBookBackend.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
+using Microsoft.EntityFrameworkCore;
 
 namespace BeautyBookBackend.Tests;
 
-public class BrevoEmailSenderTests
+public class BrevoEmailSenderTests : IDisposable
 {
-    private static BrevoEmailSender Sender(HttpMessageHandler handler, bool configured = true)
+    private readonly List<BeautyBookBackend.Data.ApplicationDbContext> contexts = new();
+    public void Dispose() { foreach (var context in contexts) context.Dispose(); }
+    private BrevoEmailSender Sender(HttpMessageHandler handler, bool configured = true)
     {
         var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
@@ -17,7 +20,11 @@ public class BrevoEmailSenderTests
             ["Email:FromEmail"] = "sender@example.com",
             ["Email:FromName"] = "BBook"
         }).Build();
-        return new BrevoEmailSender(new HttpClient(handler), config, NullLogger<BrevoEmailSender>.Instance);
+        var db = new BeautyBookBackend.Data.ApplicationDbContext(new Microsoft.EntityFrameworkCore.DbContextOptionsBuilder<BeautyBookBackend.Data.ApplicationDbContext>().UseSqlite("Data Source=:memory:").Options);
+        db.Database.OpenConnection();
+        db.Database.ExecuteSqlRaw("CREATE TABLE Users (Email TEXT, IsDemoAccount INTEGER NOT NULL DEFAULT 0); INSERT INTO Users VALUES ('recipient@example.com', 0)");
+        contexts.Add(db);
+        return new BrevoEmailSender(new HttpClient(handler), config, NullLogger<BrevoEmailSender>.Instance, db);
     }
 
     [Fact]

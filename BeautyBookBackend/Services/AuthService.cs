@@ -53,7 +53,7 @@ namespace BeautyBookBackend.Services
         {
             email = NormalizeEmail(email);
             var user = await _userRepository.GetByEmailAsync(email);
-            if (user != null && user.IsActive && !user.DeletedAt.HasValue && !string.IsNullOrWhiteSpace(user.PasswordHash))
+            if (user != null && !user.IsDemoAccount && user.IsActive && !user.DeletedAt.HasValue && !string.IsNullOrWhiteSpace(user.PasswordHash))
                 await _emailOtpService.IssueAsync(email, "RESET_PASSWORD");
         }
 
@@ -91,7 +91,7 @@ namespace BeautyBookBackend.Services
         {
             var email = NormalizeEmail(request.Email);
             var user = await _userRepository.GetByEmailAsync(email);
-            if (user == null || !user.IsActive || user.DeletedAt.HasValue || string.IsNullOrWhiteSpace(user.PasswordHash)) return false;
+            if (user == null || user.IsDemoAccount || !user.IsActive || user.DeletedAt.HasValue || string.IsNullOrWhiteSpace(user.PasswordHash)) return false;
             if (!await _emailOtpService.ConsumeAsync(email, "RESET_PASSWORD", null, request.Otp)) return false;
             user.PasswordHash = HashPassword(request.NewPassword);
             await _unitOfWork.SaveChangesAsync();
@@ -101,7 +101,7 @@ namespace BeautyBookBackend.Services
         public async Task<bool> ChangePasswordAsync(Guid userId, ChangePasswordDto request)
         {
             var user = await _userRepository.GetByIdAsync(userId);
-            if (user == null || !user.IsActive || user.DeletedAt.HasValue ||
+            if (user == null || user.IsDemoAccount || !user.IsActive || user.DeletedAt.HasValue ||
                 !VerifyPasswordHash(request.CurrentPassword, user.PasswordHash)) return false;
             user.PasswordHash = HashPassword(request.NewPassword);
             await _unitOfWork.SaveChangesAsync();
@@ -308,39 +308,13 @@ namespace BeautyBookBackend.Services
                 Role = user.Role,
                 CreatedAt = user.CreatedAt,
                 IsActive = user.IsActive,
-                HasMuaProfile = hasMuaProfile
+                HasMuaProfile = hasMuaProfile,
+                IsDemoAccount = user.IsDemoAccount
             };
         }
 
-        private static string HashPassword(string password)
-        {
-            const int iterations = 210_000;
-            var salt = RandomNumberGenerator.GetBytes(16);
-            var hash = Rfc2898DeriveBytes.Pbkdf2(password, salt, iterations, HashAlgorithmName.SHA256, 32);
-            return $"PBKDF2${iterations}${Convert.ToBase64String(salt)}${Convert.ToBase64String(hash)}";
-        }
-
-        private static bool VerifyPasswordHash(string password, string? stored)
-        {
-            if (string.IsNullOrWhiteSpace(stored)) return false;
-            if (stored.StartsWith("PBKDF2$", StringComparison.Ordinal))
-            {
-                var parts = stored.Split('$');
-                if (parts.Length != 4 || !int.TryParse(parts[1], out var iterations)) return false;
-                try
-                {
-                    var salt = Convert.FromBase64String(parts[2]);
-                    var expected = Convert.FromBase64String(parts[3]);
-                    var actual = Rfc2898DeriveBytes.Pbkdf2(password, salt, iterations, HashAlgorithmName.SHA256, expected.Length);
-                    return CryptographicOperations.FixedTimeEquals(expected, actual);
-                }
-                catch (FormatException) { return false; }
-            }
-            using var sha256 = SHA256.Create();
-            var legacy = sha256.ComputeHash(Encoding.UTF8.GetBytes(password));
-            try { return CryptographicOperations.FixedTimeEquals(Convert.FromBase64String(stored), legacy); }
-            catch (FormatException) { return false; }
-        }
+        private static string HashPassword(string password) => PasswordHasher.Hash(password);
+        private static bool VerifyPasswordHash(string password, string? stored) => PasswordHasher.Verify(password, stored);
 
         private List<string> GetGoogleClientIds()
         {
@@ -402,7 +376,8 @@ namespace BeautyBookBackend.Services
                 FullName = user.FullName ?? "",
                 Email = user.Email ?? "",
                 Role = user.Role,
-                HasMuaProfile = hasMuaProfile
+                HasMuaProfile = hasMuaProfile,
+                IsDemoAccount = user.IsDemoAccount
             };
         }
     }

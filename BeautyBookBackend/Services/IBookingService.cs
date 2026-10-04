@@ -10,6 +10,9 @@ namespace BeautyBookBackend.Services
     {
         Task<BookingDto?> CreateBookingAsync(Guid customerId, BookingCreateDto createDto);
         Task<BookingPaymentDto?> CreateDepositPaymentAsync(Guid bookingId, Guid customerId);
+        Task<BookingDto?> DemoPaymentSucceedAsync(Guid id, Guid caller);
+        Task<BookingDto?> DemoCounterpartAcceptAsync(Guid id, Guid caller);
+        Task<BookingDto?> DemoCounterpartRejectAsync(Guid id, Guid caller);
         Task<bool> HandlePayOsWebhookAsync(PayOsWebhookDto webhook);
         Task<List<BookingDto>> GetBookingsAsync(Guid userId, string viewAs);
         Task<BookingDto?> GetBookingByIdAsync(Guid bookingId, Guid userId);

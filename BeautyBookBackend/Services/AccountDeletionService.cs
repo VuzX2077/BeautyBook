@@ -18,6 +18,7 @@ public sealed partial class AccountDeletionService(ApplicationDbContext _context
         await _context.Database.ExecuteSqlInterpolatedAsync($"SELECT set_config('bbook.deletion_owner', {userId.ToString()}, true)");
         var user = await _context.Users.FirstOrDefaultAsync(x => x.UserId == userId);
         if (user == null) return new() { Code = "ACCOUNT_NOT_FOUND", Message = "Không tìm thấy tài khoản." };
+        if (user.IsDemoAccount) return new() { Code = "PLAY_REVIEW_ACCOUNT_PROTECTED", Message = "Tài khoản review được quản lý riêng và không thể xóa tại đây." };
         if (user.Role == UserRole.Admin) return new() { Code = "ACCOUNT_DELETION_ADMIN_UNSUPPORTED", Message = "Tài khoản quản trị cần quy trình bàn giao riêng." };
         if (user.DeletedAt != null && await _context.AccountDeletionRequests.AnyAsync(x => x.UserId == userId && x.DatabaseCompletedAt != null)) {
             connections.Abort(userId);

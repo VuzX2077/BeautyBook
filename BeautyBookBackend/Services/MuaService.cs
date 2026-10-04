@@ -17,14 +17,18 @@ namespace BeautyBookBackend.Services
         private readonly IUnitOfWork _unitOfWork;
         private readonly BeautyBookBackend.Data.ApplicationDbContext _dbContext;
         private readonly IMuaEligibilityService _eligibilityService;
+        private readonly PlayReviewPolicy _playReview;
+        private readonly IHttpContextAccessor? _httpContextAccessor;
 
-        public MuaService(IMuaRepository muaRepository, IUserRepository userRepository, IUnitOfWork unitOfWork, BeautyBookBackend.Data.ApplicationDbContext dbContext, IMuaEligibilityService eligibilityService)
+        public MuaService(IMuaRepository muaRepository, IUserRepository userRepository, IUnitOfWork unitOfWork, BeautyBookBackend.Data.ApplicationDbContext dbContext, IMuaEligibilityService eligibilityService, IHttpContextAccessor? httpContextAccessor = null, PlayReviewPolicy? playReview = null)
         {
             _muaRepository = muaRepository;
             _userRepository = userRepository;
             _unitOfWork = unitOfWork;
             _dbContext = dbContext;
             _eligibilityService = eligibilityService;
+            _playReview = playReview ?? new PlayReviewPolicy(dbContext);
+            _httpContextAccessor = httpContextAccessor;
         }
 
         public async Task<List<MuaProfileDto>> GetMuasAsync(int page)
@@ -70,7 +74,12 @@ namespace BeautyBookBackend.Services
             var profile = await _muaRepository.GetProfileWithFullDetailsAsync(muaId);
             if (profile == null) return null;
             var isOwner = currentUserId == muaId;
-            if (!isOwner && (profile.Status != Models.Enums.MuaStatus.Listed || profile.VerificationStatus != Models.Enums.MuaVerificationStatus.Approved || profile.User?.IsActive != true || profile.User.DeletedAt.HasValue)) return null;
+            if (!isOwner && (profile.Status != Models.Enums.MuaStatus.Listed || profile.VerificationStatus != Models.Enums.MuaVerificationStatus.Approved || profile.User?.IsActive != true || profile.User.DeletedAt.HasValue))
+            {
+                if (!currentUserId.HasValue || muaId != _playReview.Simulation.CounterpartUserId) return null;
+                try { await _playReview.EnsureDemoMuaCapabilityAsync(currentUserId.Value, currentUserId.Value, muaId, await _eligibilityService.EvaluateAsync(muaId, false)); }
+                catch (PlayReviewOperationException) { return null; }
+            }
 
             var styles = await _muaRepository.GetStyleNamesByMuaIdAsync(muaId);
             var services = await _muaRepository.GetServicesByMuaIdAsync(muaId);
@@ -386,6 +395,7 @@ namespace BeautyBookBackend.Services
         // Portfolio Interactions
         public async Task<bool> TogglePortfolioLikeAsync(Guid userId, Guid portfolioId)
         {
+        await new PlayReviewPolicy(_dbContext).EnsurePortfolioDomainAsync(userId, portfolioId);
             if (!await _dbContext.Portfolios.AnyAsync(p => p.PortfolioId == portfolioId)) return false;
             var existingLike = await _dbContext.PortfolioLikes
                 .FirstOrDefaultAsync(l => l.UserId == userId && l.PortfolioId == portfolioId);
@@ -410,6 +420,7 @@ namespace BeautyBookBackend.Services
 
         public async Task<bool> TogglePortfolioSaveAsync(Guid userId, Guid portfolioId)
         {
+        await new PlayReviewPolicy(_dbContext).EnsurePortfolioDomainAsync(userId, portfolioId);
             if (!await _dbContext.Portfolios.AnyAsync(p => p.PortfolioId == portfolioId)) return false;
             var existingSave = await _dbContext.PortfolioSaves
                 .FirstOrDefaultAsync(s => s.UserId == userId && s.PortfolioId == portfolioId);
@@ -434,6 +445,7 @@ namespace BeautyBookBackend.Services
 
         public async Task<PortfolioCommentDto?> AddPortfolioCommentAsync(Guid userId, Guid portfolioId, string content)
         {
+        await new PlayReviewPolicy(_dbContext).EnsurePortfolioDomainAsync(userId, portfolioId);
             var user = await _userRepository.GetByIdAsync(userId);
             if (user == null || !await _dbContext.Portfolios.AnyAsync(p => p.PortfolioId == portfolioId)) return null;
 
@@ -490,8 +502,10 @@ namespace BeautyBookBackend.Services
 
         public async Task<PortfolioCommentDto?> ReplyToPortfolioCommentAsync(Guid userId, Guid portfolioId, Guid parentCommentId, string content)
         {
-            var parentExists = await _dbContext.PortfolioComments.AnyAsync(c => c.Id == parentCommentId && c.PortfolioId == portfolioId);
-            if (!parentExists) return null;
+        await new PlayReviewPolicy(_dbContext).EnsurePortfolioDomainAsync(userId, portfolioId);
+            var parent = await _dbContext.PortfolioComments.AsNoTracking().FirstOrDefaultAsync(c => c.Id == parentCommentId && c.PortfolioId == portfolioId);
+            if (parent == null) return null;
+            await new PlayReviewPolicy(_dbContext).EnsureSameDomainAsync(userId, parent.UserId);
             var user = await _userRepository.GetByIdAsync(userId);
             if (user == null) return null;
             var reply = new PortfolioComment { UserId = userId, PortfolioId = portfolioId, ParentCommentId = parentCommentId, Content = content };
@@ -567,6 +581,9 @@ namespace BeautyBookBackend.Services
                 return ToMakeupStyleDto(existing);
             }
 
+            var actorClaim = _httpContextAccessor?.HttpContext?.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            if (!Guid.TryParse(actorClaim, out var actorId)) throw new InvalidOperationException("Cannot resolve style creator.");
+            await new PlayReviewPolicy(_dbContext).EnsureNormalUserAsync(actorId);
             var style = new MakeupStyle
             {
                 Name = name,

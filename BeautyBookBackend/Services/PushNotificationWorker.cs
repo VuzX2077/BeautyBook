@@ -50,9 +50,9 @@ public class PushNotificationWorker : BackgroundService
         var bookingTime = scope.ServiceProvider.GetRequiredService<BookingTimeService>();
         var now = DateTime.UtcNow;
 
-        var starting = await db.Bookings.Where(b => b.Status == BookingStatus.Approved && b.BookingDate <= now.AddDays(1)).ToListAsync(ct);
+        var starting = await db.Bookings.Where(b => !b.IsDemo && b.Status == BookingStatus.Approved && b.BookingDate <= now.AddDays(1)).ToListAsync(ct);
         foreach (var booking in starting.Where(b => bookingTime.ToUtc(b.BookingDate, b.StartTime) <= now))
-        { booking.Status = BookingStatus.InProgress; booking.StartedAt = now; booking.UpdatedAt = now; }
+        { if (!await new PlayReviewPolicy(db).CanProcessBookingAsync(booking.BookingId)) continue; booking.Status = BookingStatus.InProgress; booking.StartedAt = now; booking.UpdatedAt = now; }
         if (db.ChangeTracker.HasChanges()) await db.SaveChangesAsync(ct);
 
         var pending = await db.AppNotifications.Where(n => n.Status == "Pending" && n.ScheduledAt <= now).OrderBy(n => n.ScheduledAt).Take(100).ToListAsync(ct);
@@ -66,6 +66,7 @@ public class PushNotificationWorker : BackgroundService
             catch (InvalidOperationException) { continue; }
             await db.Entry(notification).ReloadAsync(ct);
             if (db.Entry(notification).State == EntityState.Detached || notification.Status != "Pending") continue;
+            if (!await new PlayReviewPolicy(db).ExternalDeliveryAllowedAsync(notification)) { notification.Status = "Skipped"; notification.LastError = "Demo or unresolved delivery domain"; continue; }
             var devices = await db.DevicePushTokens.Where(x => x.UserId == notification.UserId && x.IsActive).ToListAsync(ct);
             if (devices.Count == 0) { notification.Status = "Skipped"; notification.LastError = "No active push token"; continue; }
             var data = string.IsNullOrWhiteSpace(notification.DataJson) ? new { } : JsonSerializer.Deserialize<object>(notification.DataJson)!;

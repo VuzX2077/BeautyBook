@@ -34,6 +34,9 @@ namespace BeautyBookBackend.Services
             string reason,
             Guid? requestedBy)
         {
+            await new PlayReviewPolicy(_context).EnsureNormalBookingAsync(booking.BookingId);
+            await new PlayReviewPolicy(_context).EnsureNormalPaymentAsync(payment.PaymentId);
+            if (payment.BookingId != booking.BookingId) throw new InvalidOperationException("Payment does not belong to booking.");
             if (amount <= 0 || amount > payment.Amount)
                 throw new BookingRuleException("INVALID_REFUND_AMOUNT", "Số tiền hoàn phải lớn hơn 0 và không vượt quá số tiền đã thanh toán.");
 
@@ -130,16 +133,20 @@ namespace BeautyBookBackend.Services
 
         public async Task<IReadOnlyList<AdminRefundDto>> GetAdminQueueAsync(RefundStatus? status = null)
         {
-            var query = _context.Refunds.AsNoTracking().Include(x => x.Booking).ThenInclude(x => x!.Customer).AsQueryable();
+            var query = _context.Refunds.AsNoTracking().Include(x => x.Booking).ThenInclude(x => x!.Customer).Where(x => x.Booking != null && !x.Booking.IsDemo).AsQueryable();
             if (status.HasValue) query = query.Where(x => x.Status == status.Value);
             else query = query.Where(x => x.Status != RefundStatus.Completed);
-            return (await query.OrderBy(x => x.CreatedAt).ToListAsync()).Select(ToAdminDto).ToList();
+            var rows = await query.OrderBy(x => x.CreatedAt).ToListAsync();
+            var safe = new List<AdminRefundDto>();
+            foreach (var row in rows) if (await new PlayReviewPolicy(_context).CanProcessRefundAsync(row.RefundId)) safe.Add(ToAdminDto(row));
+            return safe;
         }
 
         public async Task<AdminRefundDto?> GetAdminByIdAsync(Guid refundId)
         {
             var refund = await _context.Refunds.AsNoTracking().Include(x => x.Booking).ThenInclude(x => x!.Customer)
                 .FirstOrDefaultAsync(x => x.RefundId == refundId);
+            if (refund != null) await new PlayReviewPolicy(_context).EnsureNormalRefundAsync(refundId);
             return refund == null ? null : ToAdminDto(refund);
         }
 
@@ -160,12 +167,13 @@ namespace BeautyBookBackend.Services
             var automated = _configuration.GetValue<bool>("Refunds:AutomatedPayoutEnabled");
             var now = DateTime.UtcNow;
             var awaitingIds = await _context.Refunds.AsNoTracking()
-                .Where(x => x.Status == RefundStatus.AwaitingDestination && !x.DestinationNeedsConfirmation)
+                .Where(x => x.Booking != null && !x.Booking.IsDemo && x.Status == RefundStatus.AwaitingDestination && !x.DestinationNeedsConfirmation)
                 .OrderBy(x=>x.CreatedAt)
                 .Select(x=>x.RefundId)
                 .ToListAsync();
             foreach (var refundId in awaitingIds)
             {
+                if (!await new PlayReviewPolicy(_context).CanProcessRefundAsync(refundId)) continue;
                 await using var destinationTransaction=await _context.Database.BeginTransactionAsync();
                 var refund=await GetRefundForUpdateAsync(refundId);
                 if(refund?.Status!=RefundStatus.AwaitingDestination || refund.DestinationNeedsConfirmation)continue;
@@ -187,6 +195,7 @@ namespace BeautyBookBackend.Services
             var count = 0;
             foreach (var item in items)
             {
+                if (!await new PlayReviewPolicy(_context).CanProcessRefundAsync(item.RefundId)) continue;
                 // Once a provider operation has started it must always be reconciled,
                 // even if the feature flag is switched off during an incident.
                 if ((automated && item.DestinationBankCode != "MOMO") || (item.Status == RefundStatus.Processing && item.ProviderReferenceId != null))
@@ -454,10 +463,13 @@ namespace BeautyBookBackend.Services
             r.AvailableAt = booking.CompletedAt;
         }
 
-        private Task<Refund?> GetRefundForUpdateAsync(Guid refundId) =>
-            _context.Refunds
+        private async Task<Refund?> GetRefundForUpdateAsync(Guid refundId) {
+            var refund = await _context.Refunds
                 .FromSqlInterpolated($"SELECT * FROM \"Refunds\" WHERE \"RefundId\" = {refundId} FOR UPDATE")
                 .FirstOrDefaultAsync();
+            if (refund != null) await new PlayReviewPolicy(_context).EnsureNormalRefundAsync(refundId);
+            return refund;
+        }
 
         private static RefundSummaryDto ToDto(Refund refund) => new()
         {

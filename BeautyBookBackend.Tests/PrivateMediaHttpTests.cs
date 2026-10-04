@@ -38,6 +38,7 @@ public sealed class PrivateMediaHttpTests
             db.Payouts.AddRange(new Payout { Id = first, MuaId = mua, RequestedBy = mua, IdempotencyKey = "first", Status = PayoutStatus.Processing, Amount = 12345, BankCodeSnapshot = "VCB", BankBinSnapshot = "970436", AccountNumberSnapshot = "1234567890", AccountHolderNameSnapshot = "TEST FIRST", QrCodeUrlSnapshot = "https://test.invalid/storage/v1/object/public/images/legacy.png" },
                 new Payout { Id = second, MuaId = mua, RequestedBy = mua, IdempotencyKey = "second", Status = PayoutStatus.Processing, Amount = 67890, BankCodeSnapshot = "VCB", BankBinSnapshot = "970436", AccountNumberSnapshot = "9876543210", AccountHolderNameSnapshot = "TEST SECOND" });
             await db.SaveChangesAsync();
+            await PayoutTestEvidence.AddAsync(db,first); await PayoutTestEvidence.AddAsync(db,second);
         }
         await using var factory = new LocalFactory(database.ConnectionString); using var client = factory.CreateClient();
         var path = $"/api/admin/payouts/{first}/transfer-qr";

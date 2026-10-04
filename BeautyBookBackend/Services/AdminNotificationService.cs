@@ -26,7 +26,7 @@ public class AdminNotificationService : IAdminNotificationService
         var existing = await _db.NotificationCampaigns.AsNoTracking().FirstOrDefaultAsync(x => x.IdempotencyKey == request.IdempotencyKey);
         if (existing != null) return ToDto(existing);
 
-        var users = _db.Users.AsNoTracking().Where(x => x.IsActive && x.DeletedAt == null && x.Role != UserRole.Admin);
+        var users = _db.Users.AsNoTracking().Where(x => !x.IsDemoAccount && x.IsActive && x.DeletedAt == null && x.Role != UserRole.Admin);
         users = request.Audience.ToUpperInvariant() switch
         {
             "CUSTOMER" => users.Where(x => x.Role == UserRole.Customer),
@@ -66,7 +66,7 @@ public class AdminNotificationService : IAdminNotificationService
     public async Task<PagedResultDto<AdminNotificationUserDto>> SearchUsersAsync(string? search, string? role, int page, int pageSize)
     {
         page = Math.Max(1, page); pageSize = Math.Clamp(pageSize, 1, 50);
-        var query = _db.Users.AsNoTracking().Where(x => x.IsActive && x.DeletedAt == null && x.Role != UserRole.Admin);
+        var query = _db.Users.AsNoTracking().Where(x => !x.IsDemoAccount && x.IsActive && x.DeletedAt == null && x.Role != UserRole.Admin);
         if (!string.IsNullOrWhiteSpace(search)) { var term = search.Trim().ToLower(); query = query.Where(x => (x.FullName ?? "").ToLower().Contains(term) || (x.Email ?? "").ToLower().Contains(term) || (x.PhoneNumber ?? "").Contains(term)); }
         if (Enum.TryParse<UserRole>(role, true, out var parsedRole) && parsedRole != UserRole.Admin) query = query.Where(x => x.Role == parsedRole);
         var total = await query.CountAsync();

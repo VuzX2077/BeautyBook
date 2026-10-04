@@ -8,6 +8,7 @@ namespace BeautyBookBackend.Models
     public class Booking
     {
         public Guid BookingId { get; set; }
+        public bool IsDemo { get; set; }
         public Guid CustomerId { get; set; }
         public Guid MUAId { get; set; }
         public string? IdempotencyKey { get; set; }

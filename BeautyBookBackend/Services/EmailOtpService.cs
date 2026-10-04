@@ -9,10 +9,13 @@ namespace BeautyBookBackend.Services;
 public sealed class EmailOtpService(
     ApplicationDbContext db,
     IEmailSender emailSender,
-    IConfiguration configuration) : IEmailOtpService
+    IConfiguration configuration, IHttpContextAccessor? httpContextAccessor = null) : IEmailOtpService
 {
     public async Task IssueAsync(string email, string purpose, string? context = null, int resendCooldownSeconds = 60, CancellationToken cancellationToken = default)
     {
+        var policy = new PlayReviewPolicy(db);
+        await policy.EnsureExternalActorAsync(httpContextAccessor);
+        await policy.EnsureEmailOriginAsync(email);
         email = NormalizeEmail(email);
         var contextHash = HashContext(context);
         var now = DateTime.UtcNow;

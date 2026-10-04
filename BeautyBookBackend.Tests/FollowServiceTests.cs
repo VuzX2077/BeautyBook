@@ -16,7 +16,7 @@ public class FollowServiceTests
         await connection.OpenAsync();
         await using var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlite(connection).Options);
         await db.Database.ExecuteSqlRawAsync("""
-            CREATE TABLE "Users" ("UserId" TEXT PRIMARY KEY, "FullName" TEXT, "AvatarUrl" TEXT, "IsActive" INTEGER, "DeletedAt" TEXT);
+            CREATE TABLE "Users" ("UserId" TEXT PRIMARY KEY, "FullName" TEXT, "AvatarUrl" TEXT, "IsActive" INTEGER, "DeletedAt" TEXT, "IsDemoAccount" INTEGER NOT NULL DEFAULT 0);
             CREATE TABLE "MakeupArtistProfiles" ("MUAId" TEXT PRIMARY KEY, "Status" INTEGER, "VerificationStatus" INTEGER);
             CREATE TABLE "MuaFollows" ("UserId" TEXT, "MuaId" TEXT, "CreatedAt" TEXT, PRIMARY KEY ("UserId", "MuaId"), CHECK ("UserId" <> "MuaId"));
             """);
@@ -34,7 +34,7 @@ public class FollowServiceTests
         Assert.Equal(0, (await service.SetFollowing(mua, user, false))!.FollowersCount);
         Assert.Empty(await service.GetFollowing(user, 1, 20));
         await Assert.ThrowsAsync<ArgumentException>(() => service.SetFollowing(mua, mua, true));
-        Assert.Null(await service.SetFollowing(Guid.NewGuid(), user, true));
+        await Assert.ThrowsAsync<PlayReviewOperationException>(() => service.SetFollowing(Guid.NewGuid(), user, true));
         await db.Database.ExecuteSqlInterpolatedAsync($"UPDATE MakeupArtistProfiles SET Status = {(int)MuaStatus.Draft} WHERE MUAId = {mua}");
         Assert.Null(await service.SetFollowing(mua, user, true));
     }

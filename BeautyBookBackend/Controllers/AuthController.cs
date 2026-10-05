@@ -62,8 +62,23 @@ namespace BeautyBookBackend.Controllers
             {
                 return StatusCode(503, new { Code = "EMAIL_UNAVAILABLE", Message = "Chưa thể gửi mã OTP. Vui lòng thử lại sau." });
             }
-            return Ok(new { Message = "Nếu email tồn tại, mã OTP đã được gửi." });
+            return Ok(new { Message = "Nếu email tồn tại, mã OTP đã được gửi.", ResendAfterSeconds = 60, ExpiresInSeconds = 300 });
         }
+
+        [HttpPost("reset-password/verify-otp")]
+        public async Task<IActionResult> VerifyPasswordResetOtp([FromBody] VerifyPasswordResetOtpDto request)
+        {
+            var token = await _authService.VerifyPasswordResetOtpAsync(request);
+            return token == null
+                ? BadRequest(new { Message = "Mã OTP không hợp lệ hoặc đã hết hạn. Vui lòng thử lại hoặc gửi mã mới." })
+                : Ok(new { ResetToken = token, ExpiresInSeconds = 300 });
+        }
+
+        [HttpPost("reset-password/complete")]
+        public async Task<IActionResult> CompletePasswordReset([FromBody] CompletePasswordResetDto request)
+            => await _authService.CompletePasswordResetAsync(request)
+                ? Ok(new { Message = "Đã đặt lại mật khẩu." })
+                : BadRequest(new { Code = "RESET_EXPIRED", Message = "Phiên xác minh đã hết hạn. Vui lòng gửi mã mới." });
 
         [HttpPost("reset-password")]
         public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordDto request)

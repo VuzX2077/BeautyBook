@@ -36,6 +36,9 @@ namespace BeautyBookBackend.DTOs
         public List<string> OperatingAreaIds { get; set; } = new();
         public bool OperatingLocationConfirmed { get; set; }
         public bool PublicMeetingPoint { get; set; }
+        public string? WorkLocationName { get; set; }
+        public string? WorkLocationAddress { get; set; }
+        public bool AllowCustomerVisit { get; set; }
         public string? OperatingLocationLabel { get; set; }
         public double? Latitude { get; set; }
         public double? Longitude { get; set; }
@@ -98,6 +101,10 @@ namespace BeautyBookBackend.DTOs
 
     public class MuaUpdateDto : IValidatableObject
     {
+        [StringLength(100)] public string? WorkLocationName { get; set; }
+        [StringLength(500)] public string? WorkLocationAddress { get; set; }
+        public bool? AllowCustomerVisit { get; set; }
+        public bool ClearWorkLocation { get; set; }
         [StringLength(100)] public string? District { get; set; }
         public int? ProvinceCode { get; set; }
         public int? DistrictCode { get; set; }
@@ -112,6 +119,9 @@ namespace BeautyBookBackend.DTOs
         public bool ClearOperatingLocation { get; set; }
         public IEnumerable<ValidationResult> Validate(ValidationContext context)
         {
+            if (!ClearWorkLocation && (WorkLocationAddress != null || WorkLocationName != null || AllowCustomerVisit.HasValue)
+                && !Services.WorkLocationPolicy.Valid(WorkLocationName, WorkLocationAddress, Latitude, Longitude, OperatingLocationConfirmed, AllowCustomerVisit == true))
+                yield return new ValidationResult("Nơi làm việc cần địa chỉ hợp lệ; GPS không bắt buộc và phải là một cặp tọa độ hợp lệ.", new[] { nameof(WorkLocationAddress) });
             if (OperatingAreaIds != null && !OperatingAreas.IsValid(OperatingProvinceCode, OperatingAreaIds))
                 yield return new ValidationResult("Khu vực không thuộc tỉnh/thành đã chọn.", new[] { nameof(OperatingAreaIds) });
             if (Latitude.HasValue != Longitude.HasValue || (OperatingLocationConfirmed && !Latitude.HasValue))

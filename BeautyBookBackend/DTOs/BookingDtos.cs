@@ -40,6 +40,8 @@ namespace BeautyBookBackend.DTOs
         
         public string? Address { get; set; }
         public string? ServiceAddress { get; set; }
+        public string? ServiceLocationType { get; set; }
+        public string? ServiceLocationName { get; set; }
         public decimal? ServiceLatitude { get; set; }
         public decimal? ServiceLongitude { get; set; }
         public string? Notes { get; set; }
@@ -98,6 +100,8 @@ namespace BeautyBookBackend.DTOs
 
     public class BookingCreateDto
     {
+        [RegularExpression("^(CUSTOMER_ADDRESS|MUA_WORK_LOCATION)$")]
+        public string? ServiceLocationType { get; set; }
         [Required]
         [MaxLength(100)]
         public string IdempotencyKey { get; set; } = null!;

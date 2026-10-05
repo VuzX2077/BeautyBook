@@ -195,6 +195,9 @@ namespace BeautyBookBackend.Data
                 b.Property(m => m.City).HasMaxLength(100);
                 b.Property(m => m.District).HasMaxLength(100);
                 b.Property(m => m.OperatingLocationLabel).HasMaxLength(300);
+                b.Property(m => m.WorkLocationName).HasMaxLength(100);
+                b.Property(m => m.WorkLocationAddress).HasMaxLength(500);
+                b.Property(m => m.AllowCustomerVisit).HasDefaultValue(false);
                 b.HasIndex(m => new { m.OperatingProvinceCode, m.Status, m.VerificationStatus });
                 b.HasIndex(m => new { m.Status, m.VerificationStatus, m.MUAId });
                 b.Navigation(m => m.OperatingAreas).AutoInclude();
@@ -357,6 +360,8 @@ namespace BeautyBookBackend.Data
                 b.Property(x => x.FinancialPolicyVersion).HasMaxLength(30).HasDefaultValue("V1_DEPOSIT_FEE");
                 b.Property(x => x.ServiceAddress).HasMaxLength(500);
                 b.Property(x => x.ServiceLatitude).HasPrecision(9, 6);
+                b.Property(x => x.ServiceLocationType).HasMaxLength(30);
+                b.Property(x => x.ServiceLocationName).HasMaxLength(100);
                 b.Property(x => x.ServiceLongitude).HasPrecision(9, 6);
                 b.Property(x => x.DisputeReason).HasMaxLength(1000);
                 b.Property(x => x.CancellationReason).HasMaxLength(1000);

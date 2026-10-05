@@ -59,8 +59,6 @@ builder.Services.AddControllers(options => options.Filters.Add<PlayReviewExcepti
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<PlayReviewPolicy>();
 builder.Services.Configure<PlayReviewOptions>(builder.Configuration.GetSection("PlayReview"));
-builder.Logging.AddFilter("System.Net.Http.HttpClient.LocationService", LogLevel.None);
-builder.Services.AddHttpClient<LocationService>(client => client.Timeout = TimeSpan.FromSeconds(8));
 builder.Services.AddRateLimiter(options => { options.RejectionStatusCode = StatusCodes.Status429TooManyRequests; options.AddPolicy("location-lookup", context =>
     System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
         context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? context.Connection.RemoteIpAddress?.ToString() ?? "unknown",

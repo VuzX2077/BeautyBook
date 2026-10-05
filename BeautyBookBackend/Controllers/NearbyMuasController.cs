@@ -31,15 +31,15 @@ public sealed class NearbyMuasController(ApplicationDbContext db) : ControllerBa
             var text = request.Q.Trim(); profiles = profiles.Where(p => p.User!.FullName != null && p.User.FullName.ToLower().Contains(text.ToLower()));
         }
         var hasPosition = request.Latitude.HasValue;
-        if (hasPosition) profiles = profiles.Where(p => p.OperatingLocationConfirmed && p.Latitude != null && p.Longitude != null);
+        if (hasPosition) profiles = profiles.Where(p => p.OperatingLocationConfirmed && p.Latitude >= -90 && p.Latitude <= 90 && p.Longitude >= -180 && p.Longitude <= 180 && !(p.Latitude == 0 && p.Longitude == 0));
         var originLat = (request.Latitude ?? 0) * Math.PI / 180;
         var originLng = (request.Longitude ?? 0) * Math.PI / 180;
         // Approximate private locations before BOTH distance computation and projection.
         // Distances cannot be used to triangulate the private original point.
         var points = profiles.Select(p => new {
             Profile = p,
-            Lat = p.PublicMeetingPoint ? p.Latitude : (double?)Math.Round((decimal)(p.Latitude ?? 0), 2),
-            Lng = p.PublicMeetingPoint ? p.Longitude : (double?)Math.Round((decimal)(p.Longitude ?? 0), 2)
+            Lat = p.AllowCustomerVisit && p.WorkLocationAddress != null && p.WorkLocationAddress.Trim() != "" ? p.Latitude : (double?)Math.Round((decimal)(p.Latitude ?? 0), 2),
+            Lng = p.AllowCustomerVisit && p.WorkLocationAddress != null && p.WorkLocationAddress.Trim() != "" ? p.Longitude : (double?)Math.Round((decimal)(p.Longitude ?? 0), 2)
         });
         var distances = points.Select(x => new {
             x.Profile, x.Lat, x.Lng,
@@ -54,11 +54,11 @@ public sealed class NearbyMuasController(ApplicationDbContext db) : ControllerBa
             AverageRating = x.Profile.AverageRating,
             ReviewCount = db.Reviews.Count(r => r.MUAId == x.Profile.MUAId),
             MinPrice = db.Services.Where(s => s.MUAId == x.Profile.MUAId && s.IsActive).Select(s => (decimal?)s.Price).Min(),
-            Latitude = x.Profile.PublicMeetingPoint && x.Profile.OperatingLocationConfirmed ? x.Lat : null,
-            Longitude = x.Profile.PublicMeetingPoint && x.Profile.OperatingLocationConfirmed ? x.Lng : null, DistanceKm = x.Distance,
-            LocationPrecision = x.Profile.PublicMeetingPoint && x.Profile.OperatingLocationConfirmed ? "PUBLIC_POINT" : "APPROXIMATE",
-            CanGetDirections = x.Profile.PublicMeetingPoint && x.Profile.OperatingLocationConfirmed,
-            LocationLabel = x.Profile.PublicMeetingPoint && x.Profile.OperatingLocationConfirmed ? x.Profile.OperatingLocationLabel : null,
+            Latitude = x.Profile.AllowCustomerVisit && x.Profile.WorkLocationAddress != null && x.Profile.WorkLocationAddress.Trim() != "" && x.Profile.OperatingLocationConfirmed ? x.Lat : null,
+            Longitude = x.Profile.AllowCustomerVisit && x.Profile.WorkLocationAddress != null && x.Profile.WorkLocationAddress.Trim() != "" && x.Profile.OperatingLocationConfirmed ? x.Lng : null, DistanceKm = x.Distance,
+            LocationPrecision = x.Profile.AllowCustomerVisit && x.Profile.WorkLocationAddress != null && x.Profile.WorkLocationAddress.Trim() != "" && x.Profile.OperatingLocationConfirmed ? "PUBLIC_POINT" : "APPROXIMATE",
+            CanGetDirections = x.Profile.AllowCustomerVisit && x.Profile.WorkLocationAddress != null && x.Profile.WorkLocationAddress.Trim() != "" && x.Profile.OperatingLocationConfirmed,
+            LocationLabel = x.Profile.AllowCustomerVisit && x.Profile.WorkLocationAddress != null && x.Profile.WorkLocationAddress.Trim() != "" ? x.Profile.WorkLocationName : null,
             RankScore = x.Profile.RankScore
         });
     }
@@ -92,6 +92,7 @@ public sealed class NearbyMuasController(ApplicationDbContext db) : ControllerBa
         public IEnumerable<ValidationResult> Validate(ValidationContext context)
         {
             if (Latitude.HasValue != Longitude.HasValue) yield return new("Tọa độ không đầy đủ.");
+            if (!Services.WorkLocationPolicy.ValidCoordinates(Latitude, Longitude)) yield return new("Tọa độ không hợp lệ.");
             if (!Latitude.HasValue && !ProvinceCode.HasValue) yield return new("Chọn vị trí hoặc tỉnh/thành để tìm MUA.");
             if (ProvinceCode.HasValue && DTOs.OperatingAreas.Province(ProvinceCode) == null) yield return new("Tỉnh/thành không hợp lệ.");
             if (AreaId != null && (ProvinceCode == null || DTOs.OperatingAreas.Province(ProvinceCode)?.Areas.Any(a => a.Id == AreaId) != true)) yield return new("Khu vực không thuộc tỉnh/thành.");

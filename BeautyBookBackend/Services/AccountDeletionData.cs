@@ -57,6 +57,7 @@ public sealed partial class AccountDeletionService
         await _context.PortfolioComments.Where(x => x.Portfolio!.MUAId == userId).ExecuteUpdateAsync(x => x.SetProperty(c => c.Content, "[Nội dung đã được xóa]"));
         await _context.Bookings.Where(x => x.CustomerId == userId || x.MUAId == userId).ExecuteUpdateAsync(x => x
             .SetProperty(b => b.Address, (string?)null).SetProperty(b => b.ServiceAddress, (string?)null)
+            .SetProperty(b => b.ServiceLocationName, (string?)null).SetProperty(b => b.ServiceLocationType, (string?)null)
             .SetProperty(b => b.ServiceLatitude, (decimal?)null).SetProperty(b => b.ServiceLongitude, (decimal?)null)
             .SetProperty(b => b.Notes, (string?)null).SetProperty(b => b.CancellationReason, (string?)null).SetProperty(b => b.DisputeReason, (string?)null));
         await _context.BookingServices.Where(x => x.Booking!.CustomerId == userId || x.Service!.MUAId == userId)

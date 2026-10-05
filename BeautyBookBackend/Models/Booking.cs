@@ -27,6 +27,8 @@ namespace BeautyBookBackend.Models
         
         public string? Address { get; set; }
         public string? ServiceAddress { get; set; }
+        public string? ServiceLocationType { get; set; }
+        public string? ServiceLocationName { get; set; }
         public decimal? ServiceLatitude { get; set; }
         public decimal? ServiceLongitude { get; set; }
         public string? Notes { get; set; }

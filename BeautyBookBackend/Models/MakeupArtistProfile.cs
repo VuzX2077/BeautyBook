@@ -17,6 +17,9 @@ namespace BeautyBookBackend.Models
         public bool OperatingLocationConfirmed { get; set; }
         public bool PublicMeetingPoint { get; set; }
         public string? OperatingLocationLabel { get; set; }
+        public string? WorkLocationName { get; set; }
+        public string? WorkLocationAddress { get; set; }
+        public bool AllowCustomerVisit { get; set; }
         public ICollection<MuaOperatingArea> OperatingAreas { get; set; } = new List<MuaOperatingArea>();
         public int? ProvinceCode { get; set; }
         public int? DistrictCode { get; set; }

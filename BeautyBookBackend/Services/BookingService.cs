@@ -105,6 +105,7 @@ namespace BeautyBookBackend.Services
                 var existingServices = existing.BookingServices.OrderBy(x => x.ServiceId)
                     .Select(x => (x.ServiceId, x.ParticipantsCount)).ToList();
                 if (existing.MUAId != createDto.MUAId || existing.BookingDate.Date != createDto.BookingDate.Date
+                    || (existing.ServiceLocationType ?? WorkLocationPolicy.CustomerAddress) != (createDto.ServiceLocationType ?? WorkLocationPolicy.CustomerAddress)
                     || existing.StartTime != createDto.StartTime || !requestedServices.SequenceEqual(existingServices))
                     throw new BookingRuleException("IDEMPOTENCY_KEY_REUSED", "IdempotencyKey đã được dùng cho một booking khác.", 409);
                 return await ToBookingDtoAsync(existing);
@@ -133,22 +134,9 @@ namespace BeautyBookBackend.Services
             else if (eligibility?.CanReceiveBookings != true)
                 throw new BookingRuleException("MUA_NOT_ACCEPTING_BOOKINGS", "Makeup Artist hiện chưa thể nhận booking.");
 
-            // ServiceAddress is the canonical booking snapshot. Address remains an
-            // accepted alias so existing mobile clients keep working during rollout.
-            var serviceAddress = (createDto.ServiceAddress ?? createDto.Address)?.Trim();
-            if (string.IsNullOrWhiteSpace(serviceAddress))
-                throw new InvalidOperationException("Địa điểm thực hiện không hợp lệ.");
-            if (serviceAddress.Length > 500)
-                throw new InvalidOperationException("Địa điểm thực hiện không được vượt quá 500 ký tự.");
-
-            var hasLatitude = createDto.ServiceLatitude.HasValue;
-            var hasLongitude = createDto.ServiceLongitude.HasValue;
-            if (hasLatitude != hasLongitude
-                || (hasLatitude && (createDto.ServiceLatitude < -90 || createDto.ServiceLatitude > 90))
-                || (hasLongitude && (createDto.ServiceLongitude < -180 || createDto.ServiceLongitude > 180)))
-            {
-                throw new InvalidOperationException("Địa điểm thực hiện không hợp lệ.");
-            }
+            // The FOR SHARE profile lock above prevents consent/location edits
+            // until this transaction has captured its immutable destination.
+            var destination = WorkLocationPolicy.Resolve(createDto, muaProfile);
 
             decimal totalAmount = 0;
             var totalDuration = 0;
@@ -203,10 +191,12 @@ namespace BeautyBookBackend.Services
                 BookingDate = DateTime.SpecifyKind(createDto.BookingDate.Date, DateTimeKind.Utc),
                 StartTime = createDto.StartTime,
                 EndTime = endTime,
-                Address = serviceAddress,
-                ServiceAddress = serviceAddress,
-                ServiceLatitude = createDto.ServiceLatitude,
-                ServiceLongitude = createDto.ServiceLongitude,
+                Address = destination.Address,
+                ServiceAddress = destination.Address,
+                ServiceLocationType = destination.Type,
+                ServiceLocationName = destination.Name,
+                ServiceLatitude = destination.Latitude,
+                ServiceLongitude = destination.Longitude,
                 Notes = createDto.Notes?.Trim(),
                 DepositRate = BookingFinancialCalculator.DepositRate,
                 DepositAmount = financials.DepositAmount,
@@ -1042,6 +1032,8 @@ namespace BeautyBookBackend.Services
                 EndTime = booking.EndTime,
                 Address = booking.ServiceAddress ?? booking.Address,
                 ServiceAddress = booking.ServiceAddress ?? booking.Address,
+                ServiceLocationType = booking.ServiceLocationType,
+                ServiceLocationName = booking.ServiceLocationName,
                 ServiceLatitude = booking.ServiceLatitude,
                 ServiceLongitude = booking.ServiceLongitude,
                 Notes = booking.Notes,

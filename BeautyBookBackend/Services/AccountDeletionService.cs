@@ -111,6 +111,7 @@ public sealed partial class AccountDeletionService(ApplicationDbContext _context
                 muaProfile.OperatingLocationConfirmed = false;
                 muaProfile.PublicMeetingPoint = false;
                 muaProfile.OperatingLocationLabel = null;
+                muaProfile.WorkLocationName = null; muaProfile.WorkLocationAddress = null; muaProfile.AllowCustomerVisit = false;
                 muaProfile.District = null;
                 muaProfile.ProvinceCode = null;
                 muaProfile.DistrictCode = null;

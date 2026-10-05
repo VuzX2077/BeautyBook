@@ -4,6 +4,9 @@ namespace BeautyBookBackend.DTOs
 {
     public class MuaApplicationRequestDto : IValidatableObject
     {
+        [StringLength(100)] public string? WorkLocationName { get; set; }
+        [StringLength(500)] public string? WorkLocationAddress { get; set; }
+        public bool AllowCustomerVisit { get; set; }
         [Required(ErrorMessage = "Vui lòng nhập tên hiển thị.")]
         [StringLength(100, MinimumLength = 2, ErrorMessage = "Tên hiển thị phải từ 2 đến 100 ký tự.")]
         public string DisplayName { get; set; } = null!;
@@ -49,6 +52,11 @@ namespace BeautyBookBackend.DTOs
 
         public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
         {
+            if ((WorkLocationAddress != null || WorkLocationName != null || AllowCustomerVisit)
+                && !Services.WorkLocationPolicy.Valid(WorkLocationName, WorkLocationAddress, Latitude, Longitude, OperatingLocationConfirmed, AllowCustomerVisit))
+                yield return new ValidationResult("Vui lòng nhập địa chỉ nơi làm việc hợp lệ; GPS không bắt buộc.", new[] { nameof(WorkLocationAddress) });
+            if (!Services.WorkLocationPolicy.ValidCoordinates(Latitude, Longitude))
+                yield return new ValidationResult("Tọa độ không hợp lệ.", new[] { nameof(Latitude), nameof(Longitude) });
             if (OperatingAreaIds == null && ProvinceCode.HasValue && !MuaOperatingAreaCatalog.IsValid(ProvinceCode.Value, DistrictCode, City, District))
                 yield return new ValidationResult("Tỉnh/thành và quận/huyện không khớp danh mục khu vực.", new[] { nameof(ProvinceCode), nameof(DistrictCode) });
             if (OperatingAreaIds != null && !OperatingAreas.IsValid(OperatingProvinceCode, OperatingAreaIds))

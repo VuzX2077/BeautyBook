@@ -190,6 +190,9 @@ namespace BeautyBookBackend.Services
 
         public async Task<TokenDto?> BecomeMuaAsync(Guid userId, MuaApplicationRequestDto request)
         {
+            if (!WorkLocationPolicy.ValidCoordinates(request.Latitude, request.Longitude)) return null;
+            if ((request.WorkLocationAddress != null || request.WorkLocationName != null || request.AllowCustomerVisit)
+                && !WorkLocationPolicy.Valid(request.WorkLocationName, request.WorkLocationAddress, request.Latitude, request.Longitude, request.OperatingLocationConfirmed, request.AllowCustomerVisit)) return null;
             var user = await _userRepository.GetByIdAsync(userId);
             if (user == null || !user.IsActive || (user.Role != UserRole.Customer && user.Role != UserRole.MUA))
             {
@@ -249,6 +252,9 @@ namespace BeautyBookBackend.Services
             profile.OperatingLocationConfirmed = request.OperatingLocationConfirmed;
             profile.PublicMeetingPoint = request.PublicMeetingPoint;
             profile.OperatingLocationLabel = request.OperatingLocationLabel?.Trim();
+            if (request.WorkLocationAddress != null || request.WorkLocationName != null || request.AllowCustomerVisit)
+                WorkLocationPolicy.Set(profile, request.WorkLocationName, request.WorkLocationAddress, request.Latitude, request.Longitude, request.OperatingLocationConfirmed, request.AllowCustomerVisit);
+            else { profile.WorkLocationName = null; profile.WorkLocationAddress = null; profile.AllowCustomerVisit = false; }
             if (request.OperatingAreaIds != null)
             {
                 profile.OperatingProvinceCode = request.OperatingProvinceCode;

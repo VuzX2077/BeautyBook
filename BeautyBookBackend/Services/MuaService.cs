@@ -103,6 +103,9 @@ namespace BeautyBookBackend.Services
                 dto.PhoneVerified = profile.User?.PhoneVerified ?? false;
                 dto.Latitude = profile.Latitude; dto.Longitude = profile.Longitude;
                 dto.OperatingLocationLabel = profile.OperatingLocationLabel;
+                dto.WorkLocationName = profile.WorkLocationName;
+                dto.WorkLocationAddress = profile.WorkLocationAddress;
+                dto.AllowCustomerVisit = profile.AllowCustomerVisit;
             }
             dto.ReviewCount = await _dbContext.Reviews.CountAsync(review => review.MUAId == muaId);
             return dto;
@@ -112,6 +115,9 @@ namespace BeautyBookBackend.Services
         {
             var profile = await _muaRepository.GetProfileWithFullDetailsAsync(muaId);
             if (profile == null) return false;
+            var updatingWorkLocation = updateDto.WorkLocationAddress != null || updateDto.WorkLocationName != null || updateDto.AllowCustomerVisit.HasValue;
+            if (!WorkLocationPolicy.ValidCoordinates(updateDto.Latitude, updateDto.Longitude)) return false;
+            if (!updateDto.ClearWorkLocation && updatingWorkLocation && !WorkLocationPolicy.Valid(updateDto.WorkLocationName, updateDto.WorkLocationAddress, updateDto.Latitude, updateDto.Longitude, updateDto.OperatingLocationConfirmed, updateDto.AllowCustomerVisit == true)) return false;
 
             if (updateDto.Bio != null) profile.Bio = updateDto.Bio;
             if (updateDto.ExperienceYears > 0) profile.ExperienceYears = updateDto.ExperienceYears;
@@ -119,8 +125,6 @@ namespace BeautyBookBackend.Services
             if (updateDto.OperatingAreaIds == null && updateDto.ProvinceCode.HasValue && !MuaOperatingAreaCatalog.IsValid(updateDto.ProvinceCode.Value, updateDto.DistrictCode, updateDto.City ?? profile.City ?? "", updateDto.District ?? profile.District)) return false;
             if ((updateDto.City != null && updateDto.City != profile.City) || (updateDto.District != null && updateDto.District != profile.District))
             {
-                profile.Latitude = null;
-                profile.Longitude = null;
                 profile.ProvinceCode = null;
                 profile.DistrictCode = null;
             }
@@ -131,7 +135,7 @@ namespace BeautyBookBackend.Services
             if (updateDto.OperatingAreaIds != null)
             {
                 if (!OperatingAreas.IsValid(updateDto.OperatingProvinceCode, updateDto.OperatingAreaIds)) return false;
-                if (profile.OperatingProvinceCode != updateDto.OperatingProvinceCode) {
+                if (profile.OperatingProvinceCode != updateDto.OperatingProvinceCode && profile.WorkLocationAddress == null) {
                     profile.OperatingLocationConfirmed = false; profile.PublicMeetingPoint = false;
                     profile.Latitude = null; profile.Longitude = null; profile.OperatingLocationLabel = null;
                 }
@@ -142,11 +146,17 @@ namespace BeautyBookBackend.Services
                 foreach (var id in wanted.Where(id => !profile.OperatingAreas.Any(a => a.AreaId == id)))
                     profile.OperatingAreas.Add(new MuaOperatingArea { MuaId = muaId, AreaId = id });
             }
-            if (updateDto.ClearOperatingLocation) {
+            if (updateDto.ClearWorkLocation) {
+                WorkLocationPolicy.Clear(profile);
+            } else if (updatingWorkLocation) {
+                WorkLocationPolicy.Set(profile, updateDto.WorkLocationName, updateDto.WorkLocationAddress, updateDto.Latitude, updateDto.Longitude, updateDto.OperatingLocationConfirmed, updateDto.AllowCustomerVisit == true);
+            } else if (updateDto.ClearOperatingLocation) {
                 profile.Latitude = null; profile.Longitude = null; profile.OperatingLocationConfirmed = false;
+                profile.AllowCustomerVisit = false;
                 profile.PublicMeetingPoint = false; profile.OperatingLocationLabel = null;
             } else if (updateDto.Latitude.HasValue && updateDto.Longitude.HasValue) {
                 profile.Latitude = updateDto.Latitude; profile.Longitude = updateDto.Longitude;
+                profile.AllowCustomerVisit = false;
                 profile.OperatingLocationConfirmed = updateDto.OperatingLocationConfirmed;
                 profile.PublicMeetingPoint = updateDto.PublicMeetingPoint;
                 profile.OperatingLocationLabel = updateDto.OperatingLocationLabel?.Trim();
@@ -645,10 +655,13 @@ namespace BeautyBookBackend.Services
                 OperatingProvinceCode = profile.OperatingProvinceCode ?? OperatingAreas.FromLegacyProvince(profile.ProvinceCode),
                 OperatingAreaIds = profile.OperatingAreas.Count > 0 ? profile.OperatingAreas.Select(a => a.AreaId).ToList() : profile.DistrictCode.HasValue ? new List<string> { $"legacy-district:{profile.DistrictCode}" } : new(),
                 OperatingLocationConfirmed = profile.OperatingLocationConfirmed,
-                PublicMeetingPoint = profile.PublicMeetingPoint,
-                OperatingLocationLabel = profile.PublicMeetingPoint && profile.OperatingLocationConfirmed ? profile.OperatingLocationLabel : null,
-                Latitude = profile.PublicMeetingPoint && profile.OperatingLocationConfirmed ? profile.Latitude : null,
-                Longitude = profile.PublicMeetingPoint && profile.OperatingLocationConfirmed ? profile.Longitude : null,
+                PublicMeetingPoint = WorkLocationPolicy.CanVisit(profile),
+                AllowCustomerVisit = WorkLocationPolicy.CanVisit(profile),
+                WorkLocationName = WorkLocationPolicy.CanVisit(profile) ? profile.WorkLocationName : null,
+                WorkLocationAddress = WorkLocationPolicy.CanVisit(profile) ? profile.WorkLocationAddress : null,
+                OperatingLocationLabel = WorkLocationPolicy.CanVisit(profile) ? profile.WorkLocationName : null,
+                Latitude = WorkLocationPolicy.CanVisit(profile) && profile.OperatingLocationConfirmed ? profile.Latitude : null,
+                Longitude = WorkLocationPolicy.CanVisit(profile) && profile.OperatingLocationConfirmed ? profile.Longitude : null,
                 ExperienceLevel = profile.ExperienceLevel,
                 Specialization = profile.Specialization,
                 SocialLinks = profile.SocialLinks,
@@ -687,10 +700,13 @@ namespace BeautyBookBackend.Services
                 OperatingProvinceCode = profile.OperatingProvinceCode ?? OperatingAreas.FromLegacyProvince(profile.ProvinceCode),
                 OperatingAreaIds = profile.OperatingAreas.Count > 0 ? profile.OperatingAreas.Select(a => a.AreaId).ToList() : profile.DistrictCode.HasValue ? new List<string> { $"legacy-district:{profile.DistrictCode}" } : new(),
                 OperatingLocationConfirmed = profile.OperatingLocationConfirmed,
-                PublicMeetingPoint = profile.PublicMeetingPoint,
-                OperatingLocationLabel = profile.PublicMeetingPoint && profile.OperatingLocationConfirmed ? profile.OperatingLocationLabel : null,
-                Latitude = profile.PublicMeetingPoint && profile.OperatingLocationConfirmed ? profile.Latitude : null,
-                Longitude = profile.PublicMeetingPoint && profile.OperatingLocationConfirmed ? profile.Longitude : null,
+                PublicMeetingPoint = WorkLocationPolicy.CanVisit(profile),
+                AllowCustomerVisit = WorkLocationPolicy.CanVisit(profile),
+                WorkLocationName = WorkLocationPolicy.CanVisit(profile) ? profile.WorkLocationName : null,
+                WorkLocationAddress = WorkLocationPolicy.CanVisit(profile) ? profile.WorkLocationAddress : null,
+                OperatingLocationLabel = WorkLocationPolicy.CanVisit(profile) ? profile.WorkLocationName : null,
+                Latitude = WorkLocationPolicy.CanVisit(profile) && profile.OperatingLocationConfirmed ? profile.Latitude : null,
+                Longitude = WorkLocationPolicy.CanVisit(profile) && profile.OperatingLocationConfirmed ? profile.Longitude : null,
                 ExperienceLevel = profile.ExperienceLevel,
                 Specialization = profile.Specialization,
                 SocialLinks = profile.SocialLinks,

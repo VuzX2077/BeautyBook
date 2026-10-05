@@ -61,6 +61,10 @@ public class MuaPrivacyTests
             await using var db = database.CreateContext();
             var profile = await db.MakeupArtistProfiles.FindAsync(owner);
             profile!.PublicMeetingPoint = true; profile.OperatingLocationConfirmed = confirmed;
+            // Only new explicit consent exposes the newly confirmed workplace.
+            profile.AllowCustomerVisit = confirmed;
+            profile.WorkLocationAddress = "Synthetic confirmed address";
+            profile.WorkLocationName = "Synthetic private point";
             // Admin eligibility evaluation can unlist this intentionally minimal fixture.
             profile.Status = MuaStatus.Listed;
             await db.SaveChangesAsync();

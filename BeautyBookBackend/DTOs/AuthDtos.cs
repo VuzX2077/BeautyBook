@@ -52,6 +52,20 @@ namespace BeautyBookBackend.DTOs
         public string NewPassword { get; set; } = null!;
     }
 
+    public class VerifyPasswordResetOtpDto : EmailDto
+    {
+        [Required, RegularExpression("^[0-9]{6}$")]
+        public string Otp { get; set; } = null!;
+    }
+
+    public class CompletePasswordResetDto : EmailDto
+    {
+        [Required, StringLength(64, MinimumLength = 64)]
+        public string ResetToken { get; set; } = null!;
+        [Required, MinLength(6), MaxLength(100)]
+        public string NewPassword { get; set; } = null!;
+    }
+
     public class LoginDto
     {
         [Required]

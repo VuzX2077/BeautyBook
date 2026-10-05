@@ -13,6 +13,8 @@ namespace BeautyBookBackend.Services
         Task<UserDto?> RegisterAsync(RegisterDto registerDto);
         Task SendPasswordResetOtpAsync(string email);
         Task<bool> ResetPasswordAsync(ResetPasswordDto request);
+        Task<string?> VerifyPasswordResetOtpAsync(VerifyPasswordResetOtpDto request);
+        Task<bool> CompletePasswordResetAsync(CompletePasswordResetDto request);
         Task<bool> ChangePasswordAsync(Guid userId, ChangePasswordDto request);
         Task<bool> VerifyPasswordAsync(Guid userId, string password);
     }

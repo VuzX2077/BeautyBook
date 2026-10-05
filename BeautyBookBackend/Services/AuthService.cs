@@ -54,7 +54,11 @@ namespace BeautyBookBackend.Services
             email = NormalizeEmail(email);
             var user = await _userRepository.GetByEmailAsync(email);
             if (user != null && !user.IsDemoAccount && user.IsActive && !user.DeletedAt.HasValue && !string.IsNullOrWhiteSpace(user.PasswordHash))
+            {
                 await _emailOtpService.IssueAsync(email, "RESET_PASSWORD");
+                await _dbContext.EmailOtps.Where(x => x.Email == email && x.Purpose == "RESET_PASSWORD_GRANT" && x.UsedAt == null)
+                    .ExecuteUpdateAsync(s => s.SetProperty(x => x.UsedAt, DateTime.UtcNow));
+            }
         }
 
         public async Task<UserDto?> RegisterAsync(RegisterDto registerDto)
@@ -97,6 +101,55 @@ namespace BeautyBookBackend.Services
             await _unitOfWork.SaveChangesAsync();
             return true;
         }
+
+        // Reuse the existing OTP table: no schema change, and grants work across server instances.
+        public async Task<string?> VerifyPasswordResetOtpAsync(VerifyPasswordResetOtpDto request)
+        {
+            var email = NormalizeEmail(request.Email);
+            var user = await _userRepository.GetByEmailAsync(email);
+            if (user == null || user.IsDemoAccount || !user.IsActive || user.DeletedAt.HasValue || string.IsNullOrWhiteSpace(user.PasswordHash)) return null;
+            await using var transaction = await _dbContext.Database.BeginTransactionAsync();
+            if (!await _emailOtpService.ConsumeAsync(email, "RESET_PASSWORD", null, request.Otp))
+            {
+                // Commit failed-attempt counters written by ConsumeAsync.
+                await transaction.CommitAsync();
+                return null;
+            }
+            var now = DateTime.UtcNow;
+            await _dbContext.EmailOtps.Where(x => x.Email == email && x.Purpose == "RESET_PASSWORD_GRANT" && x.UsedAt == null)
+                .ExecuteUpdateAsync(s => s.SetProperty(x => x.UsedAt, now));
+            var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+            _dbContext.EmailOtps.Add(new EmailOtp {
+                Id = Guid.NewGuid(), Email = email, Purpose = "RESET_PASSWORD_GRANT",
+                CodeHash = HashResetValue(token), ContextHash = HashResetValue(user.PasswordHash),
+                CreatedAt = now, ExpiresAt = now.AddMinutes(5)
+            });
+            await _dbContext.SaveChangesAsync();
+            await transaction.CommitAsync();
+            return token;
+        }
+
+        public async Task<bool> CompletePasswordResetAsync(CompletePasswordResetDto request)
+        {
+            var email = NormalizeEmail(request.Email);
+            var user = await _userRepository.GetByEmailAsync(email);
+            if (user == null || user.IsDemoAccount || !user.IsActive || user.DeletedAt.HasValue || string.IsNullOrWhiteSpace(user.PasswordHash)) return false;
+            var tokenHash = HashResetValue(request.ResetToken);
+            var passwordContext = HashResetValue(user.PasswordHash);
+            var now = DateTime.UtcNow;
+            await using var transaction = await _dbContext.Database.BeginTransactionAsync();
+            var consumed = await _dbContext.EmailOtps
+                .Where(x => x.Email == email && x.Purpose == "RESET_PASSWORD_GRANT" && x.CodeHash == tokenHash
+                    && x.ContextHash == passwordContext && x.UsedAt == null && x.ExpiresAt > now)
+                .ExecuteUpdateAsync(s => s.SetProperty(x => x.UsedAt, now));
+            if (consumed != 1) return false;
+            user.PasswordHash = HashPassword(request.NewPassword);
+            await _unitOfWork.SaveChangesAsync();
+            await transaction.CommitAsync();
+            return true;
+        }
+
+        private static string HashResetValue(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
 
         public async Task<bool> ChangePasswordAsync(Guid userId, ChangePasswordDto request)
         {

@@ -10,6 +10,8 @@ namespace BeautyBookBackend.Data
         {
         }
 
+        public DbSet<UserFeedback> UserFeedbacks { get; set; } = null!;
+        public DbSet<FeedbackEvent> FeedbackEvents { get; set; } = null!;
         public DbSet<ContentReport> ContentReports { get; set; } = null!;
         public DbSet<UserBlock> UserBlocks { get; set; } = null!;
         public DbSet<VerificationMedia> VerificationMedia { get; set; } = null!;
@@ -75,6 +77,23 @@ namespace BeautyBookBackend.Data
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
+            modelBuilder.Entity<UserFeedback>(b => {
+                b.HasKey(x => x.Id);
+                b.Property(x => x.Category).HasMaxLength(20);
+                b.Property(x => x.Body).HasMaxLength(2000);
+                b.Property(x => x.Status).HasMaxLength(20);
+                b.HasIndex(x => new { x.UserId, x.SubmissionId }).IsUnique();
+                b.HasIndex(x => new { x.Status, x.CreatedAt });
+                b.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
+                b.HasMany(x => x.Events).WithOne().HasForeignKey(x => x.FeedbackId).OnDelete(DeleteBehavior.Cascade);
+            });
+            modelBuilder.Entity<FeedbackEvent>(b => {
+                b.HasKey(x => x.Id);
+                b.Property(x => x.Status).HasMaxLength(20);
+                b.Property(x => x.Note).HasMaxLength(1000);
+                b.HasIndex(x => new { x.FeedbackId, x.CreatedAt });
+                b.HasOne(x => x.Admin).WithMany().HasForeignKey(x => x.AdminId).OnDelete(DeleteBehavior.Restrict);
+            });
             modelBuilder.Entity<UserBlock>(b => {
                 b.HasKey(x => new { x.BlockerId, x.BlockedId });
                 b.HasIndex(x => x.BlockedId);

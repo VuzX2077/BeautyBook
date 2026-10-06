@@ -14,6 +14,51 @@ namespace BeautyBookBackend.Tests;
 
 public sealed class AdminWorkAndFeedbackTests
 {
+    [Fact]
+    public void FinancialCardsIncludeManualAndAwaitingAccountsAndPaidHistory() {
+        var rows = new FinancialStatusTotal[] { new(0, 1, 10m), new(1, 2, 20m), new(2, 4, 40m), new(3, 8, 80m), new(4, 16, 160m), new(5, 32, 320m) };
+        JsonElement Summary(bool refund) => JsonSerializer.SerializeToElement(AdminManagementController.BuildFinancialSummary(rows, refund), new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+        Assert.Equal(35, Summary(true).GetProperty("pending").GetProperty("count").GetInt32());
+        Assert.Equal(350m, Summary(true).GetProperty("pending").GetProperty("amount").GetDecimal());
+        Assert.Equal(3, Summary(false).GetProperty("pending").GetProperty("count").GetInt32());
+        Assert.Equal(8, Summary(false).GetProperty("completed").GetProperty("count").GetInt32());
+        Assert.Equal(16, Summary(true).GetProperty("failed").GetProperty("count").GetInt32());
+    }
+
+    [Fact]
+    public async Task ManagementUsersFiltersLockedAndExcludesAdminDemoDeleted() {
+        await using var store = await Store.Create();
+        var locked = new User { UserId = Guid.NewGuid(), FullName = "Locked MUA", Email = "locked@example.test", Role = UserRole.MUA, IsActive = false };
+        store.Db.Users.AddRange(locked, new User { UserId = Guid.NewGuid(), Role = UserRole.Customer, IsActive = false, IsDemoAccount = true }, new User { UserId = Guid.NewGuid(), Role = UserRole.Customer, IsActive = false, DeletedAt = DateTime.UtcNow });
+        await store.Db.SaveChangesAsync();
+        var controller = new AdminManagementController(store.Db) { ControllerContext = new() { HttpContext = new DefaultHttpContext() } };
+        var data = Payload(await controller.Users(null, null, false));
+        Assert.Equal(1, data.GetProperty("total").GetInt32());
+        Assert.Equal(locked.UserId, data.GetProperty("items")[0].GetProperty("userId").GetGuid());
+        Assert.Equal(1, Payload(await controller.Users(locked.UserId.ToString(), "MUA", false)).GetProperty("total").GetInt32());
+        Assert.IsType<BadRequestResult>(await controller.Users(null, "Admin"));
+        Assert.IsType<BadRequestResult>(await controller.Users(null, null, page: 0));
+        var eligibility = new BeautyBookBackend.Services.MuaEligibilityService(store.Db, null!, null!);
+        Assert.True(await eligibility.SetAccountActiveAsync(store.Customer.UserId, false));
+        Assert.False(store.Customer.IsActive);
+        Assert.True(await eligibility.SetAccountActiveAsync(store.Customer.UserId, true));
+        Assert.True(store.Customer.IsActive);
+        Assert.False(await eligibility.SetAccountActiveAsync(store.Admin.UserId, false));
+        Assert.True(store.Admin.IsActive);
+    }
+
+    [Fact]
+    public async Task BankHistoryIncludesInactiveRejectedAndNeverPending() {
+        await using var store = await Store.Create();
+        foreach (var status in new[] { "APPROVED", "REJECTED", "PENDING_ADMIN" }) store.Db.BankAccounts.Add(new BankAccount { Id = Guid.NewGuid(), UserId = store.Customer.UserId, BankCode = "VCB", BankBin = "970436", AccountNumber = status, NormalizedAccountNumber = status, CanonicalBankKey = "VCB", VerificationStatus = status, IsActive = status != "REJECTED", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow });
+        await store.Db.SaveChangesAsync();
+        var controller = new AdminBankAccountController(store.Db) { ControllerContext = new() { HttpContext = new DefaultHttpContext() } };
+        var data = Payload(await controller.History("REJECTED"));
+        Assert.Equal(1, data.GetArrayLength());
+        Assert.Equal("REJECTED", data[0].GetProperty("verificationStatus").GetString());
+        Assert.Equal(1, Payload(await controller.History("APPROVED")).GetArrayLength());
+        Assert.IsType<BadRequestResult>(await controller.History("PENDING_ADMIN"));
+    }
     private sealed class Store : IAsyncDisposable
     {
         public SqliteConnection Connection { get; } = new("Data Source=:memory:");

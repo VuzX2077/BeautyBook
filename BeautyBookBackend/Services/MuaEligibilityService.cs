@@ -122,7 +122,7 @@ namespace BeautyBookBackend.Services
         public async Task<bool> SetAccountActiveAsync(Guid userId, bool isActive)
         {
             var user = await _db.Users.FirstOrDefaultAsync(x => x.UserId == userId && !x.DeletedAt.HasValue);
-            if (user == null) return false;
+            if (user == null || user.Role == UserRole.Admin || user.IsDemoAccount) return false;
             user.IsActive = isActive;
             await _db.SaveChangesAsync();
             if (await _db.MakeupArtistProfiles.AnyAsync(x => x.MUAId == userId)) await EvaluateAsync(userId);

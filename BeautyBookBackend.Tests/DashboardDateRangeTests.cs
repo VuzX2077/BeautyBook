@@ -7,6 +7,18 @@ namespace BeautyBookBackend.Tests;
 
 public sealed class DashboardDateRangeTests
 {
+    [Theory]
+    [InlineData(7)]
+    [InlineData(30)]
+    [InlineData(1)]
+    [InlineData(13)]
+    public void TodayPresetsAndCustomHaveEqualPreviousWindows(int days)
+    {
+        var to = new DateOnly(2026, 10, 7); var from = to.AddDays(1 - days);
+        Assert.True(DashboardDateRange.TryCreate(from, to, out var start, out var end, out var previous));
+        Assert.Equal(TimeSpan.FromDays(days), end - start);
+        Assert.Equal(end - start, start - previous);
+    }
     [Fact]
     public void VietnamMonthUsesUtcBoundariesAndEqualPreviousPeriod()
     {

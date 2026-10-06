@@ -189,6 +189,7 @@ builder.Services.AddScoped<AccountDeletionService>();
 builder.Services.AddScoped<AccountDeletionStorage>();
 builder.Services.AddHostedService<AccountDeletionWorker>();
 builder.Services.AddScoped<IMuaService, MuaService>();
+builder.Services.AddScoped<AdminMakeupStyleService>();
 builder.Services.AddScoped<IMuaEligibilityService, MuaEligibilityService>();
 builder.Services.AddScoped<VerificationMediaService>();
 builder.Services.AddRateLimiter(options => options.AddConcurrencyLimiter("media-upload", limiter =>

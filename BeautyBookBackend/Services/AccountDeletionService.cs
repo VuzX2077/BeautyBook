@@ -74,6 +74,7 @@ public sealed partial class AccountDeletionService(ApplicationDbContext _context
             return new() { Code = "ACCOUNT_DELETION_BLOCKED", Message = "Đã ghi nhận yêu cầu nhưng còn lịch hẹn, giao dịch, tranh chấp hoặc số dư cần giải quyết. Liên hệ bbooksupport@gmail.com; sau khi tất toán cần xác nhận xóa lại." };
         }
         await CaptureObjectsAsync(user, request, now);
+            await _context.UserFeedbacks.Where(x => x.UserId == userId).ExecuteDeleteAsync();
             await _context.DevicePushTokens.Where(x => x.UserId == userId).ExecuteDeleteAsync();
             await _context.AppNotifications.Where(x => x.UserId == userId).ExecuteDeleteAsync();
             await _context.PortfolioLikes.Where(x => x.UserId == userId).ExecuteDeleteAsync();

@@ -108,7 +108,7 @@ public sealed class ModerationService(ApplicationDbContext db)
         if (row.TargetType == "Portfolio") images = (await db.Portfolios.AsNoTracking().Where(x => x.PortfolioId == row.TargetId).Select(x => x.ImageUrls).SingleOrDefaultAsync() ?? []).Where(MuaEligibilityService.IsValidPublicUrl).Take(20).ToList();
         if (row.TargetType == "Review") { var image = await db.Reviews.Where(x => x.ReviewId == row.TargetId).Select(x => x.ImageUrl).SingleOrDefaultAsync(); if (MuaEligibilityService.IsValidPublicUrl(image)) images.Add(image!); }
         var hasPrivateImage = row.TargetType == "Message" && await db.Messages.AnyAsync(x => x.MessageId == row.TargetId && x.ImageUrl != null && x.ImageUrl.StartsWith("media:"));
-        return new { row.Id, row.TargetType, row.TargetId, row.Reason, row.Description, row.Status, row.CreatedAt, row.ReviewedAt, row.DecisionNote, Content = text == null ? null : text[..Math.Min(text.Length, 4000)], ContentAvailable = text != null || images.Count > 0 || hasPrivateImage, CanRemove = row.TargetType != "User", ImageUrls = images, HasPrivateImage = hasPrivateImage };
+        return new { row.Id, row.TargetType, row.TargetId, row.TargetOwnerId, row.Reason, row.Description, row.Status, row.CreatedAt, row.ReviewedAt, row.DecisionNote, Content = text == null ? null : text[..Math.Min(text.Length, 4000)], ContentAvailable = text != null || images.Count > 0 || hasPrivateImage, CanRemove = row.TargetType != "User", ImageUrls = images, HasPrivateImage = hasPrivateImage };
     }
     public async Task<object> ReportedImage(Guid admin, Guid id, IVerificationStorage storage)
     {

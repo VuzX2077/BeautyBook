@@ -15,11 +15,20 @@ namespace BeautyBookBackend.Controllers;
 public sealed class AdminBankAccountController(ApplicationDbContext db, FinancialMediaService? financial = null) : ControllerBase
 {
     private Guid AdminId=>Guid.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
+    [HttpGet("history")]
+    public async Task<IActionResult> History(string status)
+    {
+        if (status != BankAccountEligibility.Approved && status != BankAccountEligibility.Rejected) return BadRequest();
+        var rows = await db.BankAccounts.AsNoTracking().Where(x => x.User != null && !x.User.IsDemoAccount && x.VerificationStatus == status)
+            .Include(x => x.User).OrderByDescending(x => x.ReviewedAt).ThenByDescending(x => x.CreatedAt).ThenBy(x => x.Id).ToListAsync();
+        Response.Headers.CacheControl = "no-store";
+        return Ok(rows.Select(x => new { x.Id, OwnerId=x.UserId, OwnerName=x.User?.FullName, x.BankCode, x.BankBin, x.BankName, x.AccountNumber, x.AccountHolderName, x.Method, QrCodeUrl=(string?)null, x.CreatedAt, x.UpdatedAt, x.VerificationStatus, HasFinancialQr=x.FinancialQrMediaId.HasValue, ReviewToken=BankReviewToken.For(x), x.ReviewedAt, x.RejectionReason, x.ReviewNote }));
+    }
     [HttpGet("pending")]
     public async Task<IActionResult> Pending()
     {
         var rows=await db.BankAccounts.AsNoTracking()
-        .Where(x=>x.User != null && !x.User.IsDemoAccount && x.IsActive&&x.VerificationStatus==BankAccountEligibility.Pending)
+        .Where(x=>x.User != null && !x.User.IsDemoAccount && x.User.DeletedAt == null && x.IsActive&&x.VerificationStatus==BankAccountEligibility.Pending)
          .Include(x=>x.User)
         .OrderBy(x=>x.CreatedAt).ThenBy(x=>x.Id).ToListAsync();
         Response.Headers.CacheControl = "no-store";

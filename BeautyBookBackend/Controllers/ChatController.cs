@@ -7,6 +7,8 @@ using BeautyBookBackend.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.EntityFrameworkCore;
+using BeautyBookBackend.Data;
 
 namespace BeautyBookBackend.Controllers
 {
@@ -73,6 +75,29 @@ namespace BeautyBookBackend.Controllers
             {
                 return BadRequest(new { Message = ex.Message });
             }
+        }
+
+        [HttpPost("booking/{bookingId:guid}")]
+        public async Task<IActionResult> GetOrCreateRoomForBooking(Guid bookingId)
+        {
+            var userId = GetCurrentUserId();
+            var db = HttpContext.RequestServices.GetRequiredService<ApplicationDbContext>();
+            var booking = await db.Bookings.AsNoTracking().FirstOrDefaultAsync(b => b.BookingId == bookingId);
+            if (booking == null) return NotFound();
+            if (booking.CustomerId != userId && booking.MUAId != userId) return Forbid();
+            try
+            {
+                var room = await _chatService.GetOrCreateChatRoomAsync(booking.CustomerId, booking.MUAId);
+                if (userId == booking.MUAId)
+                {
+                    room.OtherUserId = room.CustomerId;
+                    room.OtherUserName = room.CustomerName;
+                    room.OtherUserAvatar = room.CustomerAvatar;
+                }
+                return Ok(room);
+            }
+            catch (UnauthorizedAccessException) { return Forbid(); }
+            catch (ArgumentException ex) { return BadRequest(new { Message = ex.Message }); }
         }
 
         [HttpPost("mua/{muaId}")]

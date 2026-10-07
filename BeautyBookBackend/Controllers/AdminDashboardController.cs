@@ -1,4 +1,5 @@
 using BeautyBookBackend.Data;
+using BeautyBookBackend.Models;
 using BeautyBookBackend.Models.Enums;
 using BeautyBookBackend.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -52,12 +53,7 @@ public sealed class AdminDashboardController(ApplicationDbContext db) : Controll
             .GroupBy(x => x.Status).Select(g => new { Status = g.Key, Count = g.Count() }).ToListAsync(ct);
         // Service reviews are independent of app feedback. Exclude demo/inconsistent links
         // and reviews removed through moderation, matching marketplace visibility.
-        var reviews = db.Reviews.AsNoTracking().Where(x => x.Booking != null && !x.Booking.IsDemo
-            && x.CustomerId == x.Booking.CustomerId && x.MUAId == x.Booking.MUAId
-            && db.Users.Any(u => u.UserId == x.CustomerId && !u.IsDemoAccount)
-            && db.Users.Any(u => u.UserId == x.MUAId && !u.IsDemoAccount)
-            && x.Rating >= 1 && x.Rating <= 5
-            && !db.ContentReports.Any(r => r.TargetType == "Review" && r.TargetId == x.ReviewId && r.Status == "Removed"));
+        var reviews = VisibleReviews();
         var periodReviews = reviews.Where(x => x.CreatedAt >= start && x.CreatedAt < end);
         var ratingCounts = await periodReviews.GroupBy(x => x.Rating)
             .Select(g => new { rating = g.Key, count = g.Count() }).ToListAsync(ct);
@@ -84,5 +80,41 @@ public sealed class AdminDashboardController(ApplicationDbContext db) : Controll
                 distribution = Enumerable.Range(1, 5).Reverse().Select(rating => new { rating, count = ratingCounts.FirstOrDefault(x => x.rating == rating)?.count ?? 0 }),
                 reviewedCompletedBookings, eligibleCompletedBookings, recent = recentReviews
             } });
+    }
+
+    private IQueryable<Review> VisibleReviews() => db.Reviews.AsNoTracking().Where(x => x.Booking != null && !x.Booking.IsDemo
+        && x.CustomerId == x.Booking.CustomerId && x.MUAId == x.Booking.MUAId
+        && db.Users.Any(u => u.UserId == x.CustomerId && !u.IsDemoAccount)
+        && db.Users.Any(u => u.UserId == x.MUAId && !u.IsDemoAccount)
+        && x.Rating >= 1 && x.Rating <= 5
+        && !db.ContentReports.Any(r => r.TargetType == "Review" && r.TargetId == x.ReviewId && r.Status == "Removed"));
+
+    [HttpGet("reviews")]
+    public async Task<IActionResult> Reviews([FromQuery] DateOnly from, [FromQuery] DateOnly to, [FromQuery] int? rating,
+        [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken ct = default)
+    {
+        if (!DashboardDateRange.TryCreate(from, to, out var start, out var end, out _) || rating is < 1 or > 5 || page < 1 || page > 100000 || pageSize < 1 || pageSize > 50)
+            return BadRequest(new { Message = "Khoảng ngày, số sao hoặc phân trang không hợp lệ." });
+        var query = VisibleReviews().Where(x => x.CreatedAt >= start && x.CreatedAt < end);
+        if (rating.HasValue) query = query.Where(x => x.Rating == rating.Value);
+        var total = await query.CountAsync(ct);
+        var items = await query.OrderByDescending(x => x.CreatedAt).ThenByDescending(x => x.ReviewId).Skip((page - 1) * pageSize).Take(pageSize)
+            .Select(x => new { x.ReviewId, x.BookingId, x.Rating, x.Comment, x.CreatedAt, hasImage = x.ImageUrl != null && x.ImageUrl != "",
+                customerName = db.Users.Where(u => u.UserId == x.CustomerId).Select(u => u.DeletedAt == null ? u.FullName : "Người dùng đã xóa").FirstOrDefault(),
+                muaName = db.Users.Where(u => u.UserId == x.MUAId).Select(u => u.DeletedAt == null ? u.FullName : "Người dùng đã xóa").FirstOrDefault() }).ToListAsync(ct);
+        return Ok(new { items, total, page, pageSize });
+    }
+
+    [HttpGet("reviews/{id:guid}")]
+    public async Task<IActionResult> ReviewDetail(Guid id, CancellationToken ct)
+    {
+        var item = await VisibleReviews().Where(x => x.ReviewId == id).Select(x => new {
+            x.ReviewId, x.BookingId, x.Rating, x.Comment, x.ImageUrl, x.CreatedAt, x.MuaReply, x.MuaReplyAt, x.CustomerId, x.MUAId,
+            customerName = db.Users.Where(u => u.UserId == x.CustomerId).Select(u => u.DeletedAt == null ? u.FullName : "Người dùng đã xóa").FirstOrDefault(),
+            muaName = db.Users.Where(u => u.UserId == x.MUAId).Select(u => u.DeletedAt == null ? u.FullName : "Người dùng đã xóa").FirstOrDefault(),
+            booking = new { x.Booking!.BookingDate, x.Booking.StartTime, status = x.Booking.Status.ToString(), x.Booking.TotalAmount,
+                services = x.Booking.BookingServices.Select(s => new { s.ServiceName, s.ParticipantsCount }) }
+        }).FirstOrDefaultAsync(ct);
+        return item == null ? NotFound(new { Message = "Không tìm thấy đánh giá." }) : Ok(item);
     }
 }

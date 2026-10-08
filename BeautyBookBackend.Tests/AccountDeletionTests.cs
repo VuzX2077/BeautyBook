@@ -3,6 +3,8 @@ using BeautyBookBackend.Models;
 using BeautyBookBackend.Models.Enums;
 using BeautyBookBackend.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Configuration;
@@ -34,6 +36,38 @@ public sealed class AccountDeletionTests
         item.ObjectKey = $"verification/{owner:N}/{item.Id:N}.jpg"; storage.Private[item.ObjectKey] = [1]; return item;
     }
     private static AccountDeletionService Service(ApplicationDbContext db, Storage storage) => new(db, storage, new AccountConnections());
+
+    [PostgreSqlFact]
+    public async Task FeedbackGuardUpgradeRestoresDeletionAndPreventsNewDataForDeletedOwners()
+    {
+        await using var database = await PostgreSqlDatabase.CreateAsync();
+        await using var db = database.CreateContext();
+        await db.Database.GetService<IMigrator>().MigrateAsync("20261006092242_AddUserFeedback");
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            AccountDeletionService.VerifyWriterCoverageAsync(db, CancellationToken.None));
+
+        await db.Database.MigrateAsync();
+        await AccountDeletionService.VerifyWriterCoverageAsync(db, CancellationToken.None);
+        var owner = Guid.NewGuid(); var admin = Guid.NewGuid(); var feedbackId = Guid.NewGuid();
+        db.Users.AddRange(User(owner), User(admin, UserRole.Admin));
+        db.UserFeedbacks.Add(new UserFeedback {
+            Id = feedbackId, UserId = owner, SubmissionId = Guid.NewGuid(), Body = "Private feedback",
+            CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow,
+            Events = [new FeedbackEvent { Id = Guid.NewGuid(), AdminId = admin, Note = "Private note", CreatedAt = DateTime.UtcNow }]
+        });
+        await db.SaveChangesAsync();
+        Assert.True((await Service(db, new Storage()).DeleteAsync(owner)).Deleted);
+        Assert.Empty(await db.UserFeedbacks.AsNoTracking().ToListAsync());
+        Assert.Empty(await db.FeedbackEvents.AsNoTracking().ToListAsync());
+
+        // A fresh connection does not inherit the deletion transaction's owner override.
+        await using var writer = database.CreateContext();
+        writer.UserFeedbacks.Add(new UserFeedback {
+            Id = Guid.NewGuid(), UserId = owner, SubmissionId = Guid.NewGuid(),
+            Body = "Must not recreate deleted data", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+        });
+        await Assert.ThrowsAsync<DbUpdateException>(() => writer.SaveChangesAsync());
+    }
 
     [PostgreSqlFact]
     public async Task LegacyOwnedBankQrIsDeletedAfterReferencesAreCapturedAndCleared()

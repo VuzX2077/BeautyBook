@@ -42,6 +42,13 @@ public sealed class AdminDashboardController(ApplicationDbContext db) : Controll
         var customers = await users.CountAsync(x => x.Role == UserRole.Customer, ct);
         var muas = await users.CountAsync(x => x.Role == UserRole.MUA, ct);
         var locked = await users.CountAsync(x => !x.IsActive, ct);
+        var allReviews = VisibleReviews();
+        var lifetime = new {
+            revenue = await completed.SumAsync(x => (decimal?)x.PlatformFeeAmount, ct) ?? 0,
+            reviewCount = await allReviews.CountAsync(ct),
+            averageRating = await allReviews.AverageAsync(x => (double?)x.Rating, ct),
+            successfulTransactions = await CollectedPayments().CountAsync(ct)
+        };
         var revenueDays = await completed.Where(x => x.CompletedAt >= start && x.CompletedAt < end)
             .GroupBy(x => x.CompletedAt!.Value.AddHours(7).Date)
             .Select(g => new { Day = g.Key, Value = g.Sum(x => x.PlatformFeeAmount) }).ToListAsync(ct);
@@ -71,7 +78,7 @@ public sealed class AdminDashboardController(ApplicationDbContext db) : Controll
             return new { date = from.AddDays(i).ToString("yyyy-MM-dd"), revenue = revenueDays.FirstOrDefault(x => x.Day == day)?.Value ?? 0, newUsers = userDays.FirstOrDefault(x => x.Day == day)?.Value ?? 0,
                 newMuas = userDays.FirstOrDefault(x => x.Day == day)?.Muas ?? 0, bookings = bookingDays.FirstOrDefault(x => x.Day == day)?.Value ?? 0 };
         });
-        return Ok(new { from, to, timezone = "Asia/Ho_Chi_Minh", current, previous,
+        return Ok(new { from, to, timezone = "Asia/Ho_Chi_Minh", current, previous, lifetime,
             users = new { total = customers + muas, customers, muas, locked }, daily,
             bookingStatuses = statuses.OrderBy(x => x.Status).Select(x => new { status = x.Status.ToString(), count = x.Count }),
             serviceReviews = new {
@@ -89,6 +96,46 @@ public sealed class AdminDashboardController(ApplicationDbContext db) : Controll
         && db.Users.Any(u => u.UserId == x.MUAId && !u.IsDemoAccount)
         && x.Rating >= 1 && x.Rating <= 5
         && !db.ContentReports.Any(r => r.TargetType == "Review" && r.TargetId == x.ReviewId && r.Status == "Removed"));
+
+    private IQueryable<BookingPayment> CollectedPayments() => db.BookingPayments.AsNoTracking()
+        .Where(x => x.Booking != null && !x.Booking.IsDemo && x.Provider == PaymentProvider.PayOS && x.PaidAt != null);
+
+    [HttpGet("transactions")]
+    public async Task<IActionResult> Transactions([FromQuery] DateOnly? from, [FromQuery] DateOnly? to,
+        [FromQuery] int page = 1, [FromQuery] int pageSize = 20, CancellationToken ct = default)
+    {
+        if (page < 1 || page > 100000 || pageSize < 1 || pageSize > 50 || from.HasValue != to.HasValue)
+            return BadRequest(new { Message = "Khoảng ngày hoặc phân trang không hợp lệ." });
+        DateTime start = default, end = default;
+        if (from.HasValue) {
+            if (!DashboardDateRange.TryCreate(from.Value, to!.Value, out start, out end, out _))
+                return BadRequest(new { Message = "Chọn khoảng ngày hợp lệ, tối đa 366 ngày." });
+        }
+        var query = CollectedPayments();
+        if (from.HasValue) query = query.Where(x => x.PaidAt >= start && x.PaidAt < end);
+        var total = await query.CountAsync(ct);
+        var items = await query.OrderByDescending(x => x.PaidAt).ThenByDescending(x => x.PaymentId)
+            .Skip((page - 1) * pageSize).Take(pageSize)
+            .Select(x => new { x.PaymentId, x.BookingId, x.Amount, x.PaidAt, status = x.Status.ToString(), x.ProviderOrderCode,
+                customerName = db.Users.Where(u => u.UserId == x.CustomerId).Select(u => u.DeletedAt == null ? u.FullName : "Người dùng đã xóa").FirstOrDefault() }).ToListAsync(ct);
+        return Ok(new { items, total, page, pageSize });
+    }
+
+    [HttpGet("transactions/{id:guid}")]
+    public async Task<IActionResult> TransactionDetail(Guid id, CancellationToken ct)
+    {
+        var item = await CollectedPayments().Where(x => x.PaymentId == id).Select(x => new {
+            x.PaymentId, x.BookingId, x.CustomerId, x.Amount, x.PaidAt, x.CreatedAt, x.UpdatedAt, x.RefundRequestedAt, x.RefundedAt,
+            status = x.Status.ToString(), provider = x.Provider.ToString(), x.ProviderOrderCode, x.ProviderReference,
+            customerName = db.Users.Where(u => u.UserId == x.CustomerId).Select(u => u.DeletedAt == null ? u.FullName : "Người dùng đã xóa").FirstOrDefault(),
+            muaName = db.Users.Where(u => u.UserId == x.Booking!.MUAId).Select(u => u.DeletedAt == null ? u.FullName : "Người dùng đã xóa").FirstOrDefault(),
+            booking = new { x.Booking!.MUAId, x.Booking.BookingDate, x.Booking.StartTime, status = x.Booking.Status.ToString(), x.Booking.TotalAmount,
+                services = x.Booking.BookingServices.Select(s => new { s.ServiceName, s.ParticipantsCount }) },
+            refunds = db.Refunds.Where(r => r.BookingPaymentId == x.PaymentId).OrderByDescending(r => r.CreatedAt)
+                .Select(r => new { r.RefundId, r.Amount, status = r.Status.ToString(), r.CreatedAt, r.CompletedAt }).ToList()
+        }).FirstOrDefaultAsync(ct);
+        return item == null ? NotFound(new { Message = "Không tìm thấy giao dịch." }) : Ok(item);
+    }
 
     [HttpGet("reviews")]
     public async Task<IActionResult> Reviews([FromQuery] DateOnly from, [FromQuery] DateOnly to, [FromQuery] int? rating,

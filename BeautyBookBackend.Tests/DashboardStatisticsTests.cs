@@ -48,6 +48,11 @@ public sealed class DashboardStatisticsTests
         await db.SaveChangesAsync();
         var result = Payload(await new AdminDashboardController(db).Get(new(2026, 10, 1), new(2026, 10, 7), default));
         var current = result.GetProperty("current");
+        var lifetime = result.GetProperty("lifetime");
+        Assert.Equal(6_618_000, lifetime.GetProperty("revenue").GetDecimal());
+        Assert.Equal(2, lifetime.GetProperty("reviewCount").GetInt32());
+        Assert.Equal(3.5, lifetime.GetProperty("averageRating").GetDouble());
+        Assert.Equal(4, lifetime.GetProperty("successfulTransactions").GetInt32());
         Assert.Equal(2, current.GetProperty("successfulTransactions").GetInt32());
         Assert.Equal(1, result.GetProperty("previous").GetProperty("successfulTransactions").GetInt32());
         Assert.Equal(2, current.GetProperty("totalBookings").GetInt32());
@@ -70,6 +75,7 @@ public sealed class DashboardStatisticsTests
         Assert.Equal(1, queue.GetProperty("counts").GetProperty("verification").GetInt32());
         Assert.Equal(1, queue.GetProperty("counts").GetProperty("feedback").GetInt32());
         var old = Payload(await new AdminDashboardController(db).Get(new(2020, 1, 1), new(2020, 1, 7), default));
+        Assert.Equal(lifetime.ToString(), old.GetProperty("lifetime").ToString());
         Assert.Equal(0, old.GetProperty("current").GetProperty("totalBookings").GetInt32());
         Assert.Equal(JsonValueKind.Null, old.GetProperty("serviceReviews").GetProperty("averageRating").ValueKind);
         Assert.Empty(old.GetProperty("serviceReviews").GetProperty("recent").EnumerateArray());

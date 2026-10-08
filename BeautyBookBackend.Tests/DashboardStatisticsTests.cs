@@ -30,6 +30,15 @@ public sealed class DashboardStatisticsTests
         var excluded = Book(start, start, 900_000, true);
         var endExclusive = Book(start.AddDays(7), start.AddDays(7), 200_000);
         db.Bookings.AddRange(first, second, prior, excluded, endExclusive);
+        long orderCode = 1;
+        BookingPayment Payment(Booking booking, DateTime? paidAt, BookingPaymentStatus status) => new() { PaymentId = Guid.NewGuid(), BookingId = booking.BookingId, CustomerId = customer.UserId, Provider = PaymentProvider.PayOS, ProviderOrderCode = orderCode++, Amount = 10000, PaidAt = paidAt, Status = status, CreatedAt = start, UpdatedAt = start, ExpiresAt = start.AddDays(10) };
+        db.BookingPayments.AddRange(
+            Payment(first, start, BookingPaymentStatus.Paid),
+            Payment(second, start.AddDays(1), BookingPaymentStatus.Refunded),
+            Payment(prior, start.AddDays(-1), BookingPaymentStatus.Paid),
+            Payment(excluded, start, BookingPaymentStatus.Paid),
+            Payment(endExclusive, start.AddDays(7), BookingPaymentStatus.Paid),
+            Payment(first, null, BookingPaymentStatus.Pending));
         var review = new Review { ReviewId = Guid.NewGuid(), BookingId = first.BookingId, CustomerId = customer.UserId, MUAId = mua.UserId, Rating = 2, Comment = "Integration review", CreatedAt = start.AddDays(2) };
         var laterReview = new Review { ReviewId = Guid.NewGuid(), BookingId = second.BookingId, CustomerId = customer.UserId, MUAId = mua.UserId, Rating = 5, CreatedAt = start.AddDays(8) };
         var removed = new Review { ReviewId = Guid.NewGuid(), BookingId = prior.BookingId, CustomerId = customer.UserId, MUAId = mua.UserId, Rating = 1, CreatedAt = start.AddDays(1) };
@@ -39,6 +48,8 @@ public sealed class DashboardStatisticsTests
         await db.SaveChangesAsync();
         var result = Payload(await new AdminDashboardController(db).Get(new(2026, 10, 1), new(2026, 10, 7), default));
         var current = result.GetProperty("current");
+        Assert.Equal(2, current.GetProperty("successfulTransactions").GetInt32());
+        Assert.Equal(1, result.GetProperty("previous").GetProperty("successfulTransactions").GetInt32());
         Assert.Equal(2, current.GetProperty("totalBookings").GetInt32());
         Assert.Equal(2, current.GetProperty("newUsers").GetInt32()); Assert.Equal(1, current.GetProperty("newMuas").GetInt32());
         Assert.Equal(6_408_000, current.GetProperty("revenue").GetDecimal());

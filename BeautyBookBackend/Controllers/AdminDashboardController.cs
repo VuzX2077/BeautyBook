@@ -34,7 +34,8 @@ public sealed class AdminDashboardController(ApplicationDbContext db) : Controll
             // PaidAt remains the evidence of collection after a payment transitions to refunded/forfeited.
             var depositsCollected = await db.BookingPayments.AsNoTracking().Where(x => x.Booking != null && !x.Booking.IsDemo && x.Provider == PaymentProvider.PayOS && x.PaidAt >= a && x.PaidAt < b).SumAsync(x => (decimal?)x.Amount, ct) ?? 0;
             var refundsCompleted = await db.Refunds.AsNoTracking().Where(x => x.Booking != null && !x.Booking.IsDemo && x.Status == RefundStatus.Completed && x.CompletedAt >= a && x.CompletedAt < b).SumAsync(x => (decimal?)x.Amount, ct) ?? 0;
-            return new { revenue, bookingValue, completedBookings, newUsers, newMuas, totalBookings, depositsCollected, refundsCompleted };
+            var successfulTransactions = await db.BookingPayments.AsNoTracking().CountAsync(x => x.Booking != null && !x.Booking.IsDemo && x.Provider == PaymentProvider.PayOS && x.PaidAt >= a && x.PaidAt < b, ct);
+            return new { revenue, bookingValue, completedBookings, newUsers, newMuas, totalBookings, depositsCollected, refundsCompleted, successfulTransactions };
         }
         var current = await Period(start, end);
         var previous = await Period(previousStart, start);

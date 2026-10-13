@@ -1,0 +1,13 @@
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+WORKDIR /src
+COPY BeautyBookBackend/BeautyBookBackend.csproj BeautyBookBackend/
+COPY BeautyBookAdvisor.Api/BeautyBookAdvisor.Api.csproj BeautyBookAdvisor.Api/
+RUN dotnet restore BeautyBookAdvisor.Api/BeautyBookAdvisor.Api.csproj
+COPY BeautyBookBackend/ BeautyBookBackend/
+COPY BeautyBookAdvisor.Api/ BeautyBookAdvisor.Api/
+RUN dotnet publish BeautyBookAdvisor.Api/BeautyBookAdvisor.Api.csproj -c Release -o /app/publish --no-restore /p:UseAppHost=false
+FROM mcr.microsoft.com/dotnet/aspnet:8.0
+WORKDIR /app
+ENV ASPNETCORE_ENVIRONMENT=Staging
+COPY --from=build /app/publish .
+ENTRYPOINT ["dotnet","BeautyBookAdvisor.Api.dll"]

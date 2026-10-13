@@ -1,0 +1,16 @@
+{
+  "FeatureAdvisor": {
+    "Enabled": false,
+    "SyntheticDiagnosticsEnabled": false,
+    "RealUserDataApproved": false,
+    "ModelAvailabilityVerified": false,
+    "Model": "",
+    "ApiKey": "",
+    "TimeoutSeconds": 18,
+    "CloudEnabled": false,
+    "DataProcessingApproval": "pending",
+    "ProviderDataPolicy": "unpaid",
+    "OnlineEnvironmentApproved": false,
+    "RequireHttps": true
+  }
+}

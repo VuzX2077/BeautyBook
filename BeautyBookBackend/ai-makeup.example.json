@@ -1,0 +1,14 @@
+{
+  "Gemini": { "ApiKey": "", "Model": "gemini-3.5-flash-lite" },
+  "AiMakeup": {
+    "Enabled": false,
+    "PaidTierConfirmed": false,
+    "PrivacyReady": false,
+    "AllowedUserIds": "",
+    "MaxRequestsPerUserPerDay": 2,
+    "MaxGlobalRequestsPerDay": 10,
+    "TimeoutSeconds": 40,
+    "InputUsdPerMillionTokens": 0.30,
+    "OutputUsdPerMillionTokens": 2.50
+  }
+}

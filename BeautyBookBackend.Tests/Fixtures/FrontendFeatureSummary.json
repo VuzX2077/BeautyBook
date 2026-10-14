@@ -1,0 +1,591 @@
+{
+  "syntheticOnly": true,
+  "generatedBy": "scripts/Export-AdvisorFixture.cjs via actual TS extractor",
+  "mesh": {
+    "schemaVersion": 3,
+    "analysisMethod": "face_mesh",
+    "quality": {
+      "singleFace": true,
+      "frontal": true,
+      "expressionLimited": false
+    },
+    "detection": {
+      "faceCount": 1,
+      "boundingBox": {
+        "x": 0.2375,
+        "y": 0.24,
+        "width": 0.525,
+        "height": 0.52
+      },
+      "pose": {
+        "yaw": 0,
+        "pitch": 0,
+        "roll": 0
+      }
+    },
+    "features": {
+      "outlineAspect": 1.25,
+      "eyeSpacing": 0.3,
+      "leftEyeWidth": 0.125,
+      "leftEyeTilt": 0,
+      "leftEyeAspect": 0.4,
+      "leftBrowLength": 0.18090169943749473,
+      "leftBrowTilt": 0.01550150646232318,
+      "leftBrowArch": 0.0973603431522683,
+      "leftBrowEyeGap": 0.08,
+      "rightEyeWidth": 0.125,
+      "rightEyeTilt": 0,
+      "rightEyeAspect": 0.4,
+      "rightBrowLength": 0.18090169943749473,
+      "rightBrowTilt": 0.01550150646232318,
+      "rightBrowArch": 0.0973603431522683,
+      "rightBrowEyeGap": 0.08,
+      "noseBridgeLength": 0.15,
+      "noseBaseWidth": 0.1,
+      "mouthWidth": 0.3918985947228995,
+      "mouthAspect": 0.25354959474296423,
+      "upperLipThickness": 0.02,
+      "lowerLipThickness": 0.014,
+      "lowerFaceHeight": 0.30199999999999977,
+      "outlineUpperWidth": 0.9396926207859085,
+      "outlineMiddleWidth": 1,
+      "outlineLowerWidth": 0.9396926207859084,
+      "chinWidth": 0.7660444431189779
+    },
+    "featureSources": {
+      "outlineAspect": "face_mesh",
+      "eyeSpacing": "face_mesh",
+      "leftEyeWidth": "face_mesh",
+      "leftEyeTilt": "face_mesh",
+      "leftEyeAspect": "face_mesh",
+      "leftBrowLength": "face_mesh",
+      "leftBrowTilt": "face_mesh",
+      "leftBrowArch": "face_mesh",
+      "leftBrowEyeGap": "face_mesh",
+      "rightEyeWidth": "face_mesh",
+      "rightEyeTilt": "face_mesh",
+      "rightEyeAspect": "face_mesh",
+      "rightBrowLength": "face_mesh",
+      "rightBrowTilt": "face_mesh",
+      "rightBrowArch": "face_mesh",
+      "rightBrowEyeGap": "face_mesh",
+      "noseBridgeLength": "face_mesh",
+      "noseBaseWidth": "face_detection",
+      "mouthWidth": "face_mesh",
+      "mouthAspect": "face_mesh",
+      "upperLipThickness": "face_mesh",
+      "lowerLipThickness": "face_mesh",
+      "lowerFaceHeight": "face_mesh",
+      "outlineUpperWidth": "face_mesh",
+      "outlineMiddleWidth": "face_mesh",
+      "outlineLowerWidth": "face_mesh",
+      "chinWidth": "face_mesh"
+    },
+    "missing": [],
+    "limitations": [
+      "Số đo tương đối 2D của ảnh, chưa hiệu chuẩn; không phải phân loại dáng mặt.",
+      "Không đo undertone, giới tính, tình trạng da hoặc độ sâu giải phẫu.",
+      "Ánh sáng, che mặt và biểu cảm có thể ảnh hưởng số đo."
+    ]
+  },
+  "detection": {
+    "schemaVersion": 3,
+    "analysisMethod": "face_detection",
+    "quality": {
+      "singleFace": true,
+      "frontal": true,
+      "expressionLimited": false
+    },
+    "detection": {
+      "faceCount": 1,
+      "boundingBox": {
+        "x": 0.2375,
+        "y": 0.24,
+        "width": 0.525,
+        "height": 0.52
+      },
+      "pose": {
+        "yaw": 0,
+        "pitch": 0,
+        "roll": 0
+      }
+    },
+    "features": {
+      "outlineAspect": 1.25,
+      "eyeSpacing": 0.3,
+      "leftEyeWidth": 0.125,
+      "leftEyeTilt": 0,
+      "leftEyeAspect": 0.4,
+      "leftBrowLength": 0.18090169943749473,
+      "leftBrowTilt": 0.01550150646232318,
+      "leftBrowArch": 0.0973603431522683,
+      "leftBrowEyeGap": 0.08,
+      "rightEyeWidth": 0.125,
+      "rightEyeTilt": 0,
+      "rightEyeAspect": 0.4,
+      "rightBrowLength": 0.18090169943749473,
+      "rightBrowTilt": 0.01550150646232318,
+      "rightBrowArch": 0.0973603431522683,
+      "rightBrowEyeGap": 0.08,
+      "noseBridgeLength": 0.15,
+      "noseBaseWidth": 0.1,
+      "mouthWidth": 0.3918985947228995,
+      "mouthAspect": 0.25354959474296423,
+      "upperLipThickness": 0.02,
+      "lowerLipThickness": 0.014,
+      "lowerFaceHeight": 0.30199999999999977,
+      "outlineUpperWidth": 0.9396926207859085,
+      "outlineMiddleWidth": 1,
+      "outlineLowerWidth": 0.9396926207859084,
+      "chinWidth": 0.7660444431189779
+    },
+    "featureSources": {
+      "outlineAspect": "face_detection",
+      "eyeSpacing": "face_detection",
+      "leftEyeWidth": "face_detection",
+      "leftEyeTilt": "face_detection",
+      "leftEyeAspect": "face_detection",
+      "leftBrowLength": "face_detection",
+      "leftBrowTilt": "face_detection",
+      "leftBrowArch": "face_detection",
+      "leftBrowEyeGap": "face_detection",
+      "rightEyeWidth": "face_detection",
+      "rightEyeTilt": "face_detection",
+      "rightEyeAspect": "face_detection",
+      "rightBrowLength": "face_detection",
+      "rightBrowTilt": "face_detection",
+      "rightBrowArch": "face_detection",
+      "rightBrowEyeGap": "face_detection",
+      "noseBridgeLength": "face_detection",
+      "noseBaseWidth": "face_detection",
+      "mouthWidth": "face_detection",
+      "mouthAspect": "face_detection",
+      "upperLipThickness": "face_detection",
+      "lowerLipThickness": "face_detection",
+      "lowerFaceHeight": "face_detection",
+      "outlineUpperWidth": "face_detection",
+      "outlineMiddleWidth": "face_detection",
+      "outlineLowerWidth": "face_detection",
+      "chinWidth": "face_detection"
+    },
+    "missing": [
+      "meshProjectedArea",
+      "meshRelativeZSpan"
+    ],
+    "limitations": [
+      "Số đo tương đối 2D của ảnh, chưa hiệu chuẩn; không phải phân loại dáng mặt.",
+      "Không đo undertone, giới tính, tình trạng da hoặc độ sâu giải phẫu.",
+      "Ánh sáng, che mặt và biểu cảm có thể ảnh hưởng số đo."
+    ]
+  },
+  "definitions": {
+    "outlineAspect": {
+      "value": 1.25,
+      "source": "face_mesh",
+      "points": "outline",
+      "formula": "span(Y)/span(X)",
+      "range": [
+        0.5,
+        2.5
+      ],
+      "use": "bố trí má và điểm nhấn",
+      "share": true
+    },
+    "eyeSpacing": {
+      "value": 0.3,
+      "source": "face_mesh",
+      "points": "leftEye,rightEye",
+      "formula": "distance(centroids)/outline width",
+      "range": [
+        0,
+        1
+      ],
+      "use": "eyeliner",
+      "share": true
+    },
+    "leftEyeWidth": {
+      "value": 0.125,
+      "source": "face_mesh",
+      "points": "leftEye",
+      "formula": "span(X)/outline width",
+      "range": [
+        0,
+        1
+      ],
+      "use": "phấn mắt",
+      "share": true
+    },
+    "leftEyeTilt": {
+      "value": 0,
+      "source": "face_mesh",
+      "points": "leftEye",
+      "formula": "abs(atan2(endpoint delta Y, endpoint delta X))/pi",
+      "range": [
+        0,
+        0.25
+      ],
+      "use": "hướng eyeliner tham khảo",
+      "share": true
+    },
+    "leftEyeAspect": {
+      "value": 0.4,
+      "source": "face_mesh",
+      "points": "leftEye",
+      "formula": "span(Y)/span(X)",
+      "range": [
+        0,
+        1
+      ],
+      "use": "eyeliner",
+      "share": true
+    },
+    "leftEyePosition": {
+      "value": 0.4,
+      "source": "face_mesh",
+      "points": "leftEye,outline",
+      "formula": "(centroid Y-top)/height",
+      "range": [
+        0,
+        1
+      ],
+      "use": "vị trí điểm nhấn",
+      "share": false
+    },
+    "leftBrowLength": {
+      "value": 0.18090169943749473,
+      "source": "face_mesh",
+      "points": "leftBrowTop",
+      "formula": "span(X)/width",
+      "range": [
+        0,
+        1
+      ],
+      "use": "kẻ mày",
+      "share": true
+    },
+    "leftBrowTilt": {
+      "value": 0.01550150646232318,
+      "source": "face_mesh",
+      "points": "leftBrowTop",
+      "formula": "abs(atan2(endpoint delta Y, endpoint delta X))/pi",
+      "range": [
+        0,
+        0.25
+      ],
+      "use": "hướng mày tham khảo",
+      "share": true
+    },
+    "leftBrowArch": {
+      "value": 0.0973603431522683,
+      "source": "face_mesh",
+      "points": "leftBrowTop",
+      "formula": "max distance to endpoint chord / brow width",
+      "range": [
+        0,
+        1
+      ],
+      "use": "mày mềm",
+      "share": true
+    },
+    "leftBrowEyeGap": {
+      "value": 0.08,
+      "source": "face_mesh",
+      "points": "leftBrowTop,leftEye",
+      "formula": "eye centroid Y minus brow centroid Y / height",
+      "range": [
+        0,
+        1
+      ],
+      "use": "khoảng tán phấn mắt",
+      "share": true
+    },
+    "rightEyeWidth": {
+      "value": 0.125,
+      "source": "face_mesh",
+      "points": "rightEye",
+      "formula": "span(X)/outline width",
+      "range": [
+        0,
+        1
+      ],
+      "use": "phấn mắt",
+      "share": true
+    },
+    "rightEyeTilt": {
+      "value": 0,
+      "source": "face_mesh",
+      "points": "rightEye",
+      "formula": "abs(atan2(endpoint delta Y, endpoint delta X))/pi",
+      "range": [
+        0,
+        0.25
+      ],
+      "use": "hướng eyeliner tham khảo",
+      "share": true
+    },
+    "rightEyeAspect": {
+      "value": 0.4,
+      "source": "face_mesh",
+      "points": "rightEye",
+      "formula": "span(Y)/span(X)",
+      "range": [
+        0,
+        1
+      ],
+      "use": "eyeliner",
+      "share": true
+    },
+    "rightEyePosition": {
+      "value": 0.4,
+      "source": "face_mesh",
+      "points": "rightEye,outline",
+      "formula": "(centroid Y-top)/height",
+      "range": [
+        0,
+        1
+      ],
+      "use": "vị trí điểm nhấn",
+      "share": false
+    },
+    "rightBrowLength": {
+      "value": 0.18090169943749473,
+      "source": "face_mesh",
+      "points": "rightBrowTop",
+      "formula": "span(X)/width",
+      "range": [
+        0,
+        1
+      ],
+      "use": "kẻ mày",
+      "share": true
+    },
+    "rightBrowTilt": {
+      "value": 0.01550150646232318,
+      "source": "face_mesh",
+      "points": "rightBrowTop",
+      "formula": "abs(atan2(endpoint delta Y, endpoint delta X))/pi",
+      "range": [
+        0,
+        0.25
+      ],
+      "use": "hướng mày tham khảo",
+      "share": true
+    },
+    "rightBrowArch": {
+      "value": 0.0973603431522683,
+      "source": "face_mesh",
+      "points": "rightBrowTop",
+      "formula": "max distance to endpoint chord / brow width",
+      "range": [
+        0,
+        1
+      ],
+      "use": "mày mềm",
+      "share": true
+    },
+    "rightBrowEyeGap": {
+      "value": 0.08,
+      "source": "face_mesh",
+      "points": "rightBrowTop,rightEye",
+      "formula": "eye centroid Y minus brow centroid Y / height",
+      "range": [
+        0,
+        1
+      ],
+      "use": "khoảng tán phấn mắt",
+      "share": true
+    },
+    "eyeWidthDifference": {
+      "value": 0,
+      "source": "face_mesh",
+      "points": "leftEye,rightEye",
+      "formula": "abs(width L-width R)/outline width",
+      "range": [
+        0,
+        1
+      ],
+      "use": "chỉ so sánh ảnh; không đánh giá ngoại hình",
+      "share": false
+    },
+    "noseBridgeLength": {
+      "value": 0.15,
+      "source": "face_mesh",
+      "points": "noseBridge",
+      "formula": "span(Y)/height",
+      "range": [
+        0,
+        1
+      ],
+      "use": "highlight tham khảo",
+      "share": true
+    },
+    "noseBaseWidth": {
+      "value": 0.1,
+      "source": "face_detection",
+      "points": "FaceContour.NOSE_BOTTOM[0..2]",
+      "formula": "span(X)/width",
+      "range": [
+        0,
+        1
+      ],
+      "use": "tạo khối tham khảo",
+      "share": true
+    },
+    "mouthWidth": {
+      "value": 0.3918985947228995,
+      "source": "face_mesh",
+      "points": "upperLipTop,lowerLipBottom",
+      "formula": "span(X)/width",
+      "range": [
+        0,
+        1
+      ],
+      "use": "son",
+      "share": true
+    },
+    "mouthAspect": {
+      "value": 0.25354959474296423,
+      "source": "face_mesh",
+      "points": "upperLipTop,lowerLipBottom",
+      "formula": "span(Y)/mouth width",
+      "range": [
+        0,
+        1
+      ],
+      "use": "viền môi",
+      "share": true
+    },
+    "upperLipThickness": {
+      "value": 0.02,
+      "source": "face_mesh",
+      "points": "upperLipTop,upperLipBottom",
+      "formula": "abs(centroid Y difference)/height",
+      "range": [
+        0,
+        1
+      ],
+      "use": "son",
+      "share": true
+    },
+    "lowerLipThickness": {
+      "value": 0.014,
+      "source": "face_mesh",
+      "points": "lowerLipTop,lowerLipBottom",
+      "formula": "abs(centroid Y difference)/height",
+      "range": [
+        0,
+        1
+      ],
+      "use": "son",
+      "share": true
+    },
+    "mouthPosition": {
+      "value": 0.6980000000000002,
+      "source": "face_mesh",
+      "points": "lips,outline",
+      "formula": "(mouth centroid Y-top)/height",
+      "range": [
+        0,
+        1
+      ],
+      "use": "vị trí môi",
+      "share": false
+    },
+    "lowerFaceHeight": {
+      "value": 0.30199999999999977,
+      "source": "face_mesh",
+      "points": "lips,outline",
+      "formula": "(bottom-mouth centroid Y)/height",
+      "range": [
+        0,
+        1
+      ],
+      "use": "highlight cằm tham khảo",
+      "share": true
+    },
+    "outlineUpperWidth": {
+      "value": 0.9396926207859085,
+      "source": "face_mesh",
+      "points": "outline band 0.25",
+      "formula": "span(X) within Y band +/- .08 / width",
+      "range": [
+        0,
+        1
+      ],
+      "use": "má/tạo khối tham khảo",
+      "share": true
+    },
+    "outlineMiddleWidth": {
+      "value": 1,
+      "source": "face_mesh",
+      "points": "outline band 0.5",
+      "formula": "span(X) within Y band +/- .08 / width",
+      "range": [
+        0,
+        1
+      ],
+      "use": "má/tạo khối tham khảo",
+      "share": true
+    },
+    "outlineLowerWidth": {
+      "value": 0.9396926207859084,
+      "source": "face_mesh",
+      "points": "outline band 0.75",
+      "formula": "span(X) within Y band +/- .08 / width",
+      "range": [
+        0,
+        1
+      ],
+      "use": "má/tạo khối tham khảo",
+      "share": true
+    },
+    "chinWidth": {
+      "value": 0.7660444431189779,
+      "source": "face_mesh",
+      "points": "outline band 0.9",
+      "formula": "span(X) within Y band +/- .08 / width",
+      "range": [
+        0,
+        1
+      ],
+      "use": "má/tạo khối tham khảo",
+      "share": true
+    },
+    "outlineCompactness": {
+      "value": 0.979088134945498,
+      "source": "face_mesh",
+      "points": "ordered outline",
+      "formula": "4*pi*polygon area/perimeter squared",
+      "range": [
+        0,
+        1
+      ],
+      "use": "chẩn đoán đường viền",
+      "share": false
+    },
+    "meshProjectedArea": {
+      "value": 0.0006595265010239733,
+      "source": "face_mesh",
+      "points": "all SDK triangles",
+      "formula": "sum projected triangle areas/(width*height)",
+      "range": [
+        0,
+        4
+      ],
+      "use": "chẩn đoán mesh",
+      "share": false
+    },
+    "meshRelativeZSpan": {
+      "value": 0,
+      "source": "face_mesh",
+      "points": "all 468 points",
+      "formula": "span(relative Z)/width; NOT physical depth",
+      "range": [
+        0,
+        4
+      ],
+      "use": "chẩn đoán mesh",
+      "share": false
+    }
+  }
+}

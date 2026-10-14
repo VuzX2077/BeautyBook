@@ -252,7 +252,18 @@ builder.Services.AddScoped<IChatRepository, ChatRepository>();
 builder.Services.AddSignalR();
 
 builder.Services.AddDataProtection();
+builder.Services.AddFeatureAdvisor(builder.Configuration, builder.Environment.IsDevelopment());
+builder.Services.Configure<AdvisorStyleMappingOptions>(builder.Configuration.GetSection("AdvisorStyleMappings"));
+builder.Services.AddScoped<AdvisorStyleMappings>();
 builder.Services.AddScoped<ExploreService>();
+builder.Services.AddScoped<IAiMakeupCatalogService>(services => services.GetRequiredService<ExploreService>());
+builder.Services.Configure<AiMakeupOptions>(builder.Configuration.GetSection("AiMakeup"));
+builder.Services.Configure<GeminiOptions>(builder.Configuration.GetSection("Gemini"));
+builder.Services.AddSingleton<AiMakeupConcurrency>();
+builder.Services.AddScoped<IAiMakeupQuotaRepository, AiMakeupQuotaRepository>();
+builder.Services.AddScoped<IAiMakeupService, AiMakeupService>();
+builder.Services.AddHttpClient<IGeminiMakeupProvider, GeminiMakeupProvider>(client => client.Timeout = Timeout.InfiniteTimeSpan)
+    .RemoveAllLoggers();
 builder.Services.AddScoped<ComplaintService>();
 builder.Services.AddScoped<ModerationService>();
 

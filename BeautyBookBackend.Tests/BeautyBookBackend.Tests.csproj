@@ -23,4 +23,7 @@
     <ProjectReference Include="..\BeautyBook.StorageDiagnostics\BeautyBook.StorageDiagnostics.csproj" />
     <ProjectReference Include="..\BeautyBook.StorageVerification\BeautyBook.StorageVerification.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <None Update="Fixtures\FrontendFeatureSummary.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

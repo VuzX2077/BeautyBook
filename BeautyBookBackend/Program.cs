@@ -16,7 +16,6 @@ using BeautyBookBackend.Infrastructure;
 using Microsoft.AspNetCore.HttpOverrides;
 
 var builder = WebApplication.CreateBuilder(args);
-
 // Build PostgreSQL connection string from configuration and optional environment variables.
 var baseConn = builder.Configuration.GetConnectionString("DefaultConnection");
 var dbHost = Environment.GetEnvironmentVariable("DB_HOST");

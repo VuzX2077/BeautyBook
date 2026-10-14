@@ -18,12 +18,11 @@
     </PackageReference>
   </ItemGroup>
   <ItemGroup>
+    <None Update="Fixtures\FrontendFeatureSummary.json" CopyToOutputDirectory="PreserveNewest" />
     <ProjectReference Include="..\BeautyBookBackend\BeautyBookBackend.csproj" />
+    <ProjectReference Include="..\BeautyBookAdvisor.Api\BeautyBookAdvisor.Api.csproj" />
     <ProjectReference Include="..\BeautyBook.PlayReviewProvisioning\BeautyBook.PlayReviewProvisioning.csproj" />
     <ProjectReference Include="..\BeautyBook.StorageDiagnostics\BeautyBook.StorageDiagnostics.csproj" />
     <ProjectReference Include="..\BeautyBook.StorageVerification\BeautyBook.StorageVerification.csproj" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Update="Fixtures\FrontendFeatureSummary.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

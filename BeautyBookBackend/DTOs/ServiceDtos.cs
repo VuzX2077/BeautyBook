@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 
 namespace BeautyBookBackend.DTOs
 {
+    public sealed record ServiceStyleTagDto(int StyleId, string? Name, bool IsActive);
     public class ServiceDto
     {
         public Guid ServiceId { get; set; }
@@ -13,6 +14,8 @@ namespace BeautyBookBackend.DTOs
         public string? ImageUrl { get; set; }
         public List<string> ImageUrls { get; set; } = new();
         public List<string> Tags { get; set; } = new();
+        public List<int> StyleIds { get; set; } = new();
+        public List<ServiceStyleTagDto> StyleTags { get; set; } = new();
         public bool IsActive { get; set; }
     }
 
@@ -35,7 +38,11 @@ namespace BeautyBookBackend.DTOs
 
         public string? ImageUrl { get; set; }
         [MaxLength(5)] public List<string>? ImageUrls { get; set; }
-        public List<string> Tags { get; set; } = new();
+        // Null means omitted/preserve on update; [] means explicitly clear.
+        public List<string>? Tags { get; set; }
+        public List<int>? StyleIds { get; set; }
+        public List<string>? NewStyleNames { get; set; }
+        public Guid? RequestId { get; set; }
         public bool IsActive { get; set; } = true;
         public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
         {

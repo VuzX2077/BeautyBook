@@ -10,7 +10,7 @@ namespace BeautyBookBackend.Services;
 public sealed class MakeupStyleConflictException() : Exception("Tên phong cách đã tồn tại. Hãy chọn tên khác.");
 public sealed class AdminMakeupStyleService(ApplicationDbContext db)
 {
-    public static string NormalizeName(string? name) => Regex.Replace((name ?? "").Normalize(NormalizationForm.FormKC).Trim(), @"\s+", " ");
+    public static string NormalizeName(string? name) => UnifiedStyleService.DisplayName(name);
     public static string? Validate(AdminMakeupStyleWriteRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Name)) return "Nhập tên phong cách.";
@@ -47,10 +47,17 @@ public sealed class AdminMakeupStyleService(ApplicationDbContext db)
         var style = id.HasValue ? await db.MakeupStyles.SingleOrDefaultAsync(x => x.StyleId == id, ct) : new MakeupStyle();
         if (style == null) return null;
         var name = NormalizeName(request.Name);
-        var folded = name.ToLower();
-        if (await db.MakeupStyles.AnyAsync(x => x.StyleId != (id ?? 0) && x.Name != null && x.Name.ToLower() == folded, ct))
+        if (await new UnifiedStyleService(db).FindName(name, id) != null)
             throw new MakeupStyleConflictException();
+        var oldName = style.Name;
+        if (id.HasValue && oldName != name)
+        {
+            var services = await db.Services.Where(x => db.ServiceStyles.Any(link => link.ServiceId == x.ServiceId && link.StyleId == id)).ToListAsync(ct);
+            foreach (var service in services)
+                service.Tags = service.Tags.Select(x => UnifiedStyleService.NameKey(x) == UnifiedStyleService.NameKey(oldName) ? name : x).Distinct().ToList();
+        }
         style.Name = name;
+        style.NormalizedName = UnifiedStyleService.NameKey(name);
         style.Description = request.Description?.Trim();
         if (!id.HasValue) db.MakeupStyles.Add(style);
         await db.SaveChangesAsync(ct);

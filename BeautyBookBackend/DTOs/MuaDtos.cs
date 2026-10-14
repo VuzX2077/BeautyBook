@@ -146,7 +146,8 @@ namespace BeautyBookBackend.DTOs
         public string? SocialLinks { get; set; }
         public string? InstagramUrl { get; set; }
         public string? FacebookUrl { get; set; }
-        [MinLength(1), MaxLength(5)] public List<int>? StyleIds { get; set; }
+        public List<int>? StyleIds { get; set; }
+        public List<string>? NewStyleNames { get; set; }
         public string? DisplayName { get; set; }
     }
 

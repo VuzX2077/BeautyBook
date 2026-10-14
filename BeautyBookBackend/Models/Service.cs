@@ -14,6 +14,8 @@ namespace BeautyBookBackend.Models
         public string? ImageUrl { get; set; }
         public List<string> ImageUrls { get; set; } = new();
         public List<string> Tags { get; set; } = new();
+        public List<ServiceStyle> Styles { get; set; } = new();
+        public string? CreateRequestHash { get; set; }
         public bool IsActive { get; set; } = true;
 
         public MakeupArtistProfile? MakeupArtistProfile { get; set; }

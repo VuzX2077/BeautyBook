@@ -23,6 +23,7 @@ namespace BeautyBookBackend.Data
         public DbSet<MakeupArtistProfile> MakeupArtistProfiles { get; set; } = null!;
         public DbSet<MakeupStyle> MakeupStyles { get; set; } = null!;
         public DbSet<MUAStyle> MUAStyles { get; set; } = null!;
+        public DbSet<ServiceStyle> ServiceStyles { get; set; } = null!;
         public DbSet<Portfolio> Portfolios { get; set; } = null!;
         public DbSet<Service> Services { get; set; } = null!;
         public DbSet<MuaWorkingSchedule> MuaWorkingSchedules { get; set; } = null!;
@@ -238,6 +239,8 @@ namespace BeautyBookBackend.Data
             {
                 b.HasKey(s => s.StyleId);
                 b.Property(s => s.Name).HasMaxLength(100);
+                b.Property(s => s.NormalizedName).HasMaxLength(100);
+                b.HasIndex(s => s.NormalizedName).IsUnique();
                 b.Property(s => s.Description).HasMaxLength(255);
                 b.Property(s => s.IsActive).HasDefaultValue(true);
                 b.HasIndex(s => s.Name).IsUnique();
@@ -325,12 +328,21 @@ namespace BeautyBookBackend.Data
                 b.Property(s => s.IsActive).HasDefaultValue(true);
                 b.Property(s => s.ServiceName).HasMaxLength(100);
                 b.Property(s => s.Description).HasMaxLength(500);
+                b.Property(s => s.CreateRequestHash).HasMaxLength(64);
                 b.Property(s => s.Price).HasPrecision(18, 2);
 
                 b.HasOne(s => s.MakeupArtistProfile)
                     .WithMany(m => m.Services)
                     .HasForeignKey(s => s.MUAId)
                     .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<ServiceStyle>(b =>
+            {
+                b.HasKey(s => new { s.ServiceId, s.StyleId });
+                b.HasIndex(s => s.StyleId);
+                b.HasOne(s => s.Service).WithMany(s => s.Styles).HasForeignKey(s => s.ServiceId).OnDelete(DeleteBehavior.Cascade);
+                b.HasOne(s => s.MakeupStyle).WithMany().HasForeignKey(s => s.StyleId).OnDelete(DeleteBehavior.Restrict);
             });
 
             modelBuilder.Entity<MuaWorkingSchedule>(b =>

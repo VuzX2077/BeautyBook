@@ -67,6 +67,7 @@ namespace BeautyBookBackend.Repositories
         public Task<List<MakeupService>> GetServicesByMuaIdAsync(Guid muaId)
         {
             return _context.Services
+                .Include(s => s.Styles).ThenInclude(s => s.MakeupStyle)
                 .Where(s => s.MUAId == muaId)
                 .OrderBy(s => s.Price)
                 .ThenBy(s => s.ServiceName)
@@ -83,7 +84,7 @@ namespace BeautyBookBackend.Repositories
 
         public Task<MakeupService?> GetServiceByIdForMuaAsync(Guid serviceId, Guid muaId)
         {
-            return _context.Services.FirstOrDefaultAsync(s => s.ServiceId == serviceId && s.MUAId == muaId);
+            return _context.Services.Include(s => s.Styles).ThenInclude(s => s.MakeupStyle).FirstOrDefaultAsync(s => s.ServiceId == serviceId && s.MUAId == muaId);
         }
 
         public Task AddServiceAsync(MakeupService service)

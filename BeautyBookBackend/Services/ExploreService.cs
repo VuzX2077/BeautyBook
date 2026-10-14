@@ -109,7 +109,9 @@ public sealed class ExploreService(ApplicationDbContext db, IDataProtectionProvi
         return services.Select(s => new ExploreServiceItem {
             Id = s.ServiceId, MuaId = s.MUAId, Name = s.ServiceName ?? "", Price = s.Price,
             AuthorName = s.MakeupArtistProfile!.User!.FullName ?? "", City = s.MakeupArtistProfile.City,
-            DurationMinutes = s.DurationMinutes, ImageUrl = s.ImageUrl, ImageUrls = s.ImageUrls, Tags = s.Tags
+            DurationMinutes = s.DurationMinutes, ImageUrl = s.ImageUrl, ImageUrls = s.ImageUrls, Tags = s.Tags,
+            StyleIds = s.Styles.OrderBy(x => x.StyleId).Select(x => x.StyleId).ToList(),
+            StyleTags = s.Styles.OrderBy(x => x.StyleId).Select(x => new ServiceStyleTagDto(x.StyleId, x.MakeupStyle.Name, x.MakeupStyle.IsActive)).ToList()
         });
     }
 

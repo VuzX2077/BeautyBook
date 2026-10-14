@@ -1063,9 +1063,16 @@ namespace BeautyBookBackend.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
+                    b.Property<string>("NormalizedName")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
                     b.HasKey("StyleId");
 
                     b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.HasIndex("NormalizedName")
                         .IsUnique();
 
                     b.ToTable("MakeupStyles");
@@ -1964,6 +1971,10 @@ namespace BeautyBookBackend.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<string>("CreateRequestHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
                     b.Property<string>("Description")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
@@ -2005,6 +2016,21 @@ namespace BeautyBookBackend.Migrations
                     b.HasIndex("IsActive", "Price", "ServiceId");
 
                     b.ToTable("Services");
+                });
+
+            modelBuilder.Entity("BeautyBookBackend.Models.ServiceStyle", b =>
+                {
+                    b.Property<Guid>("ServiceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("StyleId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("ServiceId", "StyleId");
+
+                    b.HasIndex("StyleId");
+
+                    b.ToTable("ServiceStyles");
                 });
 
             modelBuilder.Entity("BeautyBookBackend.Models.User", b =>
@@ -2933,6 +2959,25 @@ namespace BeautyBookBackend.Migrations
                     b.Navigation("MakeupArtistProfile");
                 });
 
+            modelBuilder.Entity("BeautyBookBackend.Models.ServiceStyle", b =>
+                {
+                    b.HasOne("BeautyBookBackend.Models.Service", "Service")
+                        .WithMany("Styles")
+                        .HasForeignKey("ServiceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("BeautyBookBackend.Models.MakeupStyle", "MakeupStyle")
+                        .WithMany()
+                        .HasForeignKey("StyleId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("MakeupStyle");
+
+                    b.Navigation("Service");
+                });
+
             modelBuilder.Entity("BeautyBookBackend.Models.UserBlock", b =>
                 {
                     b.HasOne("BeautyBookBackend.Models.User", null)
@@ -3061,6 +3106,11 @@ namespace BeautyBookBackend.Migrations
             modelBuilder.Entity("BeautyBookBackend.Models.PortfolioComment", b =>
                 {
                     b.Navigation("Replies");
+                });
+
+            modelBuilder.Entity("BeautyBookBackend.Models.Service", b =>
+                {
+                    b.Navigation("Styles");
                 });
 
             modelBuilder.Entity("BeautyBookBackend.Models.User", b =>

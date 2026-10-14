@@ -67,4 +67,6 @@ public sealed class ExploreServiceItem
     public string? ImageUrl { get; set; }
     public List<string> ImageUrls { get; set; } = new();
     public List<string> Tags { get; set; } = new();
+    public List<int> StyleIds { get; set; } = new();
+    public List<ServiceStyleTagDto> StyleTags { get; set; } = new();
 }

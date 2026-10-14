@@ -188,7 +188,10 @@ namespace BeautyBookBackend.Services
             return VerifyPasswordHash(password, user.PasswordHash);
         }
 
-        public async Task<TokenDto?> BecomeMuaAsync(Guid userId, MuaApplicationRequestDto request)
+        public Task<TokenDto?> BecomeMuaAsync(Guid userId, MuaApplicationRequestDto request) =>
+            new UnifiedStyleService(_dbContext).Write(userId, () => BecomeMuaCore(userId, request), x => x != null);
+
+        private async Task<TokenDto?> BecomeMuaCore(Guid userId, MuaApplicationRequestDto request)
         {
             if (!WorkLocationPolicy.ValidCoordinates(request.Latitude, request.Longitude)) return null;
             if ((request.WorkLocationAddress != null || request.WorkLocationName != null || request.AllowCustomerVisit)
@@ -199,22 +202,7 @@ namespace BeautyBookBackend.Services
                 return null;
             }
 
-            await using var transaction = await _dbContext.Database.BeginTransactionAsync();
-            var lockKey = $"mua-onboarding:{user.UserId:N}";
-            await _dbContext.Database.ExecuteSqlInterpolatedAsync(
-                $"SELECT pg_advisory_xact_lock(hashtextextended({lockKey}, 0))");
-
-            var styleIds = request.StyleIds.Distinct().ToList();
-            var validStyleIds = await _dbContext.MakeupStyles
-                .Where(style => styleIds.Contains(style.StyleId) && style.IsActive)
-                .Select(style => style.StyleId)
-                .ToListAsync();
-            if (styleIds.Count == 0 || request.StyleIds.Count > 5 || validStyleIds.Count != styleIds.Count)
-            {
-                await transaction.RollbackAsync();
-                return null;
-            }
-
+            await new UnifiedStyleService(_dbContext).EnsureWritable(userId, requireProfile: false);
             var profile = await _dbContext.MakeupArtistProfiles.FirstOrDefaultAsync(x => x.MUAId == user.UserId);
             if (profile == null)
             {
@@ -230,7 +218,6 @@ namespace BeautyBookBackend.Services
             }
             else if (profile.VerificationStatus is MuaVerificationStatus.PendingReview or MuaVerificationStatus.Approved)
             {
-                await transaction.RollbackAsync();
                 return null;
             }
 
@@ -269,14 +256,10 @@ namespace BeautyBookBackend.Services
             profile.SocialLinks = request.SocialLinks?.Trim();
             profile.Address = request.Address?.Trim();
 
-            var oldStyles = await _muaRepository.GetStyleLinksByMuaIdAsync(userId);
-            _muaRepository.RemoveStyleLinks(oldStyles);
-            foreach (var styleId in validStyleIds)
-                await _muaRepository.AddMuaStyleAsync(new MUAStyle { MUAId = userId, StyleId = styleId });
+            await new UnifiedStyleService(_dbContext).ReplaceSpecialties(userId, request.StyleIds, request.NewStyleNames);
 
             user.Role = UserRole.MUA;
             await _unitOfWork.SaveChangesAsync();
-            await transaction.CommitAsync();
 
             return await GenerateJwtTokenAsync(user);
         }

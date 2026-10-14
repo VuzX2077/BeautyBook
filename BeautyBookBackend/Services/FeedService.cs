@@ -55,7 +55,8 @@ namespace BeautyBookBackend.Services
         {
             var posts = await PublicPosts(userId).Where(p => ids.Contains(p.PortfolioId))
                 .Include(p => p.MakeupArtistProfile).ThenInclude(m => m!.User)
-                .Include(p => p.Likes).Include(p => p.Saves).Include(p => p.Comments).Include(p => p.Service)
+                .Include(p => p.Likes).Include(p => p.Saves).Include(p => p.Comments)
+                .Include(p => p.Service).ThenInclude(s => s!.Styles).ThenInclude(s => s.MakeupStyle)
                 .AsSplitQuery().ToListAsync();
             var byId = posts.ToDictionary(p => p.PortfolioId);
             var result = new List<FeedItemDto>();
@@ -161,7 +162,9 @@ namespace BeautyBookBackend.Services
                     Price = p.Service.Price,
                     DurationMinutes = p.Service.DurationMinutes,
                     ImageUrl = p.Service.ImageUrl,
-                    Tags = p.Service.Tags ?? new List<string>(),
+                    Tags = UnifiedStyleService.LegacyTags(p.Service),
+                    StyleIds = p.Service.Styles.Select(x => x.StyleId).OrderBy(x => x).ToList(),
+                    StyleTags = UnifiedStyleService.StyleTags(p.Service),
                     IsActive = p.Service.IsActive
                 }
             };

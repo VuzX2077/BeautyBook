@@ -43,15 +43,18 @@ namespace BeautyBookBackend.DTOs
         [Required(ErrorMessage = "Vui lòng thêm ảnh đại diện.")]
         [Url(ErrorMessage = "Ảnh đại diện phải là URL công khai hợp lệ.")]
         public string AvatarUrl { get; set; } = null!;
-        [MinLength(1, ErrorMessage = "Vui lòng chọn ít nhất một chuyên môn.")]
-        [MaxLength(5, ErrorMessage = "Chỉ được chọn tối đa 5 phong cách.")]
-        public List<int> StyleIds { get; set; } = new();
+        [Required] public List<int> StyleIds { get; set; } = new();
+        public List<string>? NewStyleNames { get; set; }
 
         [StringLength(300)]
         public string? Address { get; set; }
 
         public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
         {
+            if ((StyleIds?.Count ?? 0) == 0 && (NewStyleNames == null || NewStyleNames.Count == 0))
+                yield return new ValidationResult("Vui lòng chọn ít nhất một chuyên môn.", new[] { nameof(StyleIds) });
+            if (StyleIds?.Distinct().Count() > 20)
+                yield return new ValidationResult("Chỉ được chọn tối đa 20 phong cách.", new[] { nameof(StyleIds) });
             if ((WorkLocationAddress != null || WorkLocationName != null || AllowCustomerVisit)
                 && !Services.WorkLocationPolicy.Valid(WorkLocationName, WorkLocationAddress, Latitude, Longitude, OperatingLocationConfirmed, AllowCustomerVisit))
                 yield return new ValidationResult("Vui lòng nhập địa chỉ nơi làm việc hợp lệ; GPS không bắt buộc.", new[] { nameof(WorkLocationAddress) });

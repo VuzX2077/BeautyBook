@@ -55,7 +55,10 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseNpgsql(connectionString));
 
 // Add services to the container.
-builder.Services.AddControllers(options => options.Filters.Add<PlayReviewExceptionFilter>());
+builder.Services.AddControllers(options => {
+    options.Filters.Add<PlayReviewExceptionFilter>();
+    options.Filters.Add<StyleWriteExceptionFilter>();
+});
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<PlayReviewPolicy>();
 builder.Services.Configure<PlayReviewOptions>(builder.Configuration.GetSection("PlayReview"));

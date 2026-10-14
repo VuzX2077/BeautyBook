@@ -30,9 +30,11 @@ public class MuaOnboardingValidationTests
     }
 
     [Fact]
-    public void RejectsMoreThanFiveStyles()
+    public void AllowsTwentyStylesAndRejectsTwentyOne()
     {
-        var request = Draft(); request.StyleIds = new() { 1, 2, 3, 4, 5, 6 };
+        var request = Draft(); request.StyleIds = Enumerable.Range(1,20).ToList();
+        Assert.True(Valid(request));
+        request.StyleIds.Add(21);
         Assert.False(Valid(request));
     }
 

@@ -50,9 +50,9 @@ public sealed class PostgreSqlMakeupStyleTests
         var publicRows=(await client.GetFromJsonAsync<List<MakeupStyleDto>>("/api/Mua/styles"))!;
         Assert.DoesNotContain(publicRows,x=>x.StyleId==style.StyleId);
         await using(var relationships=database.CreateContext()) Assert.True(await relationships.MUAStyles.AnyAsync(x=>x.MUAId==mua&&x.StyleId==style.StyleId));
-        // Legacy selection still validates active IDs before replacing links.
-        Assert.Equal(HttpStatusCode.BadRequest,(await muaClient.PutAsJsonAsync("/api/Mua/styles",new[]{style.StyleId})).StatusCode);
-        Assert.Equal(HttpStatusCode.BadRequest,(await muaClient.PostAsJsonAsync("/api/Mua/styles/select-or-create",new{Name="Korean Integration"})).StatusCode);
+        // Retain historical inactive specialties, but do not select/create new inactive links.
+        Assert.Equal(HttpStatusCode.OK,(await muaClient.PutAsJsonAsync("/api/Mua/styles",new[]{style.StyleId})).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict,(await muaClient.PostAsJsonAsync("/api/Mua/styles/select-or-create",new{Name="Korean Integration"})).StatusCode);
         Assert.Equal(HttpStatusCode.OK,(await client.PatchAsJsonAsync(path+$"/{style.StyleId}/status",new{isActive=true})).StatusCode);
         Assert.Contains((await client.GetFromJsonAsync<List<MakeupStyleDto>>("/api/Mua/styles"))!,x=>x.StyleId==style.StyleId);
         // New management create and legacy select-or-create serialize together.

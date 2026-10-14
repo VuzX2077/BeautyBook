@@ -111,8 +111,12 @@ namespace BeautyBookBackend.Services
             return dto;
         }
 
-        public async Task<bool> UpdateMuaProfileAsync(Guid muaId, MuaUpdateDto updateDto)
+        public Task<bool> UpdateMuaProfileAsync(Guid muaId, MuaUpdateDto updateDto) =>
+            new UnifiedStyleService(_dbContext).Write(muaId, () => UpdateMuaProfileCore(muaId, updateDto), x => x);
+
+        private async Task<bool> UpdateMuaProfileCore(Guid muaId, MuaUpdateDto updateDto)
         {
+            await new UnifiedStyleService(_dbContext).EnsureWritable(muaId);
             var profile = await _muaRepository.GetProfileWithFullDetailsAsync(muaId);
             if (profile == null) return false;
             var updatingWorkLocation = updateDto.WorkLocationAddress != null || updateDto.WorkLocationName != null || updateDto.AllowCustomerVisit.HasValue;
@@ -167,20 +171,7 @@ namespace BeautyBookBackend.Services
             if (updateDto.InstagramUrl != null) profile.InstagramUrl = updateDto.InstagramUrl;
             if (updateDto.FacebookUrl != null) profile.FacebookUrl = updateDto.FacebookUrl;
 
-            if (updateDto.StyleIds != null)
-            {
-                var styleIds = updateDto.StyleIds.Distinct().ToList();
-                var validStyleIds = await _dbContext.MakeupStyles
-                    .Where(style => styleIds.Contains(style.StyleId) && style.IsActive)
-                    .Select(style => style.StyleId)
-                    .ToListAsync();
-                if (validStyleIds.Count != styleIds.Count) return false;
-
-                var oldStyles = await _muaRepository.GetStyleLinksByMuaIdAsync(muaId);
-                _muaRepository.RemoveStyleLinks(oldStyles);
-                foreach (var styleId in validStyleIds)
-                    await _muaRepository.AddMuaStyleAsync(new MUAStyle { MUAId = muaId, StyleId = styleId });
-            }
+            await new UnifiedStyleService(_dbContext).ReplaceSpecialties(muaId, updateDto.StyleIds, updateDto.NewStyleNames);
 
             if (profile.User != null)
             {
@@ -225,13 +216,32 @@ namespace BeautyBookBackend.Services
             return services.Select(ToServiceDto).ToList();
         }
 
-        public async Task<ServiceDto?> AddMuaServiceAsync(Guid muaId, ServiceCreateDto serviceDto)
+        public Task<ServiceDto?> AddMuaServiceAsync(Guid muaId, ServiceCreateDto serviceDto) =>
+            new UnifiedStyleService(_dbContext).Write(muaId, () => AddMuaServiceCore(muaId, serviceDto), x => x != null);
+
+        private async Task<ServiceDto?> AddMuaServiceCore(Guid muaId, ServiceCreateDto serviceDto)
         {
+            await new UnifiedStyleService(_dbContext).EnsureWritable(muaId);
             if (!await _muaRepository.ProfileExistsAsync(muaId)) return null;
+
+            if (serviceDto.RequestId == Guid.Empty) throw new StyleWriteException("STYLE_PAYLOAD_INVALID", "requestId không hợp lệ.");
+            var requestHash = UnifiedStyleService.RequestHash(serviceDto);
+            if (serviceDto.RequestId.HasValue)
+            {
+                var previous = await _dbContext.Services.Include(x => x.Styles).ThenInclude(x => x.MakeupStyle)
+                    .SingleOrDefaultAsync(x => x.ServiceId == serviceDto.RequestId);
+                if (previous != null)
+                {
+                    if (previous.MUAId != muaId || previous.CreateRequestHash != requestHash)
+                        throw new StyleWriteException("SERVICE_REQUEST_CONFLICT", "requestId đã được sử dụng cho yêu cầu khác.", 409);
+                    return ToServiceDto(previous);
+                }
+            }
 
             var service = new MakeupService
             {
-                ServiceId = Guid.NewGuid(),
+                ServiceId = serviceDto.RequestId ?? Guid.NewGuid(),
+                CreateRequestHash = requestHash,
                 MUAId = muaId,
                 ServiceName = serviceDto.ServiceName,
                 Description = serviceDto.Description,
@@ -244,13 +254,18 @@ namespace BeautyBookBackend.Services
             };
 
             await _muaRepository.AddServiceAsync(service);
+            await new UnifiedStyleService(_dbContext).ApplyService(muaId, service, serviceDto);
             var success = await _unitOfWork.SaveChangesAsync() > 0;
             if (success) await _eligibilityService.EvaluateAsync(muaId);
             return ToServiceDto(service);
         }
 
-        public async Task<bool> UpdateMuaServiceAsync(Guid muaId, Guid serviceId, ServiceCreateDto serviceDto)
+        public Task<bool> UpdateMuaServiceAsync(Guid muaId, Guid serviceId, ServiceCreateDto serviceDto) =>
+            new UnifiedStyleService(_dbContext).Write(muaId, () => UpdateMuaServiceCore(muaId, serviceId, serviceDto), x => x);
+
+        private async Task<bool> UpdateMuaServiceCore(Guid muaId, Guid serviceId, ServiceCreateDto serviceDto)
         {
+            await new UnifiedStyleService(_dbContext).EnsureWritable(muaId);
             var service = await _muaRepository.GetServiceByIdForMuaAsync(serviceId, muaId);
             if (service == null) return false;
 
@@ -260,7 +275,7 @@ namespace BeautyBookBackend.Services
             service.DurationMinutes = serviceDto.DurationMinutes;
             service.ImageUrl = serviceDto.ImageUrls?.FirstOrDefault() ?? serviceDto.ImageUrl;
             service.ImageUrls = serviceDto.ImageUrls ?? (string.IsNullOrWhiteSpace(serviceDto.ImageUrl) ? new() : new() { serviceDto.ImageUrl });
-            service.Tags = serviceDto.Tags ?? new List<string>();
+            await new UnifiedStyleService(_dbContext).ApplyService(muaId, service, serviceDto);
             service.IsActive = serviceDto.IsActive;
 
             await _unitOfWork.SaveChangesAsync();
@@ -297,7 +312,7 @@ namespace BeautyBookBackend.Services
                 .Include(p => p.Comments)
                 .Include(p => p.MakeupArtistProfile)
                 .ThenInclude(m => m.User)
-                .Include(p => p.Service)
+                .Include(p => p.Service).ThenInclude(s => s!.Styles).ThenInclude(s => s.MakeupStyle)
                 .Where(p => p.MUAId == muaId)
                 .OrderByDescending(p => p.CreatedAt)
                 .ToListAsync();
@@ -557,7 +572,7 @@ namespace BeautyBookBackend.Services
             var query = _dbContext.Portfolios
                 .Include(p => p.Likes).Include(p => p.Saves).Include(p => p.Comments)
                 .Include(p => p.MakeupArtistProfile).ThenInclude(m => m.User)
-                .Include(p => p.Service).AsQueryable();
+                .Include(p => p.Service).ThenInclude(s => s!.Styles).ThenInclude(s => s.MakeupStyle).AsQueryable();
             query = ModerationService.VisiblePortfolios(_dbContext, query, userId);
             query = query.Where(p => !p.IsHidden
                 && p.MakeupArtistProfile != null
@@ -571,34 +586,15 @@ namespace BeautyBookBackend.Services
             return posts.Select(p => new PortfolioDto { PortfolioId = p.PortfolioId, MUAId = p.MUAId, Title = p.Title, ImageUrls = p.ImageUrls.Where(MuaEligibilityService.IsValidPublicUrl).ToList(), Description = p.Description, Tags = p.Tags, CreatedAt = p.CreatedAt, LikesCount = p.Likes.Count, CommentsCount = p.Comments.Count, SavesCount = p.Saves.Count, IsLiked = p.Likes.Any(x => x.UserId == userId), IsSaved = p.Saves.Any(x => x.UserId == userId), AuthorName = p.MakeupArtistProfile?.User?.FullName, AuthorAvatarUrl = p.MakeupArtistProfile?.User?.AvatarUrl, Service = p.Service == null ? null : ToServiceDto(p.Service) }).Where(p => p.ImageUrls.Count > 0).ToList();
         }
 
-        public async Task<bool> UpdateStylesAsync(Guid muaId, List<int> styleIds)
-        {
-            if (styleIds.Count < 1 || styleIds.Count > 5) return false;
-            if (!await _muaRepository.ProfileExistsAsync(muaId)) return false;
-
-            var distinctStyleIds = styleIds.Distinct().ToList();
-            var validStyleIds = await _dbContext.MakeupStyles
-                .Where(style => distinctStyleIds.Contains(style.StyleId) && style.IsActive)
-                .Select(style => style.StyleId)
-                .ToListAsync();
-            if (validStyleIds.Count != distinctStyleIds.Count) return false;
-
-            var oldStyles = await _muaRepository.GetStyleLinksByMuaIdAsync(muaId);
-            _muaRepository.RemoveStyleLinks(oldStyles);
-
-            foreach (var styleId in validStyleIds)
-            {
-                await _muaRepository.AddMuaStyleAsync(new MUAStyle
-                {
-                    MUAId = muaId,
-                    StyleId = styleId
-                });
-            }
-
-            await _unitOfWork.SaveChangesAsync();
-            await _eligibilityService.EvaluateAsync(muaId);
-            return true;
-        }
+        public Task<bool> UpdateStylesAsync(Guid muaId, List<int> styleIds) =>
+            new UnifiedStyleService(_dbContext).Write(muaId, async () => {
+                var styles = new UnifiedStyleService(_dbContext);
+                await styles.EnsureWritable(muaId);
+                await styles.ReplaceSpecialties(muaId, styleIds, null);
+                await _unitOfWork.SaveChangesAsync();
+                await _eligibilityService.EvaluateAsync(muaId);
+                return true;
+            });
 
         public async Task<List<MakeupStyleDto>> GetAllStylesAsync()
         {
@@ -608,32 +604,14 @@ namespace BeautyBookBackend.Services
 
         public async Task<MakeupStyleDto?> CreateStyleAsync(CreateMakeupStyleRequest request)
         {
-            var name = System.Text.RegularExpressions.Regex.Replace(request.Name.Normalize(System.Text.NormalizationForm.FormKC).Trim(), @"\s+", " ");
-            if (name.Length == 0 || name.Length > 100) return null;
-            await using var transaction = await _dbContext.Database.BeginTransactionAsync();
-            await _dbContext.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock(hashtextextended('makeup-style:create', 0))");
-            var existing = await _dbContext.MakeupStyles.FirstOrDefaultAsync(style => style.Name != null && style.Name.ToLower() == name.ToLower());
-            if (existing != null)
-            {
-                if (!existing.IsActive) return null;
-                await transaction.CommitAsync();
-                return ToMakeupStyleDto(existing);
-            }
-
             var actorClaim = _httpContextAccessor?.HttpContext?.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-            if (!Guid.TryParse(actorClaim, out var actorId)) throw new InvalidOperationException("Cannot resolve style creator.");
-            await new PlayReviewPolicy(_dbContext).EnsureNormalUserAsync(actorId);
-            var style = new MakeupStyle
-            {
-                Name = name,
-                Description = request.Description?.Trim(),
-                IsActive = true,
-                CreatedAt = DateTime.UtcNow
-            };
-            _dbContext.MakeupStyles.Add(style);
-            await _unitOfWork.SaveChangesAsync();
-            await transaction.CommitAsync();
-            return ToMakeupStyleDto(style);
+            if (!Guid.TryParse(actorClaim, out var actor)) throw new StyleWriteException("STYLE_AUTH_REQUIRED", "Vui lòng đăng nhập.", 401);
+            var styles = new UnifiedStyleService(_dbContext);
+            return await styles.Write(actor, async () => {
+                await styles.EnsureWritable(actor, requireProfile: false);
+                var style = await styles.ResolveNewName(actor, request.Name, request.Description);
+                return ToMakeupStyleDto(style);
+            });
         }
 
         private MuaProfileDto ToMuaProfileDto(MakeupArtistProfile profile, List<string> styles)
@@ -727,8 +705,10 @@ namespace BeautyBookBackend.Services
             return dto;
         }
 
-        private static ServiceDto ToServiceDto(MakeupService service)
+        private ServiceDto ToServiceDto(MakeupService service)
         {
+            if (_dbContext.Entry(service).State != EntityState.Detached && !_dbContext.Entry(service).Collection(x => x.Styles).IsLoaded)
+                _dbContext.Entry(service).Collection(x => x.Styles).Query().Include(x => x.MakeupStyle).Load();
             return new ServiceDto
             {
                 ServiceId = service.ServiceId,
@@ -739,7 +719,9 @@ namespace BeautyBookBackend.Services
                 DurationMinutes = service.DurationMinutes,
                 ImageUrl = service.ImageUrl,
                 ImageUrls = service.ImageUrls.Count > 0 ? service.ImageUrls : (string.IsNullOrWhiteSpace(service.ImageUrl) ? new() : new() { service.ImageUrl }),
-                Tags = service.Tags ?? new List<string>(),
+                Tags = UnifiedStyleService.LegacyTags(service),
+                StyleIds = service.Styles.Select(x => x.StyleId).OrderBy(x => x).ToList(),
+                StyleTags = UnifiedStyleService.StyleTags(service),
                 IsActive = service.IsActive
             };
         }

@@ -7,6 +7,7 @@ public sealed class ExploreQuery : IValidatableObject
     [RegularExpression("^(portfolio|artists|services)$")] public string Kind { get; set; } = "portfolio";
     [StringLength(100)] public string? Q { get; set; }
     [Range(1, 100)] public int? ProvinceCode { get; set; }
+    [StringLength(100), RegularExpression("^[a-z]+(?:-[a-z]+)*$")] public string? AdvisorStyleKey { get; set; }
     [Range(1, int.MaxValue)] public int? StyleId { get; set; }
     [Range(typeof(decimal), "0", "1000000000")] public decimal? MinPrice { get; set; }
     [Range(typeof(decimal), "0", "1000000000")] public decimal? MaxPrice { get; set; }
@@ -69,4 +70,6 @@ public sealed class ExploreServiceItem
     public List<string> Tags { get; set; } = new();
     public List<int> StyleIds { get; set; } = new();
     public List<ServiceStyleTagDto> StyleTags { get; set; } = new();
+    public string? MatchBasis { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore] public int MatchRank { get; set; }
 }

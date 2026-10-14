@@ -37,9 +37,8 @@ public static class FeatureAdvisorDefinitions
         return new(points,formula,axes,key == "outlineAspect" ? .5 : 0,key == "outlineAspect" ? 2.5 : key.EndsWith("Tilt") ? .25 : 1,gate,use);
     }
     public static object Prompt(FaceFeatureSummaryV3 summary) => new {
-        summary.SchemaVersion, summary.AnalysisMethod, summary.Quality,summary.Detection,
-        measurements = summary.Features.ToDictionary(p => p.Key, p => new { value=p.Value, source=summary.FeatureSources[p.Key], metadata=For(p.Key) }),
-        summary.Missing, summary.Limitations, supportedStyles=FeatureAdvisorContract.Styles
+        makeupProfile=MakeupProfileConverter.From(summary),
+        supportedStyles=FeatureAdvisorContract.Styles
     };
 }
 

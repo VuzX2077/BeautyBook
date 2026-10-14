@@ -11,12 +11,12 @@ using Microsoft.EntityFrameworkCore;
 
 namespace BeautyBookBackend.Services;
 
-public sealed class ExploreService(ApplicationDbContext db, IDataProtectionProvider protection, IHttpContextAccessor? http = null)
+public sealed class ExploreService(ApplicationDbContext db, IDataProtectionProvider protection, IHttpContextAccessor? http = null) : IAiMakeupCatalogService
 {
     private Guid? Viewer => http?.HttpContext?.User.Identity?.IsAuthenticated == true && Guid.TryParse(http.HttpContext.User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : null;
     private readonly IDataProtector protector = protection.CreateProtector("BBook.Explore.Cursor.v1");
     private sealed record CursorState(string Filter, DateTime Cutoff, DateTime Expires,
-        Guid Id, DateTime? CreatedAt = null, decimal? Value = null, double? Score = null);
+        Guid Id, DateTime? CreatedAt = null, decimal? Value = null, double? Score = null, int? Rank = null);
     public IQueryable<MakeupArtistProfile> PublicArtists => db.MakeupArtistProfiles.AsNoTracking().IgnoreAutoIncludes()
         .Where(p => p.Status == MuaStatus.Listed && p.VerificationStatus == MuaVerificationStatus.Approved &&
             p.User != null && p.User.IsActive && p.User.DeletedAt == null &&
@@ -91,7 +91,7 @@ public sealed class ExploreService(ApplicationDbContext db, IDataProtectionProvi
         ImageUrls = p.ImageUrls, Tags = p.Tags, LikesCount = p.Likes.Count, SavesCount = p.Saves.Count, CreatedAt = p.CreatedAt
     });
 
-    public IQueryable<ExploreServiceItem> ServiceQuery(ExploreQuery request)
+    public IQueryable<ExploreServiceItem> ServiceQuery(ExploreQuery request, int[]? advisorStyleIds = null)
     {
         var artists = FilterArtists(new ExploreQuery { ProvinceCode = request.ProvinceCode }).Select(p => p.MUAId);
         var services = db.Services.AsNoTracking().IgnoreAutoIncludes().Where(s => artists.Contains(s.MUAId) && s.IsActive);
@@ -100,6 +100,9 @@ public sealed class ExploreService(ApplicationDbContext db, IDataProtectionProvi
         if (request.StyleId.HasValue)
             services = services.Where(s => db.MUAStyles.Any(t => t.MUAId == s.MUAId && t.StyleId == request.StyleId && t.MakeupStyle!.IsActive) ||
                 db.MakeupStyles.Any(t => t.StyleId == request.StyleId && t.IsActive && t.Name != null && s.Tags.Any(tag => tag.ToLower() == t.Name.ToLower())));
+        if (advisorStyleIds != null)
+            services = services.Where(s => s.Styles.Any(t => advisorStyleIds.Contains(t.StyleId) && t.MakeupStyle.IsActive) ||
+                (!s.Styles.Any() && db.MUAStyles.Any(t => t.MUAId == s.MUAId && advisorStyleIds.Contains(t.StyleId) && t.MakeupStyle!.IsActive)));
         if (!string.IsNullOrWhiteSpace(request.Q))
         {
             var text = request.Q.Trim().ToLower();
@@ -110,18 +113,25 @@ public sealed class ExploreService(ApplicationDbContext db, IDataProtectionProvi
             Id = s.ServiceId, MuaId = s.MUAId, Name = s.ServiceName ?? "", Price = s.Price,
             AuthorName = s.MakeupArtistProfile!.User!.FullName ?? "", City = s.MakeupArtistProfile.City,
             DurationMinutes = s.DurationMinutes, ImageUrl = s.ImageUrl, ImageUrls = s.ImageUrls, Tags = s.Tags,
+            MatchRank = advisorStyleIds == null ? 0 : s.Styles.Any(t => advisorStyleIds.Contains(t.StyleId) && t.MakeupStyle.IsActive) ? 0 : 1,
+            MatchBasis = advisorStyleIds == null ? null : s.Styles.Any(t => advisorStyleIds.Contains(t.StyleId) && t.MakeupStyle.IsActive) ? "service-style" : "mua-specialty",
             StyleIds = s.Styles.OrderBy(x => x.StyleId).Select(x => x.StyleId).ToList(),
             StyleTags = s.Styles.OrderBy(x => x.StyleId).Select(x => new ServiceStyleTagDto(x.StyleId, x.MakeupStyle.Name, x.MakeupStyle.IsActive)).ToList()
         });
     }
 
-    public async Task<ExploreHome> HomeAsync(CancellationToken ct)
+    public async Task<IReadOnlyList<ExploreStyle>> StylesAsync(CancellationToken ct)
     {
         var ids = PublicArtists.Select(p => p.MUAId);
         var styleRows = await db.MakeupStyles.AsNoTracking().Where(s => s.IsActive && s.Name != null && s.Name != "")
             .Select(s => new { Id = s.StyleId, Name = s.Name!, ArtistCount = db.MUAStyles.Count(t => t.StyleId == s.StyleId && ids.Contains(t.MUAId)) })
             .Where(s => s.ArtistCount > 0).OrderByDescending(s => s.ArtistCount).ThenBy(s => s.Name).Take(30).ToListAsync(ct);
-        var styles = styleRows.Select(s => new ExploreStyle(s.Id, s.Name, s.ArtistCount)).ToList();
+        return styleRows.Select(s => new ExploreStyle(s.Id, s.Name, s.ArtistCount)).ToList();
+    }
+
+    public async Task<ExploreHome> HomeAsync(CancellationToken ct)
+    {
+        var styles = await StylesAsync(ct);
         var areas = await PublicArtists.Select(p => new { p.OperatingProvinceCode, p.ProvinceCode }).Distinct().ToListAsync(ct);
         var provinces = areas.Select(p => p.OperatingProvinceCode.HasValue ? OperatingAreas.Province(p.OperatingProvinceCode.Value) :
             p.ProvinceCode.HasValue ? OperatingAreas.Province(OperatingAreas.FromLegacyProvince(p.ProvinceCode.Value)) : null)
@@ -142,10 +152,10 @@ public sealed class ExploreService(ApplicationDbContext db, IDataProtectionProvi
         return new(styles, provinces, featured.Select(id => byId[id]).ToList(), artists, services.DistinctBy(s => s.MuaId).Take(6).ToList());
     }
 
-    public async Task<object> SearchAsync(ExploreQuery request, CancellationToken ct)
+    public async Task<object> SearchAsync(ExploreQuery request, CancellationToken ct, int[]? advisorStyleIds = null)
     {
         var fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new {
-            request.Kind, Q = request.Q?.Trim().ToLower(), request.ProvinceCode, request.StyleId, request.MinPrice, request.MaxPrice, request.Limit
+            request.Kind, Q = request.Q?.Trim().ToLower(), request.ProvinceCode, request.StyleId, request.MinPrice, request.MaxPrice, request.Limit, request.AdvisorStyleKey, AdvisorIds = advisorStyleIds
         }))));
         CursorState? cursor = null;
         if (!string.IsNullOrEmpty(request.Cursor))
@@ -157,10 +167,11 @@ public sealed class ExploreService(ApplicationDbContext db, IDataProtectionProvi
         }
         var cutoff = cursor?.Cutoff ?? DateTime.UtcNow;
         var expires = cursor?.Expires ?? DateTime.UtcNow.AddMinutes(30);
-        string Encode(Guid id, DateTime? date = null, decimal? value = null, double? score = null) => protector.Protect(JsonSerializer.Serialize(new CursorState(fingerprint, cutoff, expires, id, date, value, score)));
+        string Encode(Guid id, DateTime? date = null, decimal? value = null, double? score = null, int? rank = null) => protector.Protect(JsonSerializer.Serialize(new CursorState(fingerprint, cutoff, expires, id, date, value, score, rank)));
         if (request.Kind == "artists")
         {
             var query = ArtistQuery(request);
+            if (advisorStyleIds != null) query = query.Where(p => db.MUAStyles.Any(t => t.MUAId == p.Id && advisorStyleIds.Contains(t.StyleId) && t.MakeupStyle!.IsActive));
             if (cursor != null)
             {
                 if (!cursor.Score.HasValue || !double.IsFinite(cursor.Score.Value))
@@ -174,12 +185,18 @@ public sealed class ExploreService(ApplicationDbContext db, IDataProtectionProvi
         }
         if (request.Kind == "services")
         {
-            var query = ServiceQuery(request);
-            if (cursor != null) query = query.Where(s => s.Price > cursor.Value || (s.Price == cursor.Value && s.Id.CompareTo(cursor.Id) > 0));
-            var rows = await query.OrderBy(s => s.Price).ThenBy(s => s.Id).Take(request.Limit + 1).ToListAsync(ct);
+            var query = ServiceQuery(request, advisorStyleIds);
+            if (cursor != null)
+            {
+                if (advisorStyleIds != null && !cursor.Rank.HasValue) throw new ArgumentException("Phiên khám phá không hợp lệ.");
+                var rank = cursor.Rank ?? 0;
+                query = query.Where(s => s.MatchRank > rank || (s.MatchRank == rank && (s.Price > cursor.Value || (s.Price == cursor.Value && s.Id.CompareTo(cursor.Id) > 0))));
+            }
+            var rows = await query.OrderBy(s => s.MatchRank).ThenBy(s => s.Price).ThenBy(s => s.Id).Take(request.Limit + 1).ToListAsync(ct);
             var items = rows.Take(request.Limit).ToList(); CleanServices(items);
-            return new ExplorePage<ExploreServiceItem>(items, rows.Count > request.Limit ? Encode(items[^1].Id, value: items[^1].Price) : null);
+            return new ExplorePage<ExploreServiceItem>(items, rows.Count > request.Limit ? Encode(items[^1].Id, value: items[^1].Price, rank: items[^1].MatchRank) : null);
         }
+
         var posts = PostQuery(request, cutoff);
         if (cursor != null) posts = posts.Where(p => p.CreatedAt < cursor.CreatedAt || (p.CreatedAt == cursor.CreatedAt && p.PortfolioId.CompareTo(cursor.Id) > 0));
         var batch = await ProjectPosts(posts.OrderByDescending(p => p.CreatedAt).ThenBy(p => p.PortfolioId).Take(request.Limit + 1)).ToListAsync(ct);

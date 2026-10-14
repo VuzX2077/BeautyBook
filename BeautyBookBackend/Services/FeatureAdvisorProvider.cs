@@ -20,10 +20,12 @@ public sealed class FeatureAdvisorOptions
     public string Model { get; set; } = "";
     public string ApiKey { get; set; } = "";
     public int TimeoutSeconds { get; set; } = 18;
+    public int MaxConcurrentRequests { get; set; } = 2;
 }
 public sealed record FeatureAdvisorAttempt(FeatureAdvisorResponse? Response, string Code);
-public sealed class FeatureAdvisorProvider(HttpClient client, IOptions<FeatureAdvisorOptions> options)
+public sealed class FeatureAdvisorProvider(HttpClient client, IOptions<FeatureAdvisorOptions> options, FeatureAdvisorConcurrency? concurrency = null)
 {
+    private readonly FeatureAdvisorConcurrency admission = concurrency ?? new(options);
     public static bool ValidKey(string? key) => !string.IsNullOrWhiteSpace(key) && key.Length<=200 && key.All(c=>c>='!'&&c<='~');
     public bool Configured =>
         ValidKey(options.Value.ApiKey) && System.Text.RegularExpressions.Regex.IsMatch(options.Value.Model, @"^gemini-[a-zA-Z0-9.\-]{1,80}$");
@@ -39,6 +41,7 @@ public sealed class FeatureAdvisorProvider(HttpClient client, IOptions<FeatureAd
     {
         if (!Available) return null;
         if (!FeatureAdvisorContract.Valid(new(Guid.NewGuid(),true,summary))) return null;
+        if (!MakeupProfileConverter.Valid(MakeupProfileConverter.From(summary))) return null;
         return (await Send(summary, ct)).Response;
     }
     // Never accepts caller measurements: only this audited synthetic fixture.
@@ -52,6 +55,8 @@ public sealed class FeatureAdvisorProvider(HttpClient client, IOptions<FeatureAd
         new() { ["outlineAspect"]="face_mesh",["eyeSpacing"]="face_mesh",["leftEyeAspect"]="face_mesh",["rightEyeAspect"]="face_mesh",["leftBrowArch"]="face_mesh",["rightBrowArch"]="face_mesh",["mouthWidth"]="face_mesh" },new(1,new(.2,.2,.5,.6),new(0,0,0)));
     private async Task<FeatureAdvisorAttempt> Send(FaceFeatureSummaryV3 summary, CancellationToken ct)
     {
+        using var slot = admission.TryEnter(ct);
+        if(slot is null)return new(null,"PROVIDER_BUSY");
         var config = options.Value;
         using var request = new HttpRequestMessage(HttpMethod.Post, $"https://generativelanguage.googleapis.com/v1beta/models/{config.Model}:generateContent");
         request.Headers.Add("x-goog-api-key", config.ApiKey);

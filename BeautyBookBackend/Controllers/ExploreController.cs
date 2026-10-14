@@ -14,11 +14,25 @@ public sealed class ExploreController(ExploreService service) : ControllerBase
         Response.Headers.CacheControl = "no-store";
         return Ok(await service.HomeAsync(ct));
     }
-    [HttpGet("search")]
-    public async Task<IActionResult> Search([FromQuery] ExploreQuery request, CancellationToken ct)
+    [HttpGet("advisor-mappings")]
+    public async Task<IActionResult> AdvisorMappings([FromServices] AdvisorStyleMappings mappings, CancellationToken ct)
     {
         Response.Headers.CacheControl = "no-store";
-        try { return Ok(await service.SearchAsync(request, ct)); }
+        return Ok(await mappings.Read(ct));
+    }
+    [HttpGet("search")]
+    public async Task<IActionResult> Search([FromQuery] ExploreQuery request, [FromServices] AdvisorStyleMappings mappings, CancellationToken ct)
+    {
+        Response.Headers.CacheControl = "no-store";
+        try {
+            int[]? ids = null;
+            if (request.AdvisorStyleKey != null)
+            {
+                if (request.StyleId != null || request.Kind == "portfolio") return BadRequest(new { message = "Bộ lọc Advisor không hợp lệ." });
+                ids = (await mappings.Read(ct)).SingleOrDefault(x => x.StyleKey == request.AdvisorStyleKey)?.StyleIds.ToArray() ?? Array.Empty<int>();
+            }
+            return Ok(await service.SearchAsync(request, ct, ids));
+        }
         catch (ArgumentException e) { return BadRequest(new { message = e.Message }); }
         catch (FeedSnapshotExpiredException) { return StatusCode(410, new { message = "Phiên khám phá đã hết hạn. Vui lòng làm mới." }); }
     }

@@ -16,17 +16,6 @@ using BeautyBookBackend.Infrastructure;
 using Microsoft.AspNetCore.HttpOverrides;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.Services.AddMemoryCache();
-builder.Services.Configure<FeatureAdvisorOptions>(builder.Configuration.GetSection("FeatureAdvisor"));
-// Explicit environment/data approvals are required for online Advisor. All
-// defaults remain closed; diagnostics never opens in staging/production.
-builder.Services.PostConfigure<FeatureAdvisorOptions>(options=>FeatureAdvisorProvider.ApplyEnvironmentGate(options,builder.Environment.IsDevelopment()));
-builder.Services.AddHttpClient<FeatureAdvisorProvider>(client => client.Timeout = TimeSpan.FromSeconds(30)).RemoveAllLoggers();
-builder.Services.AddRateLimiter(options => { options.RejectionStatusCode = StatusCodes.Status429TooManyRequests; options.AddPolicy("feature-advisor", context =>
-    System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
-        context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "anonymous",
-        _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions { PermitLimit = 12, Window = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true })); });
-
 // Build PostgreSQL connection string from configuration and optional environment variables.
 var baseConn = builder.Configuration.GetConnectionString("DefaultConnection");
 var dbHost = Environment.GetEnvironmentVariable("DB_HOST");
@@ -262,7 +251,18 @@ builder.Services.AddScoped<IChatRepository, ChatRepository>();
 builder.Services.AddSignalR();
 
 builder.Services.AddDataProtection();
+builder.Services.AddFeatureAdvisor(builder.Configuration, builder.Environment.IsDevelopment());
+builder.Services.Configure<AdvisorStyleMappingOptions>(builder.Configuration.GetSection("AdvisorStyleMappings"));
+builder.Services.AddScoped<AdvisorStyleMappings>();
 builder.Services.AddScoped<ExploreService>();
+builder.Services.AddScoped<IAiMakeupCatalogService>(services => services.GetRequiredService<ExploreService>());
+builder.Services.Configure<AiMakeupOptions>(builder.Configuration.GetSection("AiMakeup"));
+builder.Services.Configure<GeminiOptions>(builder.Configuration.GetSection("Gemini"));
+builder.Services.AddSingleton<AiMakeupConcurrency>();
+builder.Services.AddScoped<IAiMakeupQuotaRepository, AiMakeupQuotaRepository>();
+builder.Services.AddScoped<IAiMakeupService, AiMakeupService>();
+builder.Services.AddHttpClient<IGeminiMakeupProvider, GeminiMakeupProvider>(client => client.Timeout = Timeout.InfiniteTimeSpan)
+    .RemoveAllLoggers();
 builder.Services.AddScoped<ComplaintService>();
 builder.Services.AddScoped<ModerationService>();
 

@@ -7,6 +7,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using System.Net;
+using System.Text.Json;
 using System.Net.Http.Json;
 using Xunit;
 
@@ -47,13 +48,13 @@ public sealed class FeatureAdvisorOnlineTests
     }
     [Fact] public async Task OnlineRequestsAreRateLimited(){var i=new IdentityHandler(HttpStatusCode.OK,$"{{\"userId\":\"{UserId}\",\"isActive\":true}}");var g=new NoGemini();await using var app=await App(i,g);var c=Client(app);for(var n=0;n<12;n++)Assert.Equal(HttpStatusCode.OK,(await c.GetAsync("/api/MakeupAdvisor/capabilities")).StatusCode);Assert.Equal(HttpStatusCode.TooManyRequests,(await c.GetAsync("/api/MakeupAdvisor/capabilities")).StatusCode);}
     [Fact] public void InsecureIdentityUrlRejectedBeforeStartup(){var b=WebApplication.CreateBuilder();b.Configuration.AddInMemoryCollection(new Dictionary<string,string?>{["AdvisorHost:IdentityApiUrl"]="http://localhost/api"});Assert.Throws<InvalidOperationException>(()=>AdvisorApiHost.Configure(b));}
-    [Fact] public async Task ApprovedHttpsPipelineAuthenticatesAndSendsOnlyCallerMeasurementsToProvider() {
+    [Fact] public async Task ApprovedHttpsPipelineAuthenticatesAndSendsOnlyMinimalProfileToProvider() {
         FeatureAdvisorRecommendation Row(string key)=>new(key,"Style","Reference","Explore measured eye spacing",["Eyes","Brows","Cheeks","Lips"],["Pink"],["Event"],["Sự kiện"]);
         var i=new IdentityHandler(HttpStatusCode.OK,$"{{\"userId\":\"{UserId}\",\"isActive\":true}}");var g=new NoGemini(new([Row("korean"),Row("event"),Row("portrait")]));await using var app=await App(i,g,true);
         var summary=FeatureAdvisorProvider.SyntheticFixture();var response=await Client(app).PostAsJsonAsync("/api/MakeupAdvisor/recommend",new FeatureAdvisorRequest(Guid.NewGuid(),true,summary));
         Assert.Equal(HttpStatusCode.OK,response.StatusCode);Assert.Equal(3,(await response.Content.ReadFromJsonAsync<FeatureAdvisorResponse>())!.Recommendations.Length);
         Assert.Equal(1,g.Calls);using var envelope=System.Text.Json.JsonDocument.Parse(g.Sent!);var text=envelope.RootElement.GetProperty("contents")[0].GetProperty("parts")[0].GetProperty("text").GetString();using var prompt=System.Text.Json.JsonDocument.Parse(text!);
-        Assert.Equal(summary.Features["eyeSpacing"],prompt.RootElement.GetProperty("measurements").GetProperty("eyeSpacing").GetProperty("value").GetDouble());Assert.DoesNotContain("recommendations",text);Assert.DoesNotContain("synthetic-jwt",g.Sent!);Assert.DoesNotContain(UserId,g.Sent!);
+        var profile=prompt.RootElement.GetProperty("makeupProfile").Deserialize<MakeupProfile>(FeatureAdvisorContract.Json)!; Assert.True(MakeupProfileConverter.Valid(profile)); Assert.Equal(System.Text.Json.JsonSerializer.Serialize(MakeupProfileConverter.From(summary),FeatureAdvisorContract.Json),System.Text.Json.JsonSerializer.Serialize(profile,FeatureAdvisorContract.Json)); Assert.False(prompt.RootElement.TryGetProperty("measurements",out _));Assert.DoesNotContain("recommendations",text);Assert.DoesNotContain("synthetic-jwt",g.Sent!);Assert.DoesNotContain(UserId,g.Sent!);
     }
     [Theory][InlineData(false,426)][InlineData(true,200)]public async Task ForwardedHttpsAcceptedOnlyWithExplicitRenderProxyTrust(bool render,int expected) {
         var i=new IdentityHandler(HttpStatusCode.OK,$"{{\"userId\":\"{UserId}\",\"isActive\":true}}");var g=new NoGemini();await using var app=await App(i,g,false,render);

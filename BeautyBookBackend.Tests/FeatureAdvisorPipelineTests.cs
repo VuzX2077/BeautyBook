@@ -44,20 +44,19 @@ public sealed class FeatureAdvisorPipelineTests
         var app=builder.Build();app.UseAuthentication();app.UseAuthorization();app.UseRateLimiter();if(local)app.MapLocalAdvisor(new(new HttpClient(handler),Options.Create(config)),new string('A',48));else app.MapControllers();await app.StartAsync();return app;
     }
     [Theory][InlineData("mesh")][InlineData("detection")]
-    public async Task ExtractorFixtureThroughHttpPreservesEveryValueAndSource(string method) {
+    public async Task ExtractorFixtureThroughHttpCreatesCanonicalMinimalProfile(string method) {
         var summary=Fixture(method);Assert.True(FeatureAdvisorContract.Valid(new(Guid.NewGuid(),true,summary)));
         var h=new Handler(Output());await using var app=await App(h,Enabled());var client=app.GetTestClient();client.BaseAddress=new Uri("https://localhost");client.DefaultRequestHeaders.Add("X-Test-Auth","yes");
         var response=await client.PostAsJsonAsync("/api/MakeupAdvisor/recommend",new FeatureAdvisorRequest(Guid.NewGuid(),true,summary),FeatureAdvisorContract.Json);
         Assert.Equal(HttpStatusCode.OK,response.StatusCode);Assert.Equal("no-store",response.Headers.CacheControl!.ToString());
         var result=await response.Content.ReadFromJsonAsync<FeatureAdvisorResponse>(FeatureAdvisorContract.Json);Assert.Equal("Provider eyes",result!.Recommendations[0].MakeupFocus[0]);
         using var envelope=JsonDocument.Parse(h.Sent!);var prompt=envelope.RootElement.GetProperty("contents")[0].GetProperty("parts")[0].GetProperty("text").GetString();
-        using var data=JsonDocument.Parse(prompt!);var measurements=data.RootElement.GetProperty("measurements");
-        Assert.Equal(summary.Features.Count,measurements.EnumerateObject().Count());
-        foreach(var p in summary.Features) {
-            var measurement=measurements.GetProperty(p.Key);Assert.Equal(p.Value,measurement.GetProperty("value").GetDouble());Assert.Equal(summary.FeatureSources[p.Key],measurement.GetProperty("source").GetString());
-            var metadata=measurement.GetProperty("metadata");Assert.False(string.IsNullOrEmpty(metadata.GetProperty("formula").GetString()));Assert.Contains("200px",metadata.GetProperty("qualityGate").GetString());Assert.True(metadata.GetProperty("max").GetDouble()>=p.Value);
-        }
-        Assert.Equal(summary.Quality.Frontal,data.RootElement.GetProperty("quality").GetProperty("frontal").GetBoolean());
+        using var data=JsonDocument.Parse(prompt!);
+        var profile=data.RootElement.GetProperty("makeupProfile").Deserialize<MakeupProfile>(FeatureAdvisorContract.Json)!;
+        Assert.True(MakeupProfileConverter.Valid(profile));
+        Assert.Equal(JsonSerializer.Serialize(MakeupProfileConverter.From(summary),FeatureAdvisorContract.Json),JsonSerializer.Serialize(profile,FeatureAdvisorContract.Json));
+        Assert.False(data.RootElement.TryGetProperty("measurements",out _));
+        Assert.False(data.RootElement.TryGetProperty("detection",out _));
         Assert.False(data.RootElement.TryGetProperty("points",out _));Assert.False(data.RootElement.TryGetProperty("mesh",out _));Assert.DoesNotContain("recommendations",prompt);Assert.DoesNotContain("uri",prompt);Assert.Equal(1,h.Count);
     }
     [Fact] public async Task HttpAuthConsentAndDefaultGatesPreventProviderCalls() {

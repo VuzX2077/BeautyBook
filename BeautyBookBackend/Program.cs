@@ -59,6 +59,7 @@ builder.Services.AddControllers(options => {
     options.Filters.Add<StyleWriteExceptionFilter>();
 });
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddWebsiteApkCounter(builder.Configuration);
 builder.Services.AddScoped<PlayReviewPolicy>();
 builder.Services.Configure<PlayReviewOptions>(builder.Configuration.GetSection("PlayReview"));
 builder.Services.AddRateLimiter(options => { options.RejectionStatusCode = StatusCodes.Status429TooManyRequests; options.AddPolicy("location-lookup", context =>

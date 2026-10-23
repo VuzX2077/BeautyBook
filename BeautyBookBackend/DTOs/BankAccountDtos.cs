@@ -13,7 +13,8 @@ public class BankAccountDraftRequest
     [Required, MaxLength(20)] public string BankCode { get; set; } = string.Empty;
     [Required, MaxLength(20)] public string BankBin { get; set; } = string.Empty;
     [Required, MaxLength(100)] public string BankName { get; set; } = string.Empty;
-    [Required, MaxLength(30)] public string AccountNumber { get; set; } = string.Empty;
+    // The service requires a number for banks/manual MoMo, or an owned private QR for QR-only MoMo.
+    [MaxLength(30)] public string AccountNumber { get; set; } = string.Empty;
     [Required, MaxLength(150)] public string AccountHolderName { get; set; } = string.Empty;
     [Required, MaxLength(20)] public string Method { get; set; } = "BANK";
     [Url, MaxLength(1000)] public string? QrCodeUrl { get; set; }

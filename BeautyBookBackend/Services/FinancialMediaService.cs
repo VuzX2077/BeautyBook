@@ -38,10 +38,30 @@ public sealed class FinancialMediaService(ApplicationDbContext db, VerificationM
             ?? throw new BookingRuleException("FINANCIAL_QR_INVALID", "QR MoMo không còn khả dụng hoặc không thuộc tài khoản của bạn.", 409);
         if (item.ContextId.HasValue && item.ContextId != bankId) throw new BookingRuleException("FINANCIAL_QR_INVALID", "QR đã gắn với tài khoản nhận tiền khác.", 409);
         var decoded = BankQrDecoder.DecodeImage(await ReadVerifiedAsync(item, ct));
-        if (decoded.Method != "MOMO" || (decoded.AccountNumber != null && MomoPhone.Normalize(decoded.AccountNumber) != MomoPhone.Normalize(accountNumber)))
+        if (decoded.Method != "MOMO" || (!string.IsNullOrWhiteSpace(accountNumber) && decoded.AccountNumber != null && MomoPhone.Normalize(decoded.AccountNumber) != MomoPhone.Normalize(accountNumber)))
             throw new BookingRuleException("FINANCIAL_QR_RECIPIENT_MISMATCH", "Số MoMo không khớp QR. Vui lòng tải QR đúng người nhận hoặc dùng thông tin thủ công.", 409);
         item.ContextId = bankId; item.AttachedAt ??= DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
+    }
+
+    public async Task<string> RecipientIdentityAsync(Guid owner, Guid? bankId, Guid id, CancellationToken ct = default)
+    {
+        var item = await db.VerificationMedia.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && x.OwnerId == owner && x.Purpose == Purpose && x.ReadyAt != null && x.DeletedAt == null && x.StorageDeletedAt == null, ct)
+            ?? throw new BookingRuleException("FINANCIAL_QR_INVALID", "QR MoMo không còn khả dụng hoặc không thuộc tài khoản của bạn.", 409);
+        if (item.ContextId.HasValue && item.ContextId != bankId)
+            throw new BookingRuleException("FINANCIAL_QR_INVALID", "QR đã gắn với tài khoản nhận tiền khác.", 409);
+        var decoded = BankQrDecoder.DecodeImage(await ReadVerifiedAsync(item, ct));
+        if (decoded.Method != "MOMO") throw new BookingRuleException("FINANCIAL_QR_INVALID", "Vui lòng chọn QR nhận tiền MoMo.", 409);
+        return RecipientIdentity(decoded);
+    }
+
+    public static string RecipientIdentity(BankQrData decoded)
+    {
+        if (decoded.Method != "MOMO") throw new ArgumentException("Chỉ dùng định danh QR cho MoMo.");
+        if (!string.IsNullOrWhiteSpace(decoded.AccountNumber)) return MomoPhone.Normalize(decoded.AccountNumber);
+        // Only an internal duplicate/OTP key. Never invent a phone or expose the opaque QR receiver ID.
+        var recipient = decoded.RecipientIdentifier is { Length: > 0 } ? $"{decoded.BankBin}|{decoded.RecipientIdentifier}" : decoded.RawPayload;
+        return "QR:" + Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(recipient)))[..24];
     }
 
     public async Task<string?> OwnerImageAsync(Guid owner, Guid id, CancellationToken ct)

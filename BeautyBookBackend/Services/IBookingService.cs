@@ -14,6 +14,7 @@ namespace BeautyBookBackend.Services
         Task<BookingDto?> DemoCounterpartAcceptAsync(Guid id, Guid caller);
         Task<BookingDto?> DemoCounterpartRejectAsync(Guid id, Guid caller);
         Task<bool> HandlePayOsWebhookAsync(PayOsWebhookDto webhook);
+        Task<BookingDto?> ReconcileDepositAsync(Guid bookingId, Guid customerId);
         Task<List<BookingDto>> GetBookingsAsync(Guid userId, string viewAs);
         Task<BookingDto?> GetBookingByIdAsync(Guid bookingId, Guid userId);
         Task<BookingDto?> UpdateBookingStatusAsync(Guid bookingId, Guid userId, BookingStatus status, string? reason = null);

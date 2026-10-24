@@ -1,4 +1,4 @@
-using System.Globalization;
+using Microsoft.EntityFrameworkCore;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
@@ -78,10 +78,10 @@ namespace BeautyBookBackend.Services
                 return false;
             }
 
-            var fields = new SortedDictionary<string, string>
+            var fields = new SortedDictionary<string, object?>(StringComparer.Ordinal)
             {
-                ["amount"] = data.Amount.ToString(CultureInfo.InvariantCulture),
-                ["orderCode"] = data.OrderCode.ToString(CultureInfo.InvariantCulture),
+                ["amount"] = data.Amount,
+                ["orderCode"] = data.OrderCode,
                 // payOS signs present null/undefined values as an empty string.
                 // Omitting these keys makes a valid real-payment webhook fail
                 // verification even though the registration sample succeeds.
@@ -99,21 +99,59 @@ namespace BeautyBookBackend.Services
             {
                 foreach (var item in data.ExtraData)
                 {
-                    if (!fields.ContainsKey(item.Key) && item.Value.ValueKind != JsonValueKind.Null)
+                    if (!fields.ContainsKey(item.Key))
                     {
-                        fields[item.Key] = item.Value.ValueKind == JsonValueKind.String
-                            ? item.Value.GetString() ?? string.Empty
-                            : item.Value.ToString();
+                        fields[item.Key] = item.Value.Clone();
                     }
                 }
             }
 
-            var dataToSign = string.Join("&", fields.Select(x => $"{x.Key}={x.Value}"));
-            var expectedSignature = HmacSha256(dataToSign, GetRequiredConfig("PayOS:ChecksumKey"));
+            return PayOsSignature.Verify(JsonSerializer.SerializeToElement(fields), data.Signature, GetRequiredConfig("PayOS:ChecksumKey"));
+        }
 
-            return CryptographicOperations.FixedTimeEquals(
-                Encoding.UTF8.GetBytes(expectedSignature),
-                Encoding.UTF8.GetBytes(data.Signature));
+        public async Task<PayOsPaymentLinkResult> GetPaymentLinkAsync(long orderCode)
+        {
+            if (_db == null) throw new InvalidOperationException("Cannot resolve persisted payment.");
+            var payment = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.SingleOrDefaultAsync(
+                _db.BookingPayments.AsNoTracking().Where(x => x.ProviderOrderCode == orderCode));
+            if (payment == null) throw new InvalidOperationException("Cannot resolve persisted payment.");
+            var policy = new PlayReviewPolicy(_db);
+            await policy.EnsureNormalPaymentAsync(payment.PaymentId);
+            await policy.EnsureExternalActorAsync(_httpContextAccessor);
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"/v2/payment-requests/{orderCode}");
+            request.Headers.Add("x-client-id", GetRequiredConfig("PayOS:ClientId"));
+            request.Headers.Add("x-api-key", GetRequiredConfig("PayOS:ApiKey"));
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+            using var response = await _httpClient.SendAsync(request, timeout.Token);
+            response.EnsureSuccessStatusCode();
+            using var json = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(timeout.Token), cancellationToken: timeout.Token);
+            var root = json.RootElement;
+            if (!root.TryGetProperty("code", out var code) || code.GetString() != "00"
+                || !root.TryGetProperty("data", out var data)
+                || !root.TryGetProperty("signature", out var signature)
+                || !PayOsSignature.Verify(data, signature.GetString(), GetRequiredConfig("PayOS:ChecksumKey")))
+                throw new InvalidOperationException("Chưa xác minh được kết quả payOS. Vui lòng kiểm tra lại sau.");
+            var result = new PayOsPaymentLinkResult
+            {
+                OrderCode = data.GetProperty("orderCode").GetInt64(),
+                PaymentLinkId = data.GetProperty("id").GetString() ?? "",
+                Status = data.GetProperty("status").GetString() ?? "",
+                Amount = data.GetProperty("amount").GetDecimal(),
+                AmountPaid = data.GetProperty("amountPaid").GetDecimal(),
+                AmountRemaining = data.GetProperty("amountRemaining").GetDecimal(),
+                Reference = LastTransactionString(data, "reference"),
+                TransactionDateTime = LastTransactionString(data, "transactionDateTime")
+            };
+            if (result.OrderCode != orderCode || result.PaymentLinkId != payment.ProviderPaymentLinkId)
+                throw new InvalidOperationException("Kết quả payOS không khớp yêu cầu thanh toán.");
+            return result;
+        }
+
+        private static string? LastTransactionString(JsonElement data, string name)
+        {
+            if (!data.TryGetProperty("transactions", out var transactions) || transactions.ValueKind != JsonValueKind.Array) return null;
+            return transactions.EnumerateArray().LastOrDefault() is var last && last.ValueKind == JsonValueKind.Object
+                && last.TryGetProperty(name, out var value) ? value.GetString() : null;
         }
 
         private string CreatePaymentLinkSignature(PayOsCreatePaymentRequest request)

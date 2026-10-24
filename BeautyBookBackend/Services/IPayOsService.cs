@@ -5,6 +5,7 @@ namespace BeautyBookBackend.Services
     public interface IPayOsService
     {
         Task<PayOsCreatePaymentResult> CreatePaymentLinkAsync(PayOsCreatePaymentRequest request);
+        Task<PayOsPaymentLinkResult> GetPaymentLinkAsync(long orderCode);
         bool IsValidWebhookSignature(PayOsWebhookVerificationData data);
     }
 
@@ -16,6 +17,18 @@ namespace BeautyBookBackend.Services
         public string ReturnUrl { get; set; } = string.Empty;
         public string CancelUrl { get; set; } = string.Empty;
         public int ExpiredAt { get; set; }
+    }
+
+    public sealed class PayOsPaymentLinkResult
+    {
+        public long OrderCode { get; init; }
+        public string PaymentLinkId { get; init; } = string.Empty;
+        public string Status { get; init; } = string.Empty;
+        public decimal Amount { get; init; }
+        public decimal AmountPaid { get; init; }
+        public decimal AmountRemaining { get; init; }
+        public string? Reference { get; init; }
+        public string? TransactionDateTime { get; init; }
     }
 
     public class PayOsCreatePaymentResult

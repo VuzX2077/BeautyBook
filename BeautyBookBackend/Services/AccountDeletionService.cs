@@ -82,7 +82,7 @@ public sealed partial class AccountDeletionService(ApplicationDbContext _context
             await _context.MessageReactions.Where(x => x.UserId == userId).ExecuteDeleteAsync();
 
             await _context.PortfolioComments.Where(x => x.UserId == userId)
-                .ExecuteUpdateAsync(x => x.SetProperty(c => c.Content, "[Nội dung đã được xóa]"));
+                .ExecuteUpdateAsync(x => x.SetProperty(c => c.Content, PortfolioCommentVisibility.DeletedContent));
             await _context.Messages.Where(x => x.SenderId == userId)
                 .ExecuteUpdateAsync(x => x
                     .SetProperty(m => m.Content, (string?)null)

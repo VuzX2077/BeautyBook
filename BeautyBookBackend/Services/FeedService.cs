@@ -55,10 +55,11 @@ namespace BeautyBookBackend.Services
         {
             var posts = await PublicPosts(userId).Where(p => ids.Contains(p.PortfolioId))
                 .Include(p => p.MakeupArtistProfile).ThenInclude(m => m!.User)
-                .Include(p => p.Likes).Include(p => p.Saves).Include(p => p.Comments)
+                .Include(p => p.Likes).Include(p => p.Saves)
                 .Include(p => p.Service).ThenInclude(s => s!.Styles).ThenInclude(s => s.MakeupStyle)
                 .AsSplitQuery().ToListAsync();
             var byId = posts.ToDictionary(p => p.PortfolioId);
+            var commentCounts = await PortfolioCommentVisibility.CountsAsync(_dbContext, posts.Select(p => p.PortfolioId), userId);
             var result = new List<FeedItemDto>();
             foreach (var id in ids)
             {
@@ -66,6 +67,7 @@ namespace BeautyBookBackend.Services
                 post.ImageUrls = post.ImageUrls.Where(MuaEligibilityService.IsValidPublicUrl).ToList();
                 if (post.ImageUrls.Count == 0) continue;
                 var item = MapToFeedItemDto(post, userId);
+                item.CommentsCount = commentCounts.GetValueOrDefault(id);
                 item.IsNewMuaBoost = boosted.Contains(id);
                 result.Add(item);
             }
@@ -149,7 +151,6 @@ namespace BeautyBookBackend.Services
                 AuthorAvatar = p.MakeupArtistProfile?.User?.AvatarUrl ?? string.Empty,
                 ProfileQualityScore = p.MakeupArtistProfile?.ProfileQualityScore ?? 0,
                 LikesCount = p.Likes?.Count ?? 0,
-                CommentsCount = p.Comments?.Count ?? 0,
                 SavesCount = p.Saves?.Count ?? 0,
                 IsLiked = currentUserId.HasValue && (p.Likes?.Any(l => l.UserId == currentUserId.Value) ?? false),
                 IsSaved = currentUserId.HasValue && (p.Saves?.Any(s => s.UserId == currentUserId.Value) ?? false),

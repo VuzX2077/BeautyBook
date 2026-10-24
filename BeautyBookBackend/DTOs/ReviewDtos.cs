@@ -9,6 +9,7 @@ namespace BeautyBookBackend.DTOs
         public Guid BookingId { get; set; }
         public Guid CustomerId { get; set; }
         public string? CustomerName { get; set; }
+        public bool IsAuthorDeleted { get; set; }
         public Guid MUAId { get; set; }
         public int Rating { get; set; }
         public string? Comment { get; set; }

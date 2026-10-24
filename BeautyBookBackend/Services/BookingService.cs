@@ -767,6 +767,8 @@ namespace BeautyBookBackend.Services
             else await new PlayReviewPolicy(_context).EnsureSameDomainAsync(muaId, review.CustomerId);
 
             if (!isAdmin && review.MUAId != muaId) return false;
+            if (await _context.Users.AnyAsync(u => u.UserId == review.CustomerId && u.DeletedAt != null))
+                throw new BookingRuleException("REVIEW_AUTHOR_DELETED", "Không thể phản hồi đánh giá của tài khoản đã xóa.", 409);
             await new ModerationService(_context).EnsureContent("Review", reviewId);
             if (!isAdmin) await new ModerationService(_context).EnsureInteraction(muaId, review.CustomerId);
 
@@ -789,11 +791,12 @@ namespace BeautyBookBackend.Services
                 ReviewId = r.ReviewId,
                 BookingId = r.BookingId,
                 CustomerId = r.CustomerId,
-                CustomerName = r.Customer != null ? r.Customer.FullName : "",
+                CustomerName = r.Customer?.DeletedAt != null ? PortfolioCommentVisibility.DeletedAuthor : r.Customer?.FullName ?? "",
+                IsAuthorDeleted = r.Customer?.DeletedAt != null,
                 MUAId = r.MUAId,
                 Rating = r.Rating,
-                Comment = r.Comment,
-                ImageUrl = r.ImageUrl,
+                Comment = r.Customer?.DeletedAt != null ? null : r.Comment,
+                ImageUrl = r.Customer?.DeletedAt != null ? null : r.ImageUrl,
                 MuaReply = r.MuaReply,
                 MuaReplyAt = r.MuaReplyAt,
                 CreatedAt = r.CreatedAt

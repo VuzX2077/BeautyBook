@@ -6,7 +6,7 @@ using ZXing.SkiaSharp;
 
 namespace BeautyBookBackend.Services;
 
-public sealed record BankQrData(string Method, string? BankBin, string? AccountNumber, string? AccountName, string RawPayload);
+public sealed record BankQrData(string Method, string? BankBin, string? AccountNumber, string? AccountName, string RawPayload, string? RecipientIdentifier = null);
 
 public static partial class BankQrDecoder
 {
@@ -42,7 +42,7 @@ public static partial class BankQrDecoder
                 // Its NAPAS receiver identifier is opaque: never treat it as a phone,
                 // trim a suffix, or generate a replacement from the owner's phone.
                 if (bin == "971025" && accountTemplate.GetValueOrDefault("02") == "QRIBFTTA")
-                    return new("MOMO", bin, null, CleanName(name), payload);
+                    return new("MOMO", bin, null, CleanName(name), payload, account);
                 return new("BANK", bin, account, CleanName(name), payload);
             }
         }

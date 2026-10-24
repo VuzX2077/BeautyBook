@@ -188,6 +188,9 @@ namespace BeautyBookBackend.Services
 
             var financials = BookingFinancialCalculator.Calculate(totalAmount);
             var now = DateTime.UtcNow;
+            var appointmentAt = _bookingTime.ToUtc(createDto.BookingDate, createDto.StartTime);
+            if (appointmentAt <= now)
+                throw new BookingRuleException("INVALID_BOOKING_TIME", "Giờ bắt đầu lịch hẹn đã qua. Vui lòng chọn lịch khác.", 409);
             var booking = new Booking
             {
                 BookingId = bookingId,
@@ -217,7 +220,7 @@ namespace BeautyBookBackend.Services
                 PaymentStatus = PaymentStatus.Unpaid,
                 CreatedAt = now,
                 UpdatedAt = now,
-                PaymentExpiresAt = now.AddMinutes(15),
+                PaymentExpiresAt = appointmentAt < now.AddMinutes(15) ? appointmentAt : now.AddMinutes(15),
                 BookingServices = bookingServices
             };
             await _bookingRepository.AddAsync(booking);
@@ -245,13 +248,20 @@ namespace BeautyBookBackend.Services
                     || (booking.PaymentStatus != PaymentStatus.Unpaid && booking.PaymentStatus != PaymentStatus.Failed))
                     throw new InvalidOperationException("Booking không ở trạng thái có thể thanh toán tiền cọc.");
 
-                if (booking.PaymentExpiresAt.HasValue && booking.PaymentExpiresAt <= now)
+                var appointmentAt = _bookingTime.ToUtc(booking.BookingDate, booking.StartTime);
+                if (appointmentAt <= now || (booking.PaymentExpiresAt.HasValue && booking.PaymentExpiresAt <= now))
                 {
                     ExpireBooking(booking, now);
                     await _unitOfWork.SaveChangesAsync();
                     await transaction.CommitAsync();
                     throw new InvalidOperationException("Thời gian giữ lịch đã hết. Vui lòng tạo booking mới.");
                 }
+
+                // Also cap links created by older app/backend versions at the appointment.
+                var latestExpiry = appointmentAt < now.AddMinutes(15) ? appointmentAt : now.AddMinutes(15);
+                if (!booking.PaymentExpiresAt.HasValue || booking.PaymentExpiresAt > latestExpiry)
+                    booking.PaymentExpiresAt = latestExpiry;
+                await _unitOfWork.SaveChangesAsync();
 
                 var existing = await _context.BookingPayments
                     .Where(x => x.BookingId == bookingId
@@ -489,12 +499,14 @@ namespace BeautyBookBackend.Services
             var canActivateBooking = booking.Status == BookingStatus.PendingPayment
                 && booking.PaymentExpiresAt.HasValue
                 && booking.PaymentExpiresAt > now
-                && payment.ExpiresAt > now;
+                && payment.ExpiresAt > now
+                && _bookingTime.ToUtc(booking.BookingDate, booking.StartTime) > now;
 
             if (!canActivateBooking)
             {
                 // Money was received, but the slot is no longer valid. Preserve that fact and
                 // route the payment to the existing refund/reconciliation state without reviving the booking.
+                if (booking.Status == BookingStatus.PendingPayment) ExpireBooking(booking, now);
                 payment.Status = BookingPaymentStatus.RefundPending;
                 payment.RefundRequestedAt ??= now;
                 booking.PaymentStatus = PaymentStatus.RefundPending;
@@ -541,6 +553,10 @@ namespace BeautyBookBackend.Services
 
             foreach (var booking in bookings)
             {
+                if (!booking.IsDemo && _context.Database.CurrentTransaction == null
+                    && BookingConfirmationPolicy.IsExpired(booking, _bookingTime, DateTime.UtcNow)
+                    && booking.PaymentStatus is PaymentStatus.DepositHeld or PaymentStatus.Paid)
+                    await TryExpireUnconfirmedBookingAsync(booking.BookingId);
                 result.Add(await ToBookingDtoAsync(booking));
             }
 
@@ -576,6 +592,10 @@ namespace BeautyBookBackend.Services
         private async Task<BookingDto?> ReadBookingByIdAsync(Guid bookingId, Guid userId)
         {
             var booking = await _bookingRepository.GetByIdWithDetailsForUserAsync(bookingId, userId);
+            if (booking != null && !booking.IsDemo && _context.Database.CurrentTransaction == null
+                && BookingConfirmationPolicy.IsExpired(booking, _bookingTime, DateTime.UtcNow)
+                && booking.PaymentStatus is PaymentStatus.DepositHeld or PaymentStatus.Paid)
+                await TryExpireUnconfirmedBookingAsync(bookingId);
             return booking == null ? null : await ToBookingDtoAsync(booking);
         }
 
@@ -614,6 +634,7 @@ namespace BeautyBookBackend.Services
             await using var transaction = await _context.Database.BeginTransactionAsync();
             var demo = await _context.Bookings.AsNoTracking().AnyAsync(x => x.BookingId == bookingId && x.IsDemo);
             var booking = demo ? await LoadDemoBookingForUpdateAsync(bookingId, userId) : await GetBookingForUpdateAsync(bookingId);
+            if (booking != null && !demo) await _context.Entry(booking).ReloadAsync();
             if (booking == null || (booking.MUAId != userId && booking.CustomerId != userId)) return null;
             if (counterpartAction && !demo) throw new PlayReviewOperationException();
             var businessUserId = counterpartAction ? booking.MUAId : userId;
@@ -630,8 +651,22 @@ namespace BeautyBookBackend.Services
                 return await GetBookingByIdAsync(bookingId, userId);
             }
             if (demo && !counterpartAction && RequiresHeldDeposit(newStatus)) await RequireDemoPaidAsync(booking, userId);
+            if (!demo && booking.Status == BookingStatus.Cancelled
+                && booking.CancellationPolicyRule == BookingConfirmationPolicy.TimeoutRule)
+                throw new BookingRuleException("BOOKING_CONFIRMATION_EXPIRED",
+                    "Booking đã tự hủy do MUA chưa xác nhận trước giờ hẹn. Vui lòng tải lại để xem tiến trình hoàn cọc.", 409);
             if (IsFinalStatus(booking.Status)
                 || !IsValidStatusTransition(booking.Status, newStatus, businessUserId, booking.MUAId, booking.CustomerId)) return null;
+            if (!demo && BookingConfirmationPolicy.IsExpired(booking, _bookingTime, DateTime.UtcNow))
+            {
+                if (await ExpireUnconfirmedBookingAsync(booking, DateTime.UtcNow))
+                {
+                    await _unitOfWork.SaveChangesAsync();
+                    await transaction.CommitAsync();
+                }
+                throw new BookingRuleException("BOOKING_CONFIRMATION_EXPIRED",
+                    "Đã đến giờ hẹn mà MUA chưa xác nhận. Vui lòng tải lại booking để xem trạng thái hủy và hoàn cọc.", 409);
+            }
             if (await _context.BookingComplaints.AnyAsync(c => c.BookingId == bookingId && c.IsOpen)
                 && newStatus is BookingStatus.Completed or BookingStatus.Cancelled or BookingStatus.Rejected or BookingStatus.Disputed)
                 throw new BookingRuleException("COMPLAINT_OPEN", "Booking đang có khiếu nại. Vui lòng chờ admin xử lý.", 409);
@@ -824,6 +859,82 @@ namespace BeautyBookBackend.Services
             return expiredCount;
         }
 
+        public async Task<int> ExpireUnconfirmedBookingsAsync()
+        {
+            var now = DateTime.UtcNow;
+            // BookingDate stores the local calendar date as UTC midnight. Apply
+            // the precise timezone-aware start time after this broad date filter.
+            var candidates = await _context.Bookings.AsNoTracking()
+                .Where(x => !x.IsDemo
+                    && (x.Status == BookingStatus.PendingConfirmation || x.Status == BookingStatus.Pending)
+                    && (x.PaymentStatus == PaymentStatus.DepositHeld || x.PaymentStatus == PaymentStatus.Paid)
+                    && x.BookingDate <= now.AddDays(1))
+                .Select(x => new { x.BookingId, x.BookingDate, x.StartTime })
+                .ToListAsync();
+            var count = 0;
+            foreach (var candidate in candidates.Where(x => _bookingTime.ToUtc(x.BookingDate, x.StartTime) <= now))
+            {
+                if (!await _playReview.CanProcessBookingAsync(candidate.BookingId)) continue;
+                try
+                {
+                    if (await TryExpireUnconfirmedBookingAsync(candidate.BookingId)) count++;
+                }
+                catch (Exception ex)
+                {
+                    // A quarantined financial record must not prevent other
+                    // customers' overdue bookings from being processed.
+                    _context.ChangeTracker.Clear();
+                    _simulationLogger.LogError(ex, "Failed to expire unanswered booking {BookingId}", candidate.BookingId);
+                }
+            }
+            return count;
+        }
+
+        private async Task<bool> TryExpireUnconfirmedBookingAsync(Guid bookingId)
+        {
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+            var booking = await GetBookingForUpdateAsync(bookingId);
+            // Read endpoints can already track the booking. Refresh only after
+            // obtaining its lock so a concurrent acceptance cannot be overwritten.
+            if (booking != null) await _context.Entry(booking).ReloadAsync();
+            if (booking == null || !await ExpireUnconfirmedBookingAsync(booking, DateTime.UtcNow)) return false;
+            await _unitOfWork.SaveChangesAsync();
+            await transaction.CommitAsync();
+            return true;
+        }
+
+        // Caller holds the booking lock and commits booking, payment, refund and
+        // notifications together. Accept/reject and the worker use the same lock.
+        private async Task<bool> ExpireUnconfirmedBookingAsync(Booking booking, DateTime now)
+        {
+            if (booking.IsDemo || !BookingConfirmationPolicy.IsExpired(booking, _bookingTime, now)
+                || booking.PaymentStatus is not (PaymentStatus.DepositHeld or PaymentStatus.Paid)) return false;
+            if (await _context.BookingComplaints.AnyAsync(x => x.BookingId == booking.BookingId && x.IsOpen)) return false;
+            var paymentId = await _context.BookingPayments.AsNoTracking()
+                .Where(x => x.BookingId == booking.BookingId && x.Status == BookingPaymentStatus.Paid)
+                .OrderByDescending(x => x.PaidAt).Select(x => (Guid?)x.PaymentId).FirstOrDefaultAsync();
+            var payment = paymentId.HasValue ? await GetPaymentForUpdateAsync(paymentId.Value) : null;
+            if (payment == null)
+                throw new BookingRuleException("PAID_PAYMENT_NOT_FOUND", "Không tìm thấy khoản cọc hợp lệ để hoàn.", 409);
+            await _context.Entry(payment).ReloadAsync();
+            if (!await RefundBookingAsync(booking, payment, payment.Amount, RefundReasonCode.MuaConfirmationTimeout,
+                BookingConfirmationPolicy.TimeoutReason, null)) return false;
+            booking.Status = BookingStatus.Cancelled;
+            booking.CancelledAt = now;
+            booking.CancelledBy = null;
+            booking.CancellationActor = BookingCancellationActor.System;
+            booking.CancellationReason = BookingConfirmationPolicy.TimeoutReason;
+            booking.CancellationPolicyRule = BookingConfirmationPolicy.TimeoutRule;
+            booking.CancellationRefundPercentage = 100m;
+            booking.CancellationRefundAmount = payment.Amount;
+            booking.CancellationAppointmentAtUtc = _bookingTime.ToUtc(booking.BookingDate, booking.StartTime);
+            booking.UpdatedAt = now;
+            await _notificationService.CancelPendingAsync(booking.BookingId);
+            await _notificationService.QueueBookingStatusAsync(booking, BookingStatus.Cancelled, booking.MUAId);
+            await _notificationService.QueueBookingStatusAsync(booking, BookingStatus.Cancelled, booking.CustomerId);
+            return true;
+        }
+
         public async Task<bool> AddReviewAsync(Guid bookingId, Guid customerId, ReviewCreateDto reviewDto)
         {
             await using var scope = await ModerationWriteScope.Start(_context, customerId);
@@ -881,6 +992,8 @@ namespace BeautyBookBackend.Services
             else await new PlayReviewPolicy(_context).EnsureSameDomainAsync(muaId, review.CustomerId);
 
             if (!isAdmin && review.MUAId != muaId) return false;
+            if (await _context.Users.AnyAsync(u => u.UserId == review.CustomerId && u.DeletedAt != null))
+                throw new BookingRuleException("REVIEW_AUTHOR_DELETED", "Không thể phản hồi đánh giá của tài khoản đã xóa.", 409);
             await new ModerationService(_context).EnsureContent("Review", reviewId);
             if (!isAdmin) await new ModerationService(_context).EnsureInteraction(muaId, review.CustomerId);
 
@@ -903,11 +1016,12 @@ namespace BeautyBookBackend.Services
                 ReviewId = r.ReviewId,
                 BookingId = r.BookingId,
                 CustomerId = r.CustomerId,
-                CustomerName = r.Customer != null ? r.Customer.FullName : "",
+                CustomerName = r.Customer?.DeletedAt != null ? PortfolioCommentVisibility.DeletedAuthor : r.Customer?.FullName ?? "",
+                IsAuthorDeleted = r.Customer?.DeletedAt != null,
                 MUAId = r.MUAId,
                 Rating = r.Rating,
-                Comment = r.Comment,
-                ImageUrl = r.ImageUrl,
+                Comment = r.Customer?.DeletedAt != null ? null : r.Comment,
+                ImageUrl = r.Customer?.DeletedAt != null ? null : r.ImageUrl,
                 MuaReply = r.MuaReply,
                 MuaReplyAt = r.MuaReplyAt,
                 CreatedAt = r.CreatedAt
@@ -1157,6 +1271,8 @@ namespace BeautyBookBackend.Services
                 CreatedAt = booking.CreatedAt,
                 UpdatedAt = booking.UpdatedAt,
                 DepositPaidAt = booking.DepositPaidAt,
+                MuaConfirmationDeadline = BookingConfirmationPolicy.IsAwaitingMua(booking)
+                    ? _bookingTime.ToUtc(booking.BookingDate, booking.StartTime) : null,
                 ConfirmedAt = booking.ConfirmedAt,
                 StartedAt = booking.StartedAt,
                 WaitingCustomerAt = booking.WaitingCustomerAt,

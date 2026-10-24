@@ -17,7 +17,39 @@ public sealed class FinancialQrSecurityTests
         return new PngByteQRCode(data).GetGraphic(8);
     }
     private static IFormFile File(byte[] bytes) => new FormFile(new MemoryStream(bytes), 0, bytes.Length, "file", "test.png") { Headers = new HeaderDictionary(), ContentType = "image/png" };
-    private static UploadController Controller(Storage storage) => new(storage) { ControllerContext = new() { HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, Guid.NewGuid().ToString())], "test")) } } };
+    private static UploadController Controller(Storage storage, IAccountNameReader? names = null) => new(storage, names) { ControllerContext = new() { HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, Guid.NewGuid().ToString())], "test")) } } };
+
+    [Theory]
+    [InlineData("971025")]
+    [InlineData("970436")]
+    public async Task Missing_qr_name_is_filled_from_image_without_storing_or_exposing_receiver_payload(string bin)
+    {
+        var storage = new Storage(); var names = new Names();
+        var controller = Controller(storage, names);
+        var response = Assert.IsType<OkObjectResult>(await controller.UploadBankQr(File(Qr(MultiAppPayload(bin)))));
+        var json = System.Text.Json.JsonSerializer.Serialize(response.Value);
+        using var document = System.Text.Json.JsonDocument.Parse(json);
+        Assert.Equal("IMAGE TEST USER", document.RootElement.GetProperty("AccountName").GetString());
+        Assert.Equal("IMAGE", document.RootElement.GetProperty("AccountNameSource").GetString());
+        Assert.False(document.RootElement.GetProperty("RequiresManualAccountName").GetBoolean());
+        Assert.Equal(1, names.Calls); Assert.Equal(0, storage.Calls);
+        Assert.DoesNotContain("RawPayload", json); Assert.DoesNotContain("RecipientIdentifier", json);
+    }
+
+    [Fact]
+    public async Task Name_encoded_in_qr_takes_precedence_over_ocr()
+    {
+        var names = new Names(); var response = Assert.IsType<OkObjectResult>(await Controller(new Storage(), names).UploadBankQr(File(Qr(BankPayload))));
+        using var json = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(response.Value));
+        Assert.Equal("TEST USER", json.RootElement.GetProperty("AccountName").GetString());
+        Assert.Equal("QR", json.RootElement.GetProperty("AccountNameSource").GetString()); Assert.Equal(0, names.Calls);
+    }
+
+    private sealed class Names : IAccountNameReader
+    {
+        public int Calls;
+        public Task<string?> ReadAsync(byte[] image, string? accountNumber, CancellationToken ct) { Calls++; return Task.FromResult<string?>("IMAGE TEST USER"); }
+    }
 
     [Theory]
     [InlineData(BankPayload)]
@@ -55,7 +87,7 @@ public sealed class FinancialQrSecurityTests
         var json = System.Text.Json.JsonSerializer.Serialize(response.Value);
         Assert.DoesNotContain("RawPayload", json);
         using var document = System.Text.Json.JsonDocument.Parse(json);
-        Assert.True(document.RootElement.GetProperty("RequiresManualAccountNumber").GetBoolean());
+        Assert.False(document.RootElement.GetProperty("RequiresManualAccountNumber").GetBoolean());
         Assert.True(document.RootElement.GetProperty("RequiresManualAccountName").GetBoolean());
         foreach (var purpose in new[] { "avatar", "portfolio", "service", "review" })
             Assert.IsType<BadRequestObjectResult>(await Controller(storage).UploadImage(File(Qr(payload)), purpose));

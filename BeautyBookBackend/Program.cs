@@ -214,6 +214,7 @@ builder.Services.AddHostedService<PrivateMediaMaintenanceWorker>();
 builder.Services.AddHttpClient<IVerificationStorage, SupabaseVerificationStorage>(client => client.Timeout = TimeSpan.FromSeconds(30));
 builder.Services.AddHttpClient<IFinancialStorage, SupabaseFinancialStorage>(client => client.Timeout = TimeSpan.FromSeconds(30));
 builder.Services.AddScoped<FinancialMediaService>();
+builder.Services.AddSingleton<IAccountNameReader, AccountNameReader>();
 builder.Services.AddScoped<FinancialMediaCleanup>();
 builder.Services.AddHostedService<FinancialMediaCleanupWorker>();
 

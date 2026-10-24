@@ -191,6 +191,7 @@ namespace BeautyBookBackend.DTOs
         public Guid? ParentCommentId { get; set; }
         public string? UserName { get; set; }
         public string? UserAvatarUrl { get; set; }
+        public bool IsAuthorDeleted { get; set; }
         public string Content { get; set; } = string.Empty;
         public DateTime CreatedAt { get; set; }
         public List<PortfolioCommentDto> Replies { get; set; } = new();

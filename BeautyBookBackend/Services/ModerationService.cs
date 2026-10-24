@@ -95,12 +95,22 @@ public sealed class ModerationService(ApplicationDbContext db)
         if (page < 1 || page > 10000 || (!string.IsNullOrEmpty(status) && !new[] { "Pending", "Reviewed", "Dismissed", "Removed" }.Contains(status))) throw Denied();
         var query = NormalReports.AsNoTracking();
         if (!string.IsNullOrEmpty(status)) query = query.Where(x => x.Status == status);
-        return new { Total = await query.CountAsync(), Items = await query.OrderByDescending(x => x.CreatedAt).ThenBy(x => x.Id).Skip((page - 1) * 20).Take(20).Select(x => new { x.Id, x.TargetType, x.TargetId, x.Reason, x.Status, x.CreatedAt }).ToListAsync() };
+        var rows = from report in query
+                   join reporter in db.Users.AsNoTracking() on report.ReporterId equals reporter.UserId
+                   select new
+                   {
+                       report.Id, report.TargetType, report.TargetId, report.Reason, report.Status, report.CreatedAt,
+                       ReporterName = reporter.DeletedAt == null ? reporter.FullName : null,
+                       ReporterEmail = reporter.DeletedAt == null ? reporter.Email : null
+                   };
+        return new { Total = await query.CountAsync(), Items = await rows.OrderByDescending(x => x.CreatedAt).ThenBy(x => x.Id).Skip((page - 1) * 20).Take(20).ToListAsync() };
     }
     public async Task<object> Detail(Guid admin, Guid id)
     {
         await Admin(admin);
         var row = await NormalReports.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id) ?? throw Denied();
+        var reporter = await db.Users.AsNoTracking().Where(x => x.UserId == row.ReporterId && x.DeletedAt == null)
+            .Select(x => new { x.FullName, x.Email }).SingleOrDefaultAsync();
         string? text = null;
         try { text = (await Target(row.TargetType, row.TargetId, admin, true)).Text; }
         catch (BookingRuleException) { }
@@ -108,7 +118,7 @@ public sealed class ModerationService(ApplicationDbContext db)
         if (row.TargetType == "Portfolio") images = (await db.Portfolios.AsNoTracking().Where(x => x.PortfolioId == row.TargetId).Select(x => x.ImageUrls).SingleOrDefaultAsync() ?? []).Where(MuaEligibilityService.IsValidPublicUrl).Take(20).ToList();
         if (row.TargetType == "Review") { var image = await db.Reviews.Where(x => x.ReviewId == row.TargetId).Select(x => x.ImageUrl).SingleOrDefaultAsync(); if (MuaEligibilityService.IsValidPublicUrl(image)) images.Add(image!); }
         var hasPrivateImage = row.TargetType == "Message" && await db.Messages.AnyAsync(x => x.MessageId == row.TargetId && x.ImageUrl != null && x.ImageUrl.StartsWith("media:"));
-        return new { row.Id, row.TargetType, row.TargetId, row.TargetOwnerId, row.Reason, row.Description, row.Status, row.CreatedAt, row.ReviewedAt, row.DecisionNote, Content = text == null ? null : text[..Math.Min(text.Length, 4000)], ContentAvailable = text != null || images.Count > 0 || hasPrivateImage, CanRemove = row.TargetType != "User", ImageUrls = images, HasPrivateImage = hasPrivateImage };
+        return new { row.Id, row.TargetType, row.TargetId, row.TargetOwnerId, row.Reason, row.Description, row.Status, row.CreatedAt, row.ReviewedAt, row.DecisionNote, ReporterName = reporter?.FullName, ReporterEmail = reporter?.Email, Content = text == null ? null : text[..Math.Min(text.Length, 4000)], ContentAvailable = text != null || images.Count > 0 || hasPrivateImage, CanRemove = row.TargetType != "User", ImageUrls = images, HasPrivateImage = hasPrivateImage };
     }
     public async Task<object> ReportedImage(Guid admin, Guid id, IVerificationStorage storage)
     {

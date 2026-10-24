@@ -115,6 +115,56 @@ public sealed class ModerationTests
         await Assert.ThrowsAsync<BookingRuleException>(() => service.Decide(Admin, id, new() { Action = "Reviewed", Note = "review" }));
         Assert.DoesNotContain(id.ToString(), System.Text.Json.JsonSerializer.Serialize(await service.Queue(Admin, null, 1)));
     }
+    [Theory]
+    [InlineData("reporter@gmail.com")]
+    [InlineData("reporter@example.test")]
+    public async Task AdminQueueAndDetailShowTheReporterInsteadOfTheTarget(string email)
+    {
+        await using var store = await PlayReviewTestStore.CreateAsync(); await Seed(store);
+        var reporter = (await store.Db.Users.FindAsync(Customer))!;
+        reporter.FullName = "Người gửi báo cáo"; reporter.Email = email;
+        (await store.Db.Users.FindAsync(Mua))!.Email = "target@example.test";
+        await store.Db.SaveChangesAsync();
+        var service = new ModerationService(store.Db);
+        var id = await service.Report(Customer, Request(Mua, "User"));
+        var queue = System.Text.Json.JsonSerializer.SerializeToElement(await service.Queue(Admin, "Pending", 1));
+        Assert.Equal(1, queue.GetProperty("Total").GetInt32());
+        var item = Assert.Single(queue.GetProperty("Items").EnumerateArray());
+        var detail = System.Text.Json.JsonSerializer.SerializeToElement(await service.Detail(Admin, id));
+        foreach (var result in new[] { item, detail })
+        {
+            Assert.Equal("Người gửi báo cáo", result.GetProperty("ReporterName").GetString());
+            Assert.Equal(email, result.GetProperty("ReporterEmail").GetString());
+        }
+    }
+    [Fact]
+    public async Task RetainedReportsDoNotExposeDeletedReporterIdentity()
+    {
+        await using var store = await PlayReviewTestStore.CreateAsync(); await Seed(store);
+        var service = new ModerationService(store.Db);
+        var id = await service.Report(Customer, Request(Mua, "User"));
+        var reporter = (await store.Db.Users.FindAsync(Customer))!;
+        reporter.FullName = "Deleted personal name"; reporter.Email = "deleted-person@gmail.com";
+        reporter.DeletedAt = DateTime.UtcNow; reporter.IsActive = false;
+        await store.Db.SaveChangesAsync();
+        var queue = System.Text.Json.JsonSerializer.SerializeToElement(await service.Queue(Admin, null, 1));
+        var item = Assert.Single(queue.GetProperty("Items").EnumerateArray());
+        var detail = System.Text.Json.JsonSerializer.SerializeToElement(await service.Detail(Admin, id));
+        foreach (var result in new[] { item, detail })
+        {
+            Assert.Equal(System.Text.Json.JsonValueKind.Null, result.GetProperty("ReporterName").ValueKind);
+            Assert.Equal(System.Text.Json.JsonValueKind.Null, result.GetProperty("ReporterEmail").ValueKind);
+        }
+    }
+    [Fact]
+    public async Task NonAdminsCannotReadReporterContactInformation()
+    {
+        await using var store = await PlayReviewTestStore.CreateAsync(); await Seed(store);
+        var service = new ModerationService(store.Db);
+        var id = await service.Report(Customer, Request(Mua, "User"));
+        await Assert.ThrowsAsync<BookingRuleException>(() => service.Queue(Customer, null, 1));
+        await Assert.ThrowsAsync<BookingRuleException>(() => service.Detail(Outsider, id));
+    }
     [Fact]
     public async Task ReportRateLimitAndDescriptionBoundAreEnforced()
     {

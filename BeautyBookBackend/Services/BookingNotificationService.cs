@@ -107,8 +107,10 @@ public class BookingNotificationService : IBookingNotificationService
         var target = actorId == booking.CustomerId ? booking.MUAId : booking.CustomerId;
         var content = status switch
         {
-            BookingStatus.PendingConfirmation => ("Có booking mới", "Khách hàng đã đặt cọc và đang chờ bạn xác nhận."),
+            BookingStatus.PendingConfirmation => ("Có booking mới", "Khách hàng đã đặt cọc. Vui lòng nhận hoặc từ chối trước giờ hẹn; booking sẽ tự hủy nếu bạn chưa xác nhận."),
             BookingStatus.Approved => ("Booking đã được xác nhận", "MUA đã đồng ý lịch hẹn của bạn."),
+            BookingStatus.Cancelled when booking.CancellationPolicyRule == BookingConfirmationPolicy.TimeoutRule
+                => ("Booking tự hủy do chưa được xác nhận", "MUA chưa xác nhận trước giờ hẹn. Đã tạo hồ sơ hoàn toàn bộ tiền cọc cho khách; mở BBook để theo dõi."),
             BookingStatus.Cancelled => ("Booking đã bị hủy", "Lịch hẹn đã bị hủy. Hãy mở BBook để xem chi tiết."),
             BookingStatus.Rejected => ("MUA đã từ chối booking", "Tiền cọc của bạn sẽ được hoàn theo trạng thái booking."),
             BookingStatus.WaitingCustomer => ("Dịch vụ đã hoàn thành", "Vui lòng xác nhận hoàn thành hoặc gửi khiếu nại trong BBook."),

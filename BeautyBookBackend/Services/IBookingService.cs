@@ -21,6 +21,7 @@ namespace BeautyBookBackend.Services
         Task<BookingDto?> ResolveDisputeAsync(Guid bookingId, bool refundCustomer);
         Task<int> AutoCompleteOverdueAsync();
         Task<int> ExpirePendingPaymentsAsync();
+        Task<int> ExpireUnconfirmedBookingsAsync();
         Task<List<TimeSpan>> GetAvailableSlotsAsync(Guid muaId, DateTime date, int totalDurationMinutes);
         
         // Reviews

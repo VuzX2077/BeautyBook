@@ -22,6 +22,7 @@ namespace BeautyBookBackend.Services
                     using var scope = _scopeFactory.CreateScope();
                     var bookingService = scope.ServiceProvider.GetRequiredService<IBookingService>();
                     await bookingService.ExpirePendingPaymentsAsync();
+                    await bookingService.ExpireUnconfirmedBookingsAsync();
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
@@ -29,7 +30,7 @@ namespace BeautyBookBackend.Services
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Failed to expire pending booking payments.");
+                    _logger.LogError(ex, "Failed to expire booking payments or unanswered bookings.");
                 }
 
                 try

@@ -54,6 +54,7 @@ namespace BeautyBookBackend.DTOs
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
         public DateTime? DepositPaidAt { get; set; }
+        public DateTime? MuaConfirmationDeadline { get; set; }
         public DateTime? ConfirmedAt { get; set; }
         public DateTime? StartedAt { get; set; }
         public DateTime? WaitingCustomerAt { get; set; }

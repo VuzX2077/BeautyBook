@@ -243,7 +243,7 @@ namespace BeautyBookBackend.Services
                     return true;
                 }
                 if (string.IsNullOrWhiteSpace(refund.DestinationBankBin)
-                    || string.IsNullOrWhiteSpace(refund.DestinationAccountNumber)
+                    || (string.IsNullOrWhiteSpace(refund.DestinationAccountNumber) && !(refund.DestinationBankCode == "MOMO" && refund.DestinationFinancialQrMediaId.HasValue))
                     || string.IsNullOrWhiteSpace(refund.DestinationAccountName))
                 {
                     refund.Status = RefundStatus.AwaitingDestination;
@@ -272,7 +272,7 @@ namespace BeautyBookBackend.Services
                 if (payoutId == null)
                     request = new RefundPayoutRequest(referenceId, decimal.ToInt64(refund.Amount),
                         $"Hoan tien {refund.BookingId:N}"[..Math.Min(25, $"Hoan tien {refund.BookingId:N}".Length)],
-                        refund.DestinationBankBin, refund.DestinationAccountNumber);
+                        refund.DestinationBankBin, refund.DestinationAccountNumber!);
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
             }
@@ -376,7 +376,7 @@ namespace BeautyBookBackend.Services
             if (!allowed) return null;
             if (target == RefundStatus.Processing
                 && (string.IsNullOrWhiteSpace(refund.DestinationBankBin)
-                    || string.IsNullOrWhiteSpace(refund.DestinationAccountNumber)
+                    || (string.IsNullOrWhiteSpace(refund.DestinationAccountNumber) && !(refund.DestinationBankCode == "MOMO" && refund.DestinationFinancialQrMediaId.HasValue))
                     || string.IsNullOrWhiteSpace(refund.DestinationAccountName)))
                 return null;
             if(target==RefundStatus.Processing&&!await DestinationIsStillUsableAsync(refund,booking.CustomerId,DateTime.UtcNow))
@@ -480,7 +480,7 @@ namespace BeautyBookBackend.Services
             ReasonCode = refund.ReasonCode,
             Reason = refund.Reason,
             ProviderReference = refund.ProviderReference,
-            MaskedDestinationAccountNumber = refund.DestinationAccountNumber == null ? null : Mask(refund.DestinationAccountNumber),
+            MaskedDestinationAccountNumber = RecipientLabel(refund),
             DestinationBankName = refund.DestinationBankName,
             DestinationAccountName = refund.DestinationAccountName,
             CreatedAt = refund.CreatedAt,
@@ -542,11 +542,13 @@ namespace BeautyBookBackend.Services
         }
 
         private static string Mask(string value) => value.Length <= 4 ? new string('*', value.Length) : new string('*', value.Length - 4) + value[^4..];
+        private static string? RecipientLabel(Refund refund) => refund.DestinationBankCode == "MOMO" && refund.DestinationFinancialQrMediaId.HasValue && string.IsNullOrWhiteSpace(refund.DestinationAccountNumber)
+            ? "QR MoMo" : refund.DestinationAccountNumber == null ? null : Mask(refund.DestinationAccountNumber);
 
         private void QueueStatusNotification(Refund refund, Guid customerId, RefundStatus status, DateTime now)
         {
             var amount = refund.Amount.ToString("N0", CultureInfo.GetCultureInfo("vi-VN")) + "đ";
-            var bankSuffix = string.IsNullOrWhiteSpace(refund.DestinationAccountNumber)
+            var bankSuffix = refund.DestinationBankCode == "MOMO" && refund.DestinationFinancialQrMediaId.HasValue ? "MoMo qua QR" : string.IsNullOrWhiteSpace(refund.DestinationAccountNumber)
                 ? null
                 : $"{refund.DestinationBankName} ••••{refund.DestinationAccountNumber[^Math.Min(4, refund.DestinationAccountNumber.Length)..]}".Trim();
             var content = status switch
@@ -597,7 +599,7 @@ namespace BeautyBookBackend.Services
             DestinationBankBin = refund.DestinationBankBin, DestinationBankCode = refund.DestinationBankCode, DestinationBankName = refund.DestinationBankName,
             DestinationAccountNumber = refund.DestinationAccountNumber,
             DestinationQrCodeUrl = null,
-            MaskedDestinationAccountNumber = refund.DestinationAccountNumber == null ? null : Mask(refund.DestinationAccountNumber),
+            MaskedDestinationAccountNumber = RecipientLabel(refund),
             DestinationAccountName = refund.DestinationAccountName, CreatedAt = refund.CreatedAt,
             ProcessingAt = refund.ProcessingAt, CompletedAt = refund.CompletedAt, FailedAt = refund.FailedAt,
             DestinationNeedsConfirmation = refund.DestinationNeedsConfirmation, FailureCode = refund.FailureCode, FailureMessage = refund.FailureMessage

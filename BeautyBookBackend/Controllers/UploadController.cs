@@ -13,8 +13,9 @@ namespace BeautyBookBackend.Controllers
         private static readonly HashSet<string> AllowedTypes = new(StringComparer.OrdinalIgnoreCase)
         { "image/jpeg", "image/png", "image/webp", "image/heic" };
         private readonly IImageStorage _imageStorage;
+        private readonly IAccountNameReader? _accountNames;
 
-        public UploadController(IImageStorage imageStorage) => _imageStorage = imageStorage;
+        public UploadController(IImageStorage imageStorage, IAccountNameReader? accountNames = null) { _imageStorage = imageStorage; _accountNames = accountNames; }
 
         [HttpPost("image")]
         [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting("media-upload")]
@@ -61,9 +62,17 @@ namespace BeautyBookBackend.Controllers
             using var buffer = new MemoryStream();
             await input.CopyToAsync(buffer, HttpContext.RequestAborted);
             BankQrData decoded;
+            var accountNameSource = "QR";
             try {
                 if (buffer.Length > 5 * 1024 * 1024) return BadRequest(new { Message = "Ảnh QR vượt quá 5MB." });
-                decoded = BankQrDecoder.DecodeImage(VerificationImage.Normalize(buffer.ToArray()));
+                var image = VerificationImage.Normalize(buffer.ToArray());
+                decoded = BankQrDecoder.DecodeImage(image);
+                if (string.IsNullOrWhiteSpace(decoded.AccountName) && _accountNames != null)
+                {
+                    var name = await _accountNames.ReadAsync(image, decoded.AccountNumber, HttpContext.RequestAborted);
+                    decoded = decoded with { AccountName = name };
+                    accountNameSource = "IMAGE";
+                }
             }
             catch (ArgumentException ex) { return BadRequest(new { Code = "QR_IMAGE_INVALID", Message = ex.Message }); }
             catch (InvalidOperationException ex) { return BadRequest(new { Code = "QR_NOT_RECOGNIZED", Message = ex.Message }); }
@@ -85,8 +94,9 @@ namespace BeautyBookBackend.Controllers
                 decoded.BankBin,
                 decoded.AccountNumber,
                 decoded.AccountName,
+                AccountNameSource = string.IsNullOrWhiteSpace(decoded.AccountName) ? null : accountNameSource,
                 RequiresManualAccountName = string.IsNullOrWhiteSpace(decoded.AccountName),
-                RequiresManualAccountNumber = string.IsNullOrWhiteSpace(decoded.AccountNumber)
+                RequiresManualAccountNumber = decoded.Method != "MOMO" && string.IsNullOrWhiteSpace(decoded.AccountNumber)
             });
         }
     }

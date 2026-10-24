@@ -25,7 +25,7 @@ public sealed class BankAccountService(ApplicationDbContext db, IEmailOtpService
         await new PlayReviewPolicy(db).EnsureNormalUserAsync(userId);
         var email = await GetActiveEmailAsync(userId);
         if (email == null) return null;
-        var value = Normalize(request);
+        var value = await NormalizeAsync(userId, request);
         if (await DuplicateQuery(userId, value.CanonicalBankKey, value.NormalizedAccountNumber, value.Method).AnyAsync()) throw Duplicate();
         await emailOtpService.IssueAsync(email, AddPurpose, BuildContext("ADD", userId, null, value));
         return OtpResponse(email);
@@ -38,7 +38,7 @@ public sealed class BankAccountService(ApplicationDbContext db, IEmailOtpService
         if (email == null) return null;
         if (!await db.BankAccounts.AsNoTracking().AnyAsync(x => x.Id == id && x.UserId == userId && x.IsActive)) return null;
         var current = await db.BankAccounts.AsNoTracking().SingleAsync(x => x.Id==id && x.UserId==userId && x.IsActive);
-        var value = Normalize(request) with { FinancialQrMediaId = ResolveQr(request,current.FinancialQrMediaId) };
+        var value = await NormalizeAsync(userId, request, current);
         if (await DuplicateQuery(userId, value.CanonicalBankKey, value.NormalizedAccountNumber, value.Method).AnyAsync(x => x.Id != id)) throw Duplicate();
         await emailOtpService.IssueAsync(email, UpdatePurpose, BuildContext("UPDATE", userId, id, value));
         return OtpResponse(email);
@@ -47,7 +47,7 @@ public sealed class BankAccountService(ApplicationDbContext db, IEmailOtpService
     public async Task<BankAccountDto> AddAsync(Guid userId, UpsertBankAccountRequest request)
     {
         await new PlayReviewPolicy(db).EnsureNormalUserAsync(userId);
-        var value = Normalize(request);
+        var value = await NormalizeAsync(userId, request);
         var email = await GetActiveEmailAsync(userId) ?? throw Inactive();
         var now = DateTime.UtcNow;
         await using var tx = await db.Database.BeginTransactionAsync();
@@ -67,7 +67,7 @@ public sealed class BankAccountService(ApplicationDbContext db, IEmailOtpService
             QrCodeUrl=value.Qr, VerificationStatus=BankAccountEligibility.Pending, ActivatedAt=null,
             IsActive=true, IsDefault=false, CreatedAt=now, UpdatedAt=now
         };
-        entity.FinancialQrMediaId = value.Method == "MOMO" ? request.FinancialQrMediaId : null;
+        entity.FinancialQrMediaId = value.FinancialQrMediaId;
         if (entity.FinancialQrMediaId.HasValue) {
             if (financial == null) throw new InvalidOperationException("Financial media service unavailable.");
             await financial.AttachAsync(userId, entity.Id, value.AccountNumber, entity.FinancialQrMediaId.Value);
@@ -81,15 +81,15 @@ public sealed class BankAccountService(ApplicationDbContext db, IEmailOtpService
     public async Task<BankAccountDto?> UpdateAsync(Guid userId, Guid id, UpsertBankAccountRequest request)
     {
         await new PlayReviewPolicy(db).EnsureNormalUserAsync(userId);
-        var value = Normalize(request);
         var email = await GetActiveEmailAsync(userId);
         if (email == null) return null;
         await using var tx = await db.Database.BeginTransactionAsync();
         await BankAccountDefaultManager.LockOwnerAsync(db, userId);
         var entity = await db.BankAccounts.FirstOrDefaultAsync(x => x.Id == id && x.UserId == userId && x.IsActive);
         if (entity == null) return null;
+        var value = await NormalizeAsync(userId, request, entity);
         var sensitive = BankAccountEligibility.HasSensitiveChanges(
-            entity.BankCode+"|"+entity.BankBin, entity.Method=="MOMO"?MomoPhone.Normalize(entity.AccountNumber):entity.AccountNumber, entity.AccountHolderName, entity.Method, entity.QrCodeUrl,
+            entity.BankCode+"|"+entity.BankBin, entity.Method=="MOMO"?OptionalMomoNumber(entity.AccountNumber):entity.AccountNumber, entity.AccountHolderName, entity.Method, entity.QrCodeUrl,
             value.BankCode+"|"+value.BankBin, value.AccountNumber, value.Holder, value.Method, value.Qr);
         var newFinancialId = ResolveQr(request,entity.FinancialQrMediaId);
         value = value with { FinancialQrMediaId = newFinancialId };
@@ -116,7 +116,7 @@ public sealed class BankAccountService(ApplicationDbContext db, IEmailOtpService
         var replacedFinancialId = entity.FinancialQrMediaId;
         entity.FinancialQrMediaId = newFinancialId;
         entity.BankCode=value.BankCode; entity.BankBin=value.BankBin; entity.BankName=value.BankName;
-        entity.AccountNumber=entity.FinancialQrMediaId.HasValue && replacedFinancialId==newFinancialId && entity.Method=="MOMO" && value.Method=="MOMO" && MomoPhone.Normalize(entity.AccountNumber)==value.AccountNumber ? entity.AccountNumber : value.AccountNumber; entity.NormalizedAccountNumber=value.NormalizedAccountNumber;
+        entity.AccountNumber=entity.FinancialQrMediaId.HasValue && replacedFinancialId==newFinancialId && entity.Method=="MOMO" && value.Method=="MOMO" && OptionalMomoNumber(entity.AccountNumber)==value.AccountNumber ? entity.AccountNumber : value.AccountNumber; entity.NormalizedAccountNumber=value.NormalizedAccountNumber;
         entity.CanonicalBankKey=value.CanonicalBankKey; entity.AccountHolderName=value.Holder;
         // Preserve legacy references for owner-aware cleanup, never accept a new QR URL.
         entity.Method=value.Method; entity.UpdatedAt=now;
@@ -172,21 +172,34 @@ public sealed class BankAccountService(ApplicationDbContext db, IEmailOtpService
     }
 
     private sealed record NormalizedBank(string BankCode,string BankBin,string BankName,string AccountNumber,string NormalizedAccountNumber,string Holder,string Method,string CanonicalBankKey,string? Qr,Guid? FinancialQrMediaId);
-    private static NormalizedBank Normalize(BankAccountDraftRequest r)
+    private async Task<NormalizedBank> NormalizeAsync(Guid owner, BankAccountDraftRequest request, BankAccount? current = null)
+    {
+        var qrId = ResolveQr(request, current?.FinancialQrMediaId);
+        string? identity = null;
+        if (BankAccountEligibility.NormalizeCode(request.Method) == "MOMO" && string.IsNullOrWhiteSpace(request.AccountNumber) && qrId.HasValue)
+        {
+            if (financial == null) throw Invalid("Chưa thể xác minh QR MoMo riêng tư. Vui lòng thử lại.");
+            identity = await financial.RecipientIdentityAsync(owner, current?.Id, qrId.Value);
+        }
+        return Normalize(request, identity) with { FinancialQrMediaId = qrId };
+    }
+    private static string OptionalMomoNumber(string? value) => string.IsNullOrWhiteSpace(value) ? "" : MomoPhone.Normalize(value);
+    private static NormalizedBank Normalize(BankAccountDraftRequest r, string? qrIdentity = null)
     {
         var requestedMethod=BankAccountEligibility.NormalizeCode(r.Method); if(requestedMethod is not ("BANK" or "MOMO"))throw Invalid("Phương thức nhận tiền chỉ chấp nhận BANK hoặc MOMO.");
         var method=requestedMethod; var code=BankAccountEligibility.NormalizeCode(r.BankCode); var bin=BankAccountEligibility.NormalizeCode(r.BankBin);
         if(method=="MOMO"){code="MOMO";bin="MOMO";}else if(CodeToBin.TryGetValue(code,out var expected)){if(string.IsNullOrWhiteSpace(bin))bin=expected;if(bin!=expected)throw Invalid("Mã ngân hàng và BIN không khớp.");}
         if(method=="BANK"&&(!Regex.IsMatch(code,"^[A-Z0-9]{2,20}$")||!Regex.IsMatch(bin,"^[0-9]{6}$")))throw Invalid("Mã ngân hàng hoặc BIN không hợp lệ.");
-        var account=method=="MOMO"?MomoPhone.Normalize(r.AccountNumber):BankAccountEligibility.NormalizeAccount(r.AccountNumber); var pattern=method=="MOMO"?"^0[35789][0-9]{8}$":"^[A-Z0-9]{5,30}$"; if(!Regex.IsMatch(account,pattern))throw Invalid("Số tài khoản không hợp lệ.");
+        var qrOnly = method == "MOMO" && qrIdentity != null && string.IsNullOrWhiteSpace(r.AccountNumber);
+        var account=qrOnly?"":method=="MOMO"?MomoPhone.Normalize(r.AccountNumber):BankAccountEligibility.NormalizeAccount(r.AccountNumber); var pattern=method=="MOMO"?"^0[35789][0-9]{8}$":"^[A-Z0-9]{5,30}$"; if(!qrOnly&&!Regex.IsMatch(account,pattern))throw Invalid("Số tài khoản không hợp lệ.");
         var holder=BankAccountEligibility.NormalizeHolder(r.AccountHolderName); if(string.IsNullOrWhiteSpace(holder))throw Invalid("Tên chủ tài khoản là bắt buộc.");
         var key=method=="MOMO"?"MOMO":"BIN:"+bin;
         // Deprecated client QR URLs are ignored, including old public Supabase URLs.
-        return new(code,bin,(r.BankName??string.Empty).Trim(),account,account,holder,method,key,null,method=="MOMO"?r.FinancialQrMediaId:null);
+        return new(code,bin,(r.BankName??string.Empty).Trim(),account,qrOnly?qrIdentity!:account,holder,method,key,null,method=="MOMO"?r.FinancialQrMediaId:null);
     }
 
     private static void ValidateKeptQrRecipient(BankAccount current, NormalizedBank next) {
-        if (current.Method == "MOMO" && next.Method == "MOMO" && current.FinancialQrMediaId.HasValue && current.FinancialQrMediaId == next.FinancialQrMediaId && MomoPhone.Normalize(current.AccountNumber) != next.AccountNumber)
+        if (current.Method == "MOMO" && next.Method == "MOMO" && current.FinancialQrMediaId.HasValue && current.FinancialQrMediaId == next.FinancialQrMediaId && next.AccountNumber.Length > 0 && OptionalMomoNumber(current.AccountNumber) != next.AccountNumber)
             throw new BookingRuleException("FINANCIAL_QR_RECIPIENT_CHANGE", "Khi đổi số MoMo, hãy tải QR mới hoặc chọn Bỏ QR để nhận tiền thủ công.", 409);
     }
     private static Guid? ResolveQr(BankAccountDraftRequest request, Guid? current) {
@@ -227,7 +240,7 @@ public sealed class BankAccountService(ApplicationDbContext db, IEmailOtpService
     {
         var reason=BankAccountEligibility.GetUnavailableReason(x.IsActive,x.VerificationStatus,x.ActivatedAt,DateTime.UtcNow);
         return new(){Id=x.Id,BankCode=x.BankCode,BankBin=x.BankBin,BankName=x.BankName,
-            MaskedAccountNumber=x.AccountNumber.Length<=4?new string('*',x.AccountNumber.Length):new string('*',x.AccountNumber.Length-4)+x.AccountNumber[^4..],
+            MaskedAccountNumber=x.Method=="MOMO"&&x.FinancialQrMediaId.HasValue&&x.AccountNumber.Length==0?"QR MoMo":x.AccountNumber.Length<=4?new string('*',x.AccountNumber.Length):new string('*',x.AccountNumber.Length-4)+x.AccountNumber[^4..],
             AccountHolderName=x.AccountHolderName,Method=x.Method,QrCodeUrl=null,FinancialQrMediaId=x.FinancialQrMediaId,VerificationStatus=x.VerificationStatus,
             ActivatedAt=x.ActivatedAt,IsDefault=x.IsDefault,IsActive=x.IsActive,IsUsable=reason==null,CanReceiveMoney=reason==null,
             IsCoolingDown=false,UnavailableReason=reason};

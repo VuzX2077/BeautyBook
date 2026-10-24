@@ -227,4 +227,56 @@ public class DepositConfirmationTests
         Assert.Equal("test-ref", result.Reference);
         Assert.Empty(db.ChangeTracker.Entries<BookingPayment>());
     }
+
+    [Fact]
+    public async Task Booking_read_inside_existing_transaction_keeps_internal_flows_local()
+    {
+        await using var store = await PlayReviewTestStore.CreateAsync(); var db = store.Db;
+        var (booking, _) = await Seed(db);
+        (await db.BookingPayments.SingleAsync()).CreatedAt = DateTime.UtcNow.AddSeconds(-20);
+        await db.SaveChangesAsync(); db.ChangeTracker.Clear();
+        var service = Service(db, ReviewTestProxy.Make<IPayOsService>((_, _) => throw new Exception("Unexpected provider request inside transaction")));
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        Assert.Equal(PaymentStatus.Unpaid, (await service.GetBookingByIdAsync(booking.BookingId, booking.CustomerId))!.PaymentStatus);
+        await transaction.CommitAsync();
+    }
+
+    [PostgreSqlFact]
+    public async Task Published_app_poll_and_webhook_race_records_the_deposit_once_on_postgresql()
+    {
+        await using var database = await PostgreSqlDatabase.CreateMigratedAsync();
+        Booking booking; BookingPayment payment;
+        await using (var seed = database.CreateContext())
+        {
+            (booking, payment) = await Seed(seed);
+            (await seed.BookingPayments.SingleAsync()).CreatedAt = DateTime.UtcNow.AddSeconds(-20);
+            await seed.SaveChangesAsync();
+        }
+        var lookupStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseLookup = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        async Task<PayOsPaymentLinkResult> Lookup()
+        {
+            lookupStarted.TrySetResult();
+            await releaseLookup.Task.WaitAsync(TimeSpan.FromSeconds(15));
+            return Paid(payment);
+        }
+        var provider = ReviewTestProxy.Make<IPayOsService>((method, _) => method.Name == nameof(IPayOsService.IsValidWebhookSignature) ? true : Lookup());
+        await using var pollDb = database.CreateContext();
+        await using var webhookDb = database.CreateContext();
+        var poll = Service(pollDb, provider).GetBookingByIdAsync(booking.BookingId, booking.CustomerId);
+        try
+        {
+            await lookupStarted.Task.WaitAsync(TimeSpan.FromSeconds(15));
+            Assert.True(await Service(webhookDb, provider).HandlePayOsWebhookAsync(new() { Success = true, Data = new() {
+                OrderCode = payment.ProviderOrderCode, Amount = 15000, Currency = "VND", PaymentLinkId = payment.ProviderPaymentLinkId, Code = "00" } }));
+            var notifications = await webhookDb.AppNotifications.CountAsync();
+            releaseLookup.TrySetResult();
+            Assert.Equal(PaymentStatus.DepositHeld, (await poll)!.PaymentStatus);
+            await using var check = database.CreateContext();
+            Assert.Equal(BookingPaymentStatus.Paid, (await check.BookingPayments.SingleAsync()).Status);
+            Assert.Equal(BookingStatus.PendingConfirmation, (await check.Bookings.SingleAsync()).Status);
+            Assert.Equal(notifications, await check.AppNotifications.CountAsync());
+        }
+        finally { releaseLookup.TrySetResult(); }
+    }
 }

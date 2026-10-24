@@ -131,17 +131,25 @@ namespace BeautyBookBackend.Services
                 || !root.TryGetProperty("signature", out var signature)
                 || !PayOsSignature.Verify(data, signature.GetString(), GetRequiredConfig("PayOS:ChecksumKey")))
                 throw new InvalidOperationException("Chưa xác minh được kết quả payOS. Vui lòng kiểm tra lại sau.");
-            var result = new PayOsPaymentLinkResult
+            PayOsPaymentLinkResult result;
+            try
             {
-                OrderCode = data.GetProperty("orderCode").GetInt64(),
-                PaymentLinkId = data.GetProperty("id").GetString() ?? "",
-                Status = data.GetProperty("status").GetString() ?? "",
-                Amount = data.GetProperty("amount").GetDecimal(),
-                AmountPaid = data.GetProperty("amountPaid").GetDecimal(),
-                AmountRemaining = data.GetProperty("amountRemaining").GetDecimal(),
-                Reference = LastTransactionString(data, "reference"),
-                TransactionDateTime = LastTransactionString(data, "transactionDateTime")
-            };
+                result = new PayOsPaymentLinkResult
+                {
+                    OrderCode = data.GetProperty("orderCode").GetInt64(),
+                    PaymentLinkId = data.GetProperty("id").GetString() ?? "",
+                    Status = data.GetProperty("status").GetString() ?? "",
+                    Amount = data.GetProperty("amount").GetDecimal(),
+                    AmountPaid = data.GetProperty("amountPaid").GetDecimal(),
+                    AmountRemaining = data.GetProperty("amountRemaining").GetDecimal(),
+                    Reference = LastTransactionString(data, "reference"),
+                    TransactionDateTime = LastTransactionString(data, "transactionDateTime")
+                };
+            }
+            catch (Exception ex) when (ex is KeyNotFoundException or FormatException or OverflowException)
+            {
+                throw new InvalidOperationException("Kết quả payOS chưa đầy đủ hoặc không hợp lệ. Vui lòng kiểm tra lại sau.", ex);
+            }
             if (result.OrderCode != orderCode || result.PaymentLinkId != payment.ProviderPaymentLinkId)
                 throw new InvalidOperationException("Kết quả payOS không khớp yêu cầu thanh toán.");
             return result;

@@ -37,19 +37,33 @@ kiểm tra lại; receipt dùng lịch hẹn từ server thay vì draft có th�
 
 ## Kiểm chứng
 
-Backend trên nền origin/main ecade1d: build đạt; các nhóm DepositConfirmationTests,
-PlayReviewSafetyTests, PlayReviewSimulationTests có 75 passed, 7 skipped, 0 failed.
-Các bài PostgreSQL cần cấu hình DB tích hợp nên chưa kiểm chứng đồng thời thật;
-SQLite xác nhận trạng thái tuần tự, duplicate, ownership, demo, outage, mismatch,
-chữ ký và tiền về sau khi booking hết hiệu lực.
+Backend trên nền origin/main ecade1d: build đạt. Bộ kiểm thử cơ bản có 589 passed,
+128 skipped do chưa cấp DB tích hợp, 0 failed. Sau đó đã tạo PostgreSQL 18 riêng
+trên localhost và chạy 122 bài của các nhóm thanh toán, booking, refund, notification,
+password reset, bank và Play Review: 122 passed, 0 skipped, 0 failed. Bản chốt cuối
+chạy thêm 16 DepositConfirmationTests, gồm race giữa webhook và GET của app đang
+phát hành trên PostgreSQL thật: 16 passed, 0 skipped, 0 failed.
 
-App trên nền origin/main 435c8e0: 39 tests đạt trong CheckoutSuccess,
-useDepositConfirmation, playReviewContracts và bookingDestination. Lint các file
-thay đổi đạt. Typecheck toàn repo còn lỗi có trước ở hooks/useProtectedRoute.ts:57
-(truy cập phần tử thứ hai của tuple [string]); không thay code protected route.
+Không bắt đầu đối soát từ các bước đọc bên trong transaction đang giữ khóa, để
+giữ luồng chuyển trạng thái nội bộ như trước. Response provider thiếu trường/sai
+định dạng được chuyển thành lỗi xác minh; GET booking vẫn đọc được trạng thái cũ.
 
-Chưa thử giao dịch thật, chưa truy cập DB production, chưa push/deploy hay build
-AAB. Không kết luận nguyên nhân riêng của mọi giao dịch MoMo khi thiếu payload thật.
+App trên nền origin/main 435c8e0: full run có 911 tests/129 suites. 907 passed;
+ba suite có 4 lỗi ban đầu (hai timeout UI làm phát sinh lỗi nối tiếp và assertion
+URL Render cũ). Đã sửa assertion sang endpoint đã được đổi trong commit b0878de,
+đặt timeout 15 giây cho hai suite native UI, giữ toàn bộ assertion nghiệp vụ;
+chạy lại cả ba suite: 41 passed, 0 failed. Không còn lỗi chưa xử lý trong full run
+và các rerun. Các bài thanh toán mới cũng đạt trong full run.
+
+Typecheck toàn app và lint các file sản phẩm sửa đổi đạt. useProtectedRoute chỉ
+được khai báo segments là string[] để kiểm tra kiểu chạy đầy đủ; logic runtime
+giữ nguyên. Không thay EAS API URL, package, scheme hay phiên bản phát hành.
+
+Smoke chỉ đọc production trước deploy: /health Healthy, /api/User/profile trả
+401 khi chưa đăng nhập; endpoint production là https://beautybook-v3bi.onrender.com/api.
+Không thử giao dịch thật, không truy cập DB production, không tự deploy Render
+hay build AAB. Không kết luận nguyên nhân riêng của mọi giao dịch MoMo khi thiếu
+payload thật. Những kết quả này cần được bổ sung bằng smoke trên app thật sau deploy.
 
 ## Triển khai
 

@@ -549,6 +549,10 @@ namespace BeautyBookBackend.Services
 
         public async Task<BookingDto?> GetBookingByIdAsync(Guid bookingId, Guid userId)
         {
+            // Internal status transitions may already hold booking/payment locks.
+            // Only an independent read request can start provider reconciliation.
+            if (_context.Database.CurrentTransaction != null)
+                return await ReadBookingByIdAsync(bookingId, userId);
             // Existing store releases already poll this endpoint. Repair a missing
             // webhook here too, after a short grace period, with the same throttle.
             var threshold = DateTime.UtcNow.AddSeconds(-10);

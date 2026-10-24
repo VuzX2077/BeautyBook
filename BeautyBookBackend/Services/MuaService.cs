@@ -309,7 +309,6 @@ namespace BeautyBookBackend.Services
             var portfolios = await ModerationService.VisiblePortfolios(_dbContext, _dbContext.Portfolios, currentUserId)
                 .Include(p => p.Likes)
                 .Include(p => p.Saves)
-                .Include(p => p.Comments)
                 .Include(p => p.MakeupArtistProfile)
                 .ThenInclude(m => m.User)
                 .Include(p => p.Service).ThenInclude(s => s!.Styles).ThenInclude(s => s.MakeupStyle)
@@ -325,6 +324,7 @@ namespace BeautyBookBackend.Services
                     .ToList();
             }
 
+            var commentCounts = await PortfolioCommentVisibility.CountsAsync(_dbContext, portfolios.Select(p => p.PortfolioId), currentUserId);
             return portfolios.Select(p => new PortfolioDto
             {
                 PortfolioId = p.PortfolioId,
@@ -337,7 +337,7 @@ namespace BeautyBookBackend.Services
                 IsPinned = p.IsPinned,
                 CreatedAt = p.CreatedAt,
                 LikesCount = p.Likes.Count,
-                CommentsCount = p.Comments.Count,
+                CommentsCount = commentCounts.GetValueOrDefault(p.PortfolioId),
                 SavesCount = p.Saves.Count,
                 IsLiked = currentUserId.HasValue && p.Likes.Any(l => l.UserId == currentUserId.Value),
                 IsSaved = currentUserId.HasValue && p.Saves.Any(s => s.UserId == currentUserId.Value),
@@ -521,28 +521,7 @@ namespace BeautyBookBackend.Services
         public async Task<List<PortfolioCommentDto>> GetPortfolioCommentsAsync(Guid portfolioId, Guid? viewer = null)
         {
             if (!await ModerationService.VisiblePortfolios(_dbContext, _dbContext.Portfolios.Where(p => p.PortfolioId == portfolioId), viewer).AnyAsync()) return new();
-            var comments = await _dbContext.PortfolioComments
-                .Where(c => (!viewer.HasValue || !_dbContext.UserBlocks.Any(b => (b.BlockerId == viewer.Value && b.BlockedId == c.UserId) || (b.BlockedId == viewer.Value && b.BlockerId == c.UserId))) && c.PortfolioId == portfolioId && !_dbContext.ContentReports.Any(r => r.TargetType == "Comment" && r.TargetId == c.Id && r.Status == "Removed"))
-                .OrderByDescending(c => c.CreatedAt)
-                .Join(_dbContext.Users,
-                      c => c.UserId,
-                      u => u.UserId,
-                      (c, u) => new PortfolioCommentDto
-                      {
-                          Id = c.Id,
-                          PortfolioId = c.PortfolioId,
-                          UserId = c.UserId,
-                          ParentCommentId = c.ParentCommentId,
-                          UserName = u.FullName,
-                          UserAvatarUrl = u.AvatarUrl,
-                          Content = c.Content,
-                          CreatedAt = c.CreatedAt
-                      })
-                .ToListAsync();
-
-            var byId = comments.ToDictionary(c => c.Id);
-            foreach (var reply in comments.Where(c => c.ParentCommentId.HasValue))
-                if (byId.TryGetValue(reply.ParentCommentId!.Value, out var parent)) parent.Replies.Add(reply);
+            var comments = await PortfolioCommentVisibility.ReadAsync(_dbContext, [portfolioId], viewer);
             return comments.Where(c => !c.ParentCommentId.HasValue).ToList();
         }
 
@@ -570,7 +549,7 @@ namespace BeautyBookBackend.Services
         public async Task<List<PortfolioDto>> GetFavoritePortfolioAsync(Guid userId, string type)
         {
             var query = _dbContext.Portfolios
-                .Include(p => p.Likes).Include(p => p.Saves).Include(p => p.Comments)
+                .Include(p => p.Likes).Include(p => p.Saves)
                 .Include(p => p.MakeupArtistProfile).ThenInclude(m => m.User)
                 .Include(p => p.Service).ThenInclude(s => s!.Styles).ThenInclude(s => s.MakeupStyle).AsQueryable();
             query = ModerationService.VisiblePortfolios(_dbContext, query, userId);
@@ -583,7 +562,8 @@ namespace BeautyBookBackend.Services
                 && p.MakeupArtistProfile.User.DeletedAt == null);
             query = type == "liked" ? query.Where(p => p.Likes.Any(x => x.UserId == userId)) : query.Where(p => p.Saves.Any(x => x.UserId == userId));
             var posts = await query.OrderByDescending(p => type == "liked" ? p.Likes.First(x => x.UserId == userId).CreatedAt : p.Saves.First(x => x.UserId == userId).CreatedAt).ToListAsync();
-            return posts.Select(p => new PortfolioDto { PortfolioId = p.PortfolioId, MUAId = p.MUAId, Title = p.Title, ImageUrls = p.ImageUrls.Where(MuaEligibilityService.IsValidPublicUrl).ToList(), Description = p.Description, Tags = p.Tags, CreatedAt = p.CreatedAt, LikesCount = p.Likes.Count, CommentsCount = p.Comments.Count, SavesCount = p.Saves.Count, IsLiked = p.Likes.Any(x => x.UserId == userId), IsSaved = p.Saves.Any(x => x.UserId == userId), AuthorName = p.MakeupArtistProfile?.User?.FullName, AuthorAvatarUrl = p.MakeupArtistProfile?.User?.AvatarUrl, Service = p.Service == null ? null : ToServiceDto(p.Service) }).Where(p => p.ImageUrls.Count > 0).ToList();
+            var commentCounts = await PortfolioCommentVisibility.CountsAsync(_dbContext, posts.Select(p => p.PortfolioId), userId);
+            return posts.Select(p => new PortfolioDto { PortfolioId = p.PortfolioId, MUAId = p.MUAId, Title = p.Title, ImageUrls = p.ImageUrls.Where(MuaEligibilityService.IsValidPublicUrl).ToList(), Description = p.Description, Tags = p.Tags, CreatedAt = p.CreatedAt, LikesCount = p.Likes.Count, CommentsCount = commentCounts.GetValueOrDefault(p.PortfolioId), SavesCount = p.Saves.Count, IsLiked = p.Likes.Any(x => x.UserId == userId), IsSaved = p.Saves.Any(x => x.UserId == userId), AuthorName = p.MakeupArtistProfile?.User?.FullName, AuthorAvatarUrl = p.MakeupArtistProfile?.User?.AvatarUrl, Service = p.Service == null ? null : ToServiceDto(p.Service) }).Where(p => p.ImageUrls.Count > 0).ToList();
         }
 
         public Task<bool> UpdateStylesAsync(Guid muaId, List<int> styleIds) =>

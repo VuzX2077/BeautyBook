@@ -10,6 +10,7 @@ namespace BeautyBookBackend.Data
         {
         }
 
+        public DbSet<RefreshSession> RefreshSessions { get; set; } = null!;
         public DbSet<UserFeedback> UserFeedbacks { get; set; } = null!;
         public DbSet<FeedbackEvent> FeedbackEvents { get; set; } = null!;
         public DbSet<ContentReport> ContentReports { get; set; } = null!;
@@ -22,9 +23,14 @@ namespace BeautyBookBackend.Data
         public DbSet<User> Users { get; set; } = null!;
         public DbSet<MakeupArtistProfile> MakeupArtistProfiles { get; set; } = null!;
         public DbSet<MakeupStyle> MakeupStyles { get; set; } = null!;
+        public DbSet<MakeupCatalogTerm> MakeupCatalogTerms { get; set; } = null!;
+        public DbSet<MakeupStyleTermLink> MakeupStyleTermLinks { get; set; } = null!;
+        public DbSet<MakeupCatalogChange> MakeupCatalogChanges { get; set; } = null!;
         public DbSet<MUAStyle> MUAStyles { get; set; } = null!;
         public DbSet<ServiceStyle> ServiceStyles { get; set; } = null!;
         public DbSet<Portfolio> Portfolios { get; set; } = null!;
+        public DbSet<PortfolioStyleLink> PortfolioStyleLinks { get; set; } = null!;
+        public DbSet<PortfolioTermLink> PortfolioTermLinks { get; set; } = null!;
         public DbSet<Service> Services { get; set; } = null!;
         public DbSet<MuaWorkingSchedule> MuaWorkingSchedules { get; set; } = null!;
         public DbSet<MuaTimeOff> MuaTimeOffs { get; set; } = null!;
@@ -59,6 +65,23 @@ namespace BeautyBookBackend.Data
 
         private void ValidateBookingSnapshots()
         {
+            foreach (var entry in ChangeTracker.Entries<Portfolio>().Where(x => x.State == EntityState.Modified))
+                entry.Entity.Version = entry.Property(x => x.Version).OriginalValue + 1;
+            foreach (var entry in ChangeTracker.Entries<MakeupStyle>().Where(x => x.State == EntityState.Modified))
+            {
+                foreach (var field in new[] { nameof(MakeupStyle.Key), nameof(MakeupStyle.SystemDefinition) })
+                    if (entry.Property(field).OriginalValue != null && entry.Property(field).IsModified)
+                        throw new InvalidOperationException("Catalog stable identity and baseline are immutable.");
+                entry.Entity.Version = entry.Property(x => x.Version).OriginalValue + 1;
+                entry.Entity.UpdatedAt = DateTime.UtcNow;
+            }
+            foreach (var entry in ChangeTracker.Entries<MakeupCatalogTerm>().Where(x => x.State == EntityState.Modified))
+            {
+                if (entry.Property(x => x.Key).IsModified || entry.Property(x => x.Kind).IsModified)
+                    throw new InvalidOperationException("Catalog term identity is immutable.");
+                entry.Entity.Version = entry.Property(x => x.Version).OriginalValue + 1;
+                entry.Entity.UpdatedAt = DateTime.UtcNow;
+            }
             foreach (var entry in ChangeTracker.Entries<Booking>().Where(x => x.State == EntityState.Modified))
                 if (entry.Property(x => x.IsDemo).IsModified)
                     throw new InvalidOperationException("Booking domain snapshot is immutable.");
@@ -78,6 +101,17 @@ namespace BeautyBookBackend.Data
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
+            modelBuilder.Entity<RefreshSession>(b => {
+                b.HasKey(x => x.Id);
+                b.HasIndex(x => x.TokenHash).IsUnique();
+                b.HasIndex(x => x.FamilyId);
+                b.HasIndex(x => x.ExpiresAt);
+                b.Property(x => x.TokenHash).HasMaxLength(64);
+                b.Property(x => x.PasswordContext).HasMaxLength(64);
+                b.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+            });
+            MakeupCatalogModel.Configure(modelBuilder);
+            PortfolioCatalogModel.Configure(modelBuilder);
             modelBuilder.Entity<UserFeedback>(b => {
                 b.HasKey(x => x.Id);
                 b.Property(x => x.Category).HasMaxLength(20);

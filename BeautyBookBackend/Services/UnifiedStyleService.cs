@@ -117,9 +117,14 @@ public sealed class UnifiedStyleService(ApplicationDbContext db)
         using var lease = CreationBudget.AttemptAcquire(actor);
         if (!lease.IsAcquired) throw new StyleWriteException("STYLE_CREATE_RATE_LIMITED", "Bạn đã tạo nhiều phong cách mới; vui lòng thử lại sau.", 429);
         await new PlayReviewPolicy(db).EnsureNormalUserAsync(actor);
-        var style = new MakeupStyle { Name = name, NormalizedName = NameKey(name), Description = description?.Trim(), IsActive = true };
+        var admin = await db.Users.AnyAsync(x => x.UserId == actor && x.Role == UserRole.Admin);
+        var style = new MakeupStyle { Name = name, NormalizedName = NameKey(name), Description = description?.Trim(), IsActive = true,
+            Key = $"style-{Guid.NewGuid():N}", Source = admin ? "Admin" : "MUA", CreatedByUserId = actor, ReviewStatus = admin ? "Approved" : "Pending" };
         db.MakeupStyles.Add(style);
         // Obtain the generated ID within the enclosing transaction, never a separate commit.
+        await db.SaveChangesAsync();
+        new MakeupCatalogService(db).Log(actor, "style-create", $"style:{style.StyleId}", null,
+            new { style.StyleId, style.Key, style.Name, style.Source, style.ReviewStatus });
         await db.SaveChangesAsync();
         return style;
     }

@@ -1,3 +1,4 @@
+using BeautyBookBackend.Services;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -99,7 +100,7 @@ namespace BeautyBookBackend.Repositories
 
         public Task<List<Portfolio>> GetPortfolioByMuaIdAsync(Guid muaId)
         {
-            return _context.Portfolios
+            return _context.Portfolios.WithTagging()
                 .Where(p => p.MUAId == muaId)
                 .OrderByDescending(p => p.CreatedAt)
                 .ToListAsync();
@@ -107,7 +108,7 @@ namespace BeautyBookBackend.Repositories
 
         public Task<Portfolio?> GetPortfolioByIdForMuaAsync(Guid portfolioId, Guid muaId)
         {
-            return _context.Portfolios.FirstOrDefaultAsync(p => p.PortfolioId == portfolioId && p.MUAId == muaId);
+            return _context.Portfolios.WithTagging().FirstOrDefaultAsync(p => p.PortfolioId == portfolioId && p.MUAId == muaId);
         }
 
         public Task AddPortfolioAsync(Portfolio portfolio)

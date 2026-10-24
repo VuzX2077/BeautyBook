@@ -10,6 +10,24 @@ var envName = args.SkipWhile(x => x != "--connection-env").Skip(1).FirstOrDefaul
 var connection = Environment.GetEnvironmentVariable(envName) ?? throw new ArgumentException("Connection environment variable is missing.");
 var settings = new NpgsqlConnectionStringBuilder(connection);
 var apply = args.Contains("--apply");
+if (args.Contains("--catalog-import"))
+{
+    var confirmDb = args.SkipWhile(x => x != "--confirm-database").Skip(1).FirstOrDefault();
+    if (settings.Host is not ("127.0.0.1" or "localhost" or "::1") || confirmDb != settings.Database || settings.Database?.StartsWith("beautybook_test_", StringComparison.Ordinal) != true)
+        throw new ArgumentException("Catalog dry-run/apply only targets an explicitly confirmed local beautybook_test_* database.");
+    await using var catalogDb = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>().UseNpgsql(connection).Options);
+    var sourcePath = args.SkipWhile(x => x != "--source").Skip(1).FirstOrDefault();
+    var json = sourcePath == null ? MakeupCatalogImportService.ApprovedSource : await File.ReadAllTextAsync(sourcePath);
+    var manifestPath = args.SkipWhile(x => x != "--manifest").Skip(1).FirstOrDefault();
+    var jsonOptions = new JsonSerializerOptions { WriteIndented = true, PropertyNameCaseInsensitive = true };
+    var reviewed = manifestPath == null ? null : JsonSerializer.Deserialize<MakeupCatalogManifest>(await File.ReadAllTextAsync(manifestPath), jsonOptions);
+    var importer = new MakeupCatalogImportService(catalogDb);
+    var dryRun = await importer.Execute(json, reviewed, confirmedDatabase: confirmDb);
+    Console.WriteLine(JsonSerializer.Serialize(dryRun, jsonOptions));
+    if (dryRun.Conflicts.Count > 0) { Environment.ExitCode = 2; return; }
+    if (apply) Console.WriteLine(JsonSerializer.Serialize(await importer.Execute(json, reviewed, true, confirmDb), jsonOptions));
+    return;
+}
 if (apply)
 {
     var confirm = args.SkipWhile(x => x != "--confirm-database").Skip(1).FirstOrDefault();

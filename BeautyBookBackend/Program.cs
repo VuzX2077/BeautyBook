@@ -49,6 +49,14 @@ else
         ?? throw new InvalidOperationException("DefaultConnection is not configured. Set ConnectionStrings:DefaultConnection or DB_* environment variables.");
 }
 
+// Apply after DB_* overrides so all consumers, including the quota repository,
+// use the same bounded connection string and Npgsql pool.
+connectionString = DatabasePoolPolicy.Apply(connectionString, builder.Configuration);
+var poolSettings = new NpgsqlConnectionStringBuilder(connectionString);
+// Never log the connection string, credentials, or database host.
+Console.WriteLine("Database pool: enabled={0}, max={1}, min={2}, idleSeconds={3}",
+    poolSettings.Pooling, poolSettings.MaxPoolSize, poolSettings.MinPoolSize, poolSettings.ConnectionIdleLifetime);
+
 // Configure DbContext with PostgreSQL
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseNpgsql(connectionString));
@@ -267,6 +275,8 @@ builder.Services.AddHttpClient<IGeminiMakeupProvider, GeminiMakeupProvider>(clie
 builder.Services.AddScoped<ComplaintService>();
 builder.Services.AddScoped<ModerationService>();
 
+builder.Services.AddScoped<MakeupCatalogService>();
+builder.Services.AddScoped<MakeupCatalogImportService>();
 var app = builder.Build();
 
 // Render deployments must be push-only: production applies pending migrations
@@ -354,6 +364,7 @@ app.UseAuthorization();
 app.UseRateLimiter();
 
 app.MapGet("/health", () => Results.Ok(new { Status = "Healthy" }));
+app.MapGet("/health/ready", DatabaseReadiness.CheckAsync);
 app.MapControllers();
 app.MapHub<ChatHub>("/chathub");
 

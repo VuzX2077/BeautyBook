@@ -5,6 +5,9 @@ namespace BeautyBookBackend.DTOs
 {
     public class FeedItemDto
     {
+        public Guid? ServiceId { get; set; }
+        public long Version { get; set; }
+        public PortfolioTaggingDto Tagging { get; set; } = new();
         public Guid PortfolioId { get; set; }
         public string Title { get; set; } = string.Empty;
         public List<string> ImageUrls { get; set; } = new();

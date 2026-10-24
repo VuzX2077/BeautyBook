@@ -111,6 +111,21 @@ namespace BeautyBookBackend.Controllers
             }
         }
 
+        [HttpPost("{id}/deposit-payment/reconcile")]
+        public async Task<IActionResult> ReconcileDeposit(Guid id)
+        {
+            try
+            {
+                var booking = await _bookingService.ReconcileDepositAsync(id, CurrentUserId);
+                return booking == null ? NotFound(new { Message = "Không tìm thấy booking của khách hàng." }) : Ok(booking);
+            }
+            catch (PlayReviewOperationException) { return Forbid(); }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException or System.Text.Json.JsonException)
+            {
+                return StatusCode(503, new { Code = "PAYMENT_VERIFICATION_UNAVAILABLE", Message = "Chưa xác minh được thanh toán. Vui lòng kiểm tra lại, không thanh toán thêm." });
+            }
+        }
+
         [AllowAnonymous]
         [HttpPost("payos/webhook")]
         public async Task<IActionResult> PayOsWebhook([FromBody] PayOsWebhookDto webhook)

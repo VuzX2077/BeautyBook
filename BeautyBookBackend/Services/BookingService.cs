@@ -10,6 +10,7 @@ using BeautyBookBackend.Repositories;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Cryptography;
 using System.Text.Json;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace BeautyBookBackend.Services
 {
@@ -37,6 +38,13 @@ namespace BeautyBookBackend.Services
         private readonly IHttpContextAccessor? _httpContextAccessor;
         private readonly PlayReviewPolicy _playReview;
         private readonly ILogger<BookingService> _simulationLogger;
+        private readonly IMemoryCache _paymentReconciliationCache;
+        private static readonly IMemoryCache FallbackPaymentCache = new MemoryCache(new MemoryCacheOptions());
+        private sealed class ReconciliationGate
+        {
+            public SemaphoreSlim Mutex { get; } = new(1, 1);
+            public DateTime NextAttemptUtc { get; set; }
+        }
 
         public BookingService(
             IBookingRepository bookingRepository,
@@ -52,7 +60,7 @@ namespace BeautyBookBackend.Services
             IConfiguration configuration,
             IMuaEligibilityService eligibilityService,
             IMuaScheduleService scheduleService,
-            BookingTimeService bookingTime, IHttpContextAccessor? httpContextAccessor = null, PlayReviewPolicy? playReview = null, ILogger<BookingService>? simulationLogger = null)
+            BookingTimeService bookingTime, IHttpContextAccessor? httpContextAccessor = null, PlayReviewPolicy? playReview = null, ILogger<BookingService>? simulationLogger = null, IMemoryCache? paymentReconciliationCache = null)
         {
             _bookingRepository = bookingRepository;
             _muaRepository = muaRepository;
@@ -71,6 +79,7 @@ namespace BeautyBookBackend.Services
             _httpContextAccessor = httpContextAccessor;
             _playReview = playReview ?? new PlayReviewPolicy(context);
             _simulationLogger = simulationLogger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<BookingService>.Instance;
+            _paymentReconciliationCache = paymentReconciliationCache ?? FallbackPaymentCache;
         }
 
         public async Task<BookingDto?> CreateBookingAsync(Guid customerId, BookingCreateDto createDto)
@@ -316,7 +325,11 @@ namespace BeautyBookBackend.Services
 
         public async Task<bool> HandlePayOsWebhookAsync(PayOsWebhookDto webhook)
         {
-            if (webhook.Data == null) return false;
+            if (webhook.Data == null)
+            {
+                _simulationLogger.LogWarning("PayOS webhook rejected reason=missing_data");
+                return false;
+            }
 
             var valid = _payOsService.IsValidWebhookSignature(new PayOsWebhookVerificationData
             {
@@ -333,15 +346,86 @@ namespace BeautyBookBackend.Services
                 ExtraData = webhook.Data.ExtraData,
                 Signature = webhook.Signature
             });
-            if (!valid) return false;
+            if (!valid)
+            {
+                _simulationLogger.LogWarning("PayOS webhook rejected orderCode={OrderCode} reason=invalid_signature", webhook.Data.OrderCode);
+                return false;
+            }
+            return await ApplyVerifiedPaymentAsync(webhook);
+        }
+
+        public async Task<BookingDto?> ReconcileDepositAsync(Guid bookingId, Guid customerId)
+        {
+            var booking = await _context.Bookings.AsNoTracking()
+                .SingleOrDefaultAsync(x => x.BookingId == bookingId && x.CustomerId == customerId);
+            if (booking == null) return null;
+            if (booking.IsDemo) return await ReadBookingByIdAsync(bookingId, customerId);
+            await _playReview.EnsureNormalBookingAsync(bookingId);
+            if (booking.PaymentStatus is not (PaymentStatus.Unpaid or PaymentStatus.Failed))
+                return await ReadBookingByIdAsync(bookingId, customerId);
+            var payment = await _context.BookingPayments.AsNoTracking()
+                .Where(x => x.BookingId == bookingId && x.CustomerId == customerId && x.Provider == PaymentProvider.PayOS
+                    && x.ProviderPaymentLinkId != null && x.ProviderOrderCode > 0
+                    && (x.Status == BookingPaymentStatus.Created || x.Status == BookingPaymentStatus.Pending
+                        || x.Status == BookingPaymentStatus.Failed || x.Status == BookingPaymentStatus.Expired))
+                .OrderByDescending(x => x.CreatedAt).FirstOrDefaultAsync();
+            if (payment == null) return await ReadBookingByIdAsync(bookingId, customerId);
+            ReconciliationGate gate;
+            lock (_paymentReconciliationCache)
+                gate = _paymentReconciliationCache.GetOrCreate($"payos-deposit:{payment.PaymentId}", entry =>
+                { entry.SlidingExpiration = TimeSpan.FromMinutes(5); return new ReconciliationGate(); })!;
+            await gate.Mutex.WaitAsync();
+            try
+            {
+                if (gate.NextAttemptUtc > DateTime.UtcNow) return await ReadBookingByIdAsync(bookingId, customerId);
+                gate.NextAttemptUtc = DateTime.UtcNow.AddSeconds(15);
+                var provider = await _payOsService.GetPaymentLinkAsync(payment.ProviderOrderCode);
+                if (provider.OrderCode != payment.ProviderOrderCode || provider.PaymentLinkId != payment.ProviderPaymentLinkId
+                    || provider.Amount != payment.Amount)
+                    throw new InvalidOperationException("Kết quả payOS không khớp booking.");
+                if (provider.Status == "PAID")
+                {
+                    if (provider.AmountPaid != payment.Amount || provider.AmountRemaining != 0)
+                        throw new InvalidOperationException("Số tiền payOS chưa khớp khoản cọc. Vui lòng liên hệ hỗ trợ.");
+                    var applied = await ApplyVerifiedPaymentAsync(new PayOsWebhookDto
+                    {
+                        Code = "00", Success = true, Desc = "Verified by server reconciliation",
+                        Data = new PayOsWebhookDataDto
+                        {
+                            OrderCode = provider.OrderCode, Amount = decimal.ToInt32(provider.AmountPaid),
+                            PaymentLinkId = provider.PaymentLinkId, Currency = "VND", Code = "00",
+                            Reference = provider.Reference, TransactionDateTime = provider.TransactionDateTime
+                        }
+                    });
+                    if (!applied) throw new InvalidOperationException("Chưa cập nhật được khoản cọc đã xác minh.");
+                }
+                return await ReadBookingByIdAsync(bookingId, customerId);
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException or JsonException)
+            {
+                _simulationLogger.LogWarning("PayOS reconciliation failed orderCode={OrderCode} reason={Reason}", payment.ProviderOrderCode, ex.GetType().Name);
+                throw;
+            }
+            finally { gate.Mutex.Release(); }
+        }
+
+        // Both a signed webhook and the authenticated, signed provider lookup use
+        // the same locked transition. No returnUrl/client status can reach this.
+        private async Task<bool> ApplyVerifiedPaymentAsync(PayOsWebhookDto webhook)
+        {
+            var data = webhook.Data!;
 
             var paymentIdentity = await _context.BookingPayments.AsNoTracking()
-                .Where(x => x.ProviderOrderCode == webhook.Data.OrderCode)
+                .Where(x => x.ProviderOrderCode == data.OrderCode)
                 .Select(x => new { x.PaymentId, x.BookingId })
                 .FirstOrDefaultAsync();
 
             // payOS sends a signed sample payload while registering a webhook URL.
-            if (paymentIdentity == null) return true;
+            if (paymentIdentity == null)
+            {
+                _simulationLogger.LogWarning("PayOS webhook ignored orderCode={OrderCode} reason=payment_not_found", data.OrderCode);
+                return true;
+            }
 
             await using var transaction = await _context.Database.BeginTransactionAsync();
             var booking = await GetBookingForUpdateAsync(paymentIdentity.BookingId);
@@ -374,21 +458,24 @@ namespace BeautyBookBackend.Services
                 return true;
             }
 
-            var paymentLinkMismatch = !string.IsNullOrWhiteSpace(webhook.Data.PaymentLinkId)
+            var paymentLinkMismatch = !string.IsNullOrWhiteSpace(data.PaymentLinkId)
                 && !string.IsNullOrWhiteSpace(payment.ProviderPaymentLinkId)
-                && !string.Equals(payment.ProviderPaymentLinkId, webhook.Data.PaymentLinkId, StringComparison.Ordinal);
-            var currencyMismatch = !string.IsNullOrWhiteSpace(webhook.Data.Currency)
-                && !string.Equals(webhook.Data.Currency, "VND", StringComparison.OrdinalIgnoreCase);
-            if (payment.Amount != webhook.Data.Amount || paymentLinkMismatch || currencyMismatch)
+                && !string.Equals(payment.ProviderPaymentLinkId, data.PaymentLinkId, StringComparison.Ordinal);
+            var currencyMismatch = !string.IsNullOrWhiteSpace(data.Currency)
+                && !string.Equals(data.Currency, "VND", StringComparison.OrdinalIgnoreCase);
+            if (payment.Amount != data.Amount || paymentLinkMismatch || currencyMismatch)
+            {
+                _simulationLogger.LogWarning("PayOS webhook rejected orderCode={OrderCode} reason=payment_mismatch", data.OrderCode);
                 return false;
+            }
 
             var now = DateTime.UtcNow;
             payment.RawWebhookPayload = JsonSerializer.Serialize(webhook);
-            payment.ProviderReference = webhook.Data.Reference;
-            payment.ProviderPaymentLinkId ??= webhook.Data.PaymentLinkId;
+            payment.ProviderReference = data.Reference;
+            payment.ProviderPaymentLinkId ??= data.PaymentLinkId;
             payment.UpdatedAt = now;
 
-            if (!webhook.Success || webhook.Data.Code != "00")
+            if (!webhook.Success || data.Code != "00")
             {
                 payment.Status = BookingPaymentStatus.Failed;
                 if (booking.Status == BookingStatus.PendingPayment)
@@ -398,7 +485,7 @@ namespace BeautyBookBackend.Services
                 return true;
             }
 
-            payment.PaidAt = TryParseProviderDateTime(webhook.Data.TransactionDateTime) ?? now;
+            payment.PaidAt = TryParseProviderDateTime(data.TransactionDateTime) ?? now;
             var canActivateBooking = booking.Status == BookingStatus.PendingPayment
                 && booking.PaymentExpiresAt.HasValue
                 && booking.PaymentExpiresAt > now
@@ -443,6 +530,7 @@ namespace BeautyBookBackend.Services
             await _notificationService.QueueBookingStatusAsync(booking, BookingStatus.PendingConfirmation, payment.CustomerId);
             await _unitOfWork.SaveChangesAsync();
             await transaction.CommitAsync();
+            _simulationLogger.LogInformation("PayOS deposit recorded orderCode={OrderCode} bookingId={BookingId}", data.OrderCode, booking.BookingId);
             return true;
         }
 
@@ -460,6 +548,32 @@ namespace BeautyBookBackend.Services
         }
 
         public async Task<BookingDto?> GetBookingByIdAsync(Guid bookingId, Guid userId)
+        {
+            // Internal status transitions may already hold booking/payment locks.
+            // Only an independent read request can start provider reconciliation.
+            if (_context.Database.CurrentTransaction != null)
+                return await ReadBookingByIdAsync(bookingId, userId);
+            // Existing store releases already poll this endpoint. Repair a missing
+            // webhook here too, after a short grace period, with the same throttle.
+            var threshold = DateTime.UtcNow.AddSeconds(-10);
+            var needsCheck = await _context.BookingPayments.AsNoTracking().AnyAsync(x =>
+                x.BookingId == bookingId && x.CustomerId == userId && x.Provider == PaymentProvider.PayOS
+                && x.CreatedAt <= threshold && x.Status == BookingPaymentStatus.Pending
+                && x.Booking != null && !x.Booking.IsDemo && x.Booking.Status == BookingStatus.PendingPayment
+                && x.Booking.PaymentStatus == PaymentStatus.Unpaid);
+            if (needsCheck)
+            {
+                try { return await ReconcileDepositAsync(bookingId, userId); }
+                catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException or JsonException)
+                {
+                    // Leave money unconfirmed during provider outages; the next
+                    // poll can retry. The reconciler logs a safe reason code.
+                }
+            }
+            return await ReadBookingByIdAsync(bookingId, userId);
+        }
+
+        private async Task<BookingDto?> ReadBookingByIdAsync(Guid bookingId, Guid userId)
         {
             var booking = await _bookingRepository.GetByIdWithDetailsForUserAsync(bookingId, userId);
             return booking == null ? null : await ToBookingDtoAsync(booking);

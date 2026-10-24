@@ -139,7 +139,10 @@ public sealed class UnifiedStyleTests
         var bad = Request([store.Ids[0]]); bad.Tags = ["Style 2"];
         Assert.Equal("STYLE_PAYLOAD_CONFLICT", (await Assert.ThrowsAsync<StyleWriteException>(() => store.Service().UpdateMuaServiceAsync(store.Mua, saved.ServiceId, bad))).Code);
         var admin = new AdminMakeupStyleService(store.Db);
-        await admin.Save(store.Ids[0], new() { Name = "Renamed" }, store.Mua);
+        var adminId = Guid.NewGuid();
+        store.Db.Users.Add(new User { UserId = adminId, Role = UserRole.Admin, IsActive = true });
+        await store.Db.SaveChangesAsync();
+        await admin.Save(store.Ids[0], new() { Name = "Renamed" }, adminId);
         Assert.Equal("Renamed", Assert.Single((await store.Db.Services.SingleAsync()).Tags));
         var stale = Request(); stale.Tags = ["Style 1"];
         Assert.Equal("STYLE_PAYLOAD_CONFLICT", (await Assert.ThrowsAsync<StyleWriteException>(() => store.Service().UpdateMuaServiceAsync(store.Mua, saved.ServiceId, stale))).Code);

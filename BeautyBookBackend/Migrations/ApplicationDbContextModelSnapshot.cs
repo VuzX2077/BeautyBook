@@ -1039,6 +1039,135 @@ namespace BeautyBookBackend.Migrations
                     b.ToTable("MakeupArtistProfiles");
                 });
 
+            modelBuilder.Entity("BeautyBookBackend.Models.MakeupCatalogChange", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<Guid?>("ActorId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AfterJson")
+                        .HasColumnType("jsonb");
+
+                    b.Property<Guid?>("BatchId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("BeforeJson")
+                        .HasColumnType("jsonb");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("SourceHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BatchId");
+
+                    b.HasIndex("Subject", "CreatedAt");
+
+                    b.ToTable("MakeupCatalogChanges");
+                });
+
+            modelBuilder.Entity("BeautyBookBackend.Models.MakeupCatalogTerm", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime?>("ArchivedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("BroaderTermId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<int?>("GroupId")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("NormalizedLabel")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(1L);
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BroaderTermId");
+
+                    b.HasIndex("GroupId");
+
+                    b.HasIndex("Kind", "Key")
+                        .IsUnique();
+
+                    b.HasIndex("Kind", "NormalizedLabel")
+                        .IsUnique();
+
+                    b.HasIndex("Kind", "IsActive", "SortOrder");
+
+                    b.ToTable("MakeupCatalogTerms", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_CatalogTerm_Archive", "\"ArchivedAt\" IS NULL OR NOT \"IsActive\"");
+
+                            t.HasCheckConstraint("CK_CatalogTerm_Intensity", "\"Kind\" <> 'intensity' OR \"Key\" IN ('light','medium','bold')");
+
+                            t.HasCheckConstraint("CK_CatalogTerm_Kind", "\"Kind\" IN ('occasion','intensity','color-tone','effect','occasion-group','effect-group')");
+                        });
+                });
+
             modelBuilder.Entity("BeautyBookBackend.Models.MakeupStyle", b =>
                 {
                     b.Property<int>("StyleId")
@@ -1047,8 +1176,14 @@ namespace BeautyBookBackend.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("StyleId"));
 
+                    b.Property<DateTime?>("ArchivedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("CreatedByUserId")
+                        .HasColumnType("uuid");
 
                     b.Property<string>("Description")
                         .HasMaxLength(255)
@@ -1059,6 +1194,10 @@ namespace BeautyBookBackend.Migrations
                         .HasColumnType("boolean")
                         .HasDefaultValue(true);
 
+                    b.Property<string>("Key")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
                     b.Property<string>("Name")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
@@ -1067,7 +1206,39 @@ namespace BeautyBookBackend.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
+                    b.Property<string>("ReviewStatus")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("NotApplicable");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("LegacyUnknown");
+
+                    b.Property<string>("SystemDefinition")
+                        .HasColumnType("jsonb");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(1L);
+
                     b.HasKey("StyleId");
+
+                    b.HasIndex("Key")
+                        .IsUnique();
 
                     b.HasIndex("Name")
                         .IsUnique();
@@ -1075,7 +1246,36 @@ namespace BeautyBookBackend.Migrations
                     b.HasIndex("NormalizedName")
                         .IsUnique();
 
+                    b.HasIndex("IsActive", "SortOrder");
+
                     b.ToTable("MakeupStyles");
+                });
+
+            modelBuilder.Entity("BeautyBookBackend.Models.MakeupStyleTermLink", b =>
+                {
+                    b.Property<int>("StyleId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("TermId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.HasKey("StyleId", "TermId");
+
+                    b.HasIndex("StyleId", "Kind")
+                        .IsUnique()
+                        .HasFilter("\"Kind\" = 'intensity'");
+
+                    b.HasIndex("TermId", "Kind");
+
+                    b.ToTable("MakeupStyleTermLinks", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_StyleTerm_Kind", "\"Kind\" IN ('occasion','intensity','color-tone','effect')");
+                        });
                 });
 
             modelBuilder.Entity("BeautyBookBackend.Models.Message", b =>
@@ -1580,6 +1780,12 @@ namespace BeautyBookBackend.Migrations
                     b.Property<string>("Title")
                         .HasColumnType("text");
 
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(1L);
+
                     b.HasKey("PortfolioId");
 
                     b.HasIndex("MUAId");
@@ -1668,6 +1874,61 @@ namespace BeautyBookBackend.Migrations
                         .IsUnique();
 
                     b.ToTable("PortfolioSaves");
+                });
+
+            modelBuilder.Entity("BeautyBookBackend.Models.PortfolioStyleLink", b =>
+                {
+                    b.Property<Guid>("PortfolioId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("StyleId")
+                        .HasColumnType("integer");
+
+                    b.Property<short>("Slot")
+                        .HasColumnType("smallint");
+
+                    b.HasKey("PortfolioId", "StyleId");
+
+                    b.HasIndex("PortfolioId", "Slot")
+                        .IsUnique();
+
+                    b.HasIndex("StyleId", "PortfolioId");
+
+                    b.ToTable("PortfolioStyleLinks", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_PortfolioStyle_Slot", "\"Slot\" BETWEEN 0 AND 2");
+                        });
+                });
+
+            modelBuilder.Entity("BeautyBookBackend.Models.PortfolioTermLink", b =>
+                {
+                    b.Property<Guid>("PortfolioId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("TermId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<short>("Slot")
+                        .HasColumnType("smallint");
+
+                    b.HasKey("PortfolioId", "TermId");
+
+                    b.HasIndex("TermId", "Kind");
+
+                    b.HasIndex("TermId", "PortfolioId");
+
+                    b.HasIndex("PortfolioId", "Kind", "Slot")
+                        .IsUnique();
+
+                    b.ToTable("PortfolioTermLinks", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_PortfolioTerm_SlotKind", "(\"Kind\" = 'occasion' AND \"Slot\" BETWEEN 0 AND 2) OR (\"Kind\" = 'intensity' AND \"Slot\" = 0) OR (\"Kind\" = 'color-tone' AND \"Slot\" BETWEEN 0 AND 2) OR (\"Kind\" = 'effect' AND \"Slot\" BETWEEN 0 AND 3)");
+                        });
                 });
 
             modelBuilder.Entity("BeautyBookBackend.Models.PrivateMediaJob", b =>
@@ -1773,6 +2034,48 @@ namespace BeautyBookBackend.Migrations
                     b.HasIndex("UserId");
 
                     b.ToTable("ProductReviews");
+                });
+
+            modelBuilder.Entity("BeautyBookBackend.Models.RefreshSession", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("FamilyId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("PasswordContext")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpiresAt");
+
+                    b.HasIndex("FamilyId");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("RefreshSessions");
                 });
 
             modelBuilder.Entity("BeautyBookBackend.Models.Refund", b =>
@@ -2616,6 +2919,41 @@ namespace BeautyBookBackend.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("BeautyBookBackend.Models.MakeupCatalogTerm", b =>
+                {
+                    b.HasOne("BeautyBookBackend.Models.MakeupCatalogTerm", null)
+                        .WithMany()
+                        .HasForeignKey("BroaderTermId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("BeautyBookBackend.Models.MakeupCatalogTerm", "Group")
+                        .WithMany()
+                        .HasForeignKey("GroupId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Group");
+                });
+
+            modelBuilder.Entity("BeautyBookBackend.Models.MakeupStyleTermLink", b =>
+                {
+                    b.HasOne("BeautyBookBackend.Models.MakeupStyle", "Style")
+                        .WithMany()
+                        .HasForeignKey("StyleId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("BeautyBookBackend.Models.MakeupCatalogTerm", "Term")
+                        .WithMany()
+                        .HasForeignKey("TermId", "Kind")
+                        .HasPrincipalKey("Id", "Kind")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Style");
+
+                    b.Navigation("Term");
+                });
+
             modelBuilder.Entity("BeautyBookBackend.Models.Message", b =>
                 {
                     b.HasOne("BeautyBookBackend.Models.ChatRoom", "ChatRoom")
@@ -2859,6 +3197,45 @@ namespace BeautyBookBackend.Migrations
                     b.Navigation("Portfolio");
                 });
 
+            modelBuilder.Entity("BeautyBookBackend.Models.PortfolioStyleLink", b =>
+                {
+                    b.HasOne("BeautyBookBackend.Models.Portfolio", "Portfolio")
+                        .WithMany("StyleLinks")
+                        .HasForeignKey("PortfolioId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("BeautyBookBackend.Models.MakeupStyle", "Style")
+                        .WithMany()
+                        .HasForeignKey("StyleId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Portfolio");
+
+                    b.Navigation("Style");
+                });
+
+            modelBuilder.Entity("BeautyBookBackend.Models.PortfolioTermLink", b =>
+                {
+                    b.HasOne("BeautyBookBackend.Models.Portfolio", "Portfolio")
+                        .WithMany("TermLinks")
+                        .HasForeignKey("PortfolioId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("BeautyBookBackend.Models.MakeupCatalogTerm", "Term")
+                        .WithMany()
+                        .HasForeignKey("TermId", "Kind")
+                        .HasPrincipalKey("Id", "Kind")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Portfolio");
+
+                    b.Navigation("Term");
+                });
+
             modelBuilder.Entity("BeautyBookBackend.Models.ProductReview", b =>
                 {
                     b.HasOne("BeautyBookBackend.Models.Product", "Product")
@@ -2876,6 +3253,15 @@ namespace BeautyBookBackend.Migrations
                     b.Navigation("Product");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("BeautyBookBackend.Models.RefreshSession", b =>
+                {
+                    b.HasOne("BeautyBookBackend.Models.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("BeautyBookBackend.Models.Refund", b =>
@@ -3101,6 +3487,10 @@ namespace BeautyBookBackend.Migrations
                     b.Navigation("Likes");
 
                     b.Navigation("Saves");
+
+                    b.Navigation("StyleLinks");
+
+                    b.Navigation("TermLinks");
                 });
 
             modelBuilder.Entity("BeautyBookBackend.Models.PortfolioComment", b =>

@@ -60,6 +60,9 @@ namespace BeautyBookBackend.DTOs
 
     public class PortfolioDto
     {
+        public Guid? ServiceId { get; set; }
+        public long Version { get; set; }
+        public PortfolioTaggingDto Tagging { get; set; } = new();
         public Guid PortfolioId { get; set; }
         public Guid MUAId { get; set; }
         public string? Title { get; set; }
@@ -160,14 +163,19 @@ namespace BeautyBookBackend.DTOs
         public string? SearchKeyword { get; set; }
     }
 
-    public class PortfolioCreateRequest
+    public class PortfolioCreateRequest : PresenceAwareRequest
     {
-        public string? Title { get; set; }
-        public List<string> ImageUrls { get; set; } = new();
+        private string? title, description;
+        private List<string>? imageUrls = new(), tags = new();
+        private Guid? serviceId;
+        public string? Title { get => title; set => title = Supplied(value, nameof(Title)); }
+        public List<string>? ImageUrls { get => imageUrls; set => imageUrls = Supplied(value, nameof(ImageUrls)); }
         [MaxLength(2000, ErrorMessage = "Mô tả portfolio không được vượt quá 2000 ký tự.")]
-        public string? Description { get; set; }
-        public List<string> Tags { get; set; } = new();
-        public Guid? ServiceId { get; set; }
+        public string? Description { get => description; set => description = Supplied(value, nameof(Description)); }
+        public List<string>? Tags { get => tags; set => tags = Supplied(value, nameof(Tags)); }
+        public Guid? ServiceId { get => serviceId; set => serviceId = Supplied(value, nameof(ServiceId)); }
+        public PortfolioTaggingRequest? Tagging { get; set; }
+        [Range(1, long.MaxValue)] public long? ExpectedVersion { get; set; }
     }
 
     public class ContentRequest

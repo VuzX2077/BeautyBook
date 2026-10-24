@@ -1,0 +1,145 @@
+{
+  "sourceSha256": "8F45E1B7DAA4E6F7BA097BDFCE536D7CAC56F1409E88D24669B7603DA85C710F",
+  "styles": [
+    {
+      "key": "soft-korean",
+      "existingStyleId": null,
+      "expectedName": null,
+      "expectedVersion": null,
+      "createMissing": false
+    },
+    {
+      "key": "douyin",
+      "existingStyleId": null,
+      "expectedName": null,
+      "expectedVersion": null,
+      "createMissing": false
+    },
+    {
+      "key": "clean-girl",
+      "existingStyleId": null,
+      "expectedName": null,
+      "expectedVersion": null,
+      "createMissing": false
+    },
+    {
+      "key": "natural",
+      "existingStyleId": null,
+      "expectedName": null,
+      "expectedVersion": null,
+      "createMissing": false
+    },
+    {
+      "key": "peach",
+      "existingStyleId": null,
+      "expectedName": null,
+      "expectedVersion": null,
+      "createMissing": false
+    },
+    {
+      "key": "strawberry",
+      "existingStyleId": null,
+      "expectedName": null,
+      "expectedVersion": null,
+      "createMissing": false
+    },
+    {
+      "key": "latte",
+      "existingStyleId": null,
+      "expectedName": null,
+      "expectedVersion": null,
+      "createMissing": false
+    },
+    {
+      "key": "soft-glam",
+      "existingStyleId": null,
+      "expectedName": null,
+      "expectedVersion": null,
+      "createMissing": false
+    },
+    {
+      "key": "thai-glam",
+      "existingStyleId": null,
+      "expectedName": null,
+      "expectedVersion": null,
+      "createMissing": false
+    },
+    {
+      "key": "smokey-eyes",
+      "existingStyleId": null,
+      "expectedName": null,
+      "expectedVersion": null,
+      "createMissing": false
+    },
+    {
+      "key": "bridal-soft-glam",
+      "existingStyleId": null,
+      "expectedName": null,
+      "expectedVersion": null,
+      "createMissing": false
+    },
+    {
+      "key": "classic-glam",
+      "existingStyleId": null,
+      "expectedName": null,
+      "expectedVersion": null,
+      "createMissing": false
+    },
+    {
+      "key": "j-beauty",
+      "existingStyleId": null,
+      "expectedName": null,
+      "expectedVersion": null,
+      "createMissing": false
+    },
+    {
+      "key": "igari",
+      "existingStyleId": null,
+      "expectedName": null,
+      "expectedVersion": null,
+      "createMissing": false
+    },
+    {
+      "key": "ulzzang",
+      "existingStyleId": null,
+      "expectedName": null,
+      "expectedVersion": null,
+      "createMissing": false
+    },
+    {
+      "key": "western-glam",
+      "existingStyleId": null,
+      "expectedName": null,
+      "expectedVersion": null,
+      "createMissing": false
+    },
+    {
+      "key": "nude-makeup",
+      "existingStyleId": null,
+      "expectedName": null,
+      "expectedVersion": null,
+      "createMissing": false
+    },
+    {
+      "key": "fox-eye",
+      "existingStyleId": null,
+      "expectedName": null,
+      "expectedVersion": null,
+      "createMissing": false
+    },
+    {
+      "key": "sunkissed",
+      "existingStyleId": null,
+      "expectedName": null,
+      "expectedVersion": null,
+      "createMissing": false
+    },
+    {
+      "key": "glass-skin",
+      "existingStyleId": null,
+      "expectedName": null,
+      "expectedVersion": null,
+      "createMissing": false
+    }
+  ]
+}

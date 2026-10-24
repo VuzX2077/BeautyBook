@@ -9,6 +9,7 @@ using BeautyBookBackend.Services;
 namespace BeautyBookBackend.Controllers
 {
     [ApiController]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
     [Route("api/[controller]")]
     public class AuthController : ControllerBase
     {
@@ -112,6 +113,20 @@ namespace BeautyBookBackend.Controllers
             }
 
             return Ok(token);
+        }
+
+        [HttpPost("refresh")]
+        public async Task<IActionResult> Refresh([FromBody] RefreshSessionDto request)
+        {
+            var result = await _authService.RefreshAsync(request.RefreshToken);
+            return result == null ? Unauthorized(new { Code = "SESSION_EXPIRED", Message = "Phiên đăng nhập đã hết hạn." }) : Ok(result);
+        }
+
+        [HttpPost("logout")]
+        public async Task<IActionResult> Logout([FromBody] RefreshSessionDto request)
+        {
+            await _authService.RevokeRefreshAsync(request.RefreshToken);
+            return NoContent();
         }
 
         [HttpPost("google")]

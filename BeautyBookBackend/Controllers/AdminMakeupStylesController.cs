@@ -14,9 +14,9 @@ public sealed class AdminMakeupStylesController(AdminMakeupStyleService service)
 {
     private Guid Actor => Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : Guid.Empty;
     [HttpGet]
-    public async Task<IActionResult> List(int page = 1, int pageSize = 10, string? search = null, string status = "all", CancellationToken ct = default)
+    public async Task<IActionResult> List(int page = 1, int pageSize = 10, string? search = null, string status = "all", CancellationToken ct = default, string? source = null, string? reviewStatus = null)
     {
-        try { return Ok(await service.List(page, pageSize, search, status, ct)); }
+        try { return Ok(await service.List(page, pageSize, search, status, ct, source, reviewStatus)); }
         catch (ArgumentException e) { return BadRequest(new { Message = e.Message }); }
     }
     [HttpGet("{id:int:min(1)}")]
@@ -44,7 +44,16 @@ public sealed class AdminMakeupStylesController(AdminMakeupStyleService service)
     {
         if (Actor == Guid.Empty) return Forbid();
         if (!request.IsActive.HasValue) return BadRequest(new { Message = "Chọn trạng thái phong cách." });
-        try { return await service.SetStatus(id, request.IsActive.Value, Actor, ct) is { } style ? Ok(style) : NotFound(new { Message = "Không tìm thấy phong cách." }); }
+        try { return await service.SetStatus(id, request.IsActive.Value, Actor, ct, request.ExpectedVersion) is { } style ? Ok(style) : NotFound(new { Message = "Không tìm thấy phong cách." }); }
         catch (PlayReviewOperationException) { return Forbid(); }
     }
+    [HttpGet("{id:int:min(1)}/usage")]
+    public async Task<IActionResult> Usage(int id, [FromServices] MakeupCatalogService catalog, CancellationToken ct) =>
+        await service.Detail(id, ct) == null ? NotFound() : Ok(await catalog.StyleUsage(id, ct));
+    [HttpPost("{id:int:min(1)}/archive")]
+    public async Task<IActionResult> Archive(int id, CatalogLifecycleRequest request, CancellationToken ct) =>
+        await service.Archive(id, Actor, request, ct) is { } style ? Ok(style) : NotFound();
+    [HttpPost("{id:int:min(1)}/review")]
+    public async Task<IActionResult> Review(int id, CatalogReviewRequest request, CancellationToken ct) =>
+        await service.Review(id, Actor, request, ct) is { } style ? Ok(style) : NotFound();
 }

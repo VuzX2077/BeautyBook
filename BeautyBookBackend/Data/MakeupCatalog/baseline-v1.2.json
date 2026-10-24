@@ -1,0 +1,1285 @@
+{
+  "schemaVersion": "1.2",
+  "language": "vi-VN",
+  "catalogType": "makeup-style-library",
+  "styles": [
+    {
+      "key": "soft-korean",
+      "name": "Soft Korean Makeup",
+      "displayName": "Trang điểm Hàn Quốc nhẹ nhàng",
+      "shortDescription": "Phong cách trang điểm mỏng nhẹ tự nhiên với lớp nền căng bóng sương sương, mang lại vẻ đẹp trong trẻo, ngọt ngào và trẻ trung.",
+      "signatureLook": "Lớp nền da thủy tinh, má hồng phớt cam đào và môi tint bóng mọng nước.",
+      "intensity": "light",
+      "occasions": [
+        "daily",
+        "date",
+        "school"
+      ],
+      "tags": [
+        "natural",
+        "soft",
+        "korean",
+        "dewy",
+        "fresh"
+      ],
+      "colorPalette": [
+        "soft pink",
+        "peach",
+        "light brown",
+        "coral"
+      ],
+      "techniques": {
+        "base": "Sử dụng cushion hoặc kem nền mỏng nhẹ có độ bóng tự nhiên, dặm đều tay để tạo hiệu ứng da ẩm mịn như sương.",
+        "eyes": "Phủ một lớp phấn mắt màu be hoặc cam nhạt làm nền, kẻ đường eyeliner mảnh, buông đuôi nhẹ nhàng và nhấn phấn nhũ nhẹ ở phần bọng mắt.",
+        "brows": "Kẻ chân mày ngang hoặc cong nhẹ theo hướng tự nhiên, dùng mascara chuốt lông mày tơi đều.",
+        "cheeks": "Tán phấn má màu hồng đào hoặc cam sữa ngay vùng gò má hướng nhẹ lên thái dương để tạo hiệu ứng ửng hồng ngây thơ.",
+        "lips": "Thoa son tint hoặc son bóng màu tươi tắn, tập trung đậm ở lòng môi và tán loang nhẹ ra viền môi.",
+        "contourHighlight": "Tạo khối cực kỳ nhẹ nhàng vùng xương hàm và sống mũi, phủ highlight bắt sáng dạng lỏng ở đỉnh mũi và gò má."
+      },
+      "quickSteps": [
+        "Thoa một lớp cushion mỏng nhẹ tạo hiệu ứng da ẩm mượt.",
+        "Phủ phấn màu be nhạt lên bầu mắt và kẻ đường eyeliner mảnh đi sát chân mi.",
+        "Kẻ chân mày ngang tự nhiên và chuốt tơi sợi lông mày.",
+        "Tán phấn má hồng đào nhẹ nhàng vùng gò má.",
+        "Thoa son tint lòng môi và hoàn thiện bằng một lớp son bóng nhẹ."
+      ],
+      "whyTry": "Mang lại diện mạo trong trẻo, rạng rỡ tự nhiên, cực kỳ thích hợp cho những ngày bạn muốn xuất hiện với vẻ ngoài nhẹ nhàng, gần gũi.",
+      "conditionalTips": [
+        {
+          "feature": "eyeSpacing",
+          "observation": "relatively_wide",
+          "tip": "Kéo dài nhẹ đường kẻ mắt về phía hốc mắt và tán phấn đậm hơn ở góc trong mắt.",
+          "reason": "Giúp cân đối khoảng cách giữa hai mắt, tạo chiều sâu hài hòa."
+        }
+      ],
+      "imageKey": "soft-korean.webp",
+      "imageBrief": "Close-up portrait of a young Asian woman with glowing dewy skin, peach blush, soft natural brows, and glossy lips, studio lighting, natural aesthetic.",
+      "visualFocus": "Dewy skin texture, subtle eye makeup, glossy gradient lips.",
+      "occasionLabels": [
+        "Hằng ngày",
+        "Hẹn hò",
+        "Đi học"
+      ],
+      "tagLabels": [
+        "Tự nhiên",
+        "Nhẹ nhàng",
+        "Hàn Quốc",
+        "Căng bóng",
+        "Tươi tắn"
+      ],
+      "colorPaletteLabels": [
+        "Hồng phấn",
+        "Cam đào",
+        "Nâu nhạt",
+        "San hô"
+      ],
+      "intensityLabel": "Nhẹ nhàng"
+    },
+    {
+      "key": "douyin",
+      "name": "Douyin Makeup",
+      "displayName": "Trang điểm phong cách Douyin",
+      "shortDescription": "Lối trang điểm sắc sảo, long lanh theo xu hướng mạng xã hội Trung Quốc, tập trung tối đa vào đôi mắt to tròn và các đường nét cân đối.",
+      "signatureLook": "Mắt to tròn lấp lánh nhũ kim tuyến, bọng mắt giả rõ nét và sống mũi cao thon gọn.",
+      "intensity": "bold",
+      "occasions": [
+        "party",
+        "photoshoot",
+        "date"
+      ],
+      "tags": [
+        "douyin",
+        "glamorous",
+        "sparkling",
+        "sharp",
+        "trendy"
+      ],
+      "colorPalette": [
+        "rose pink",
+        "champagne",
+        "brown",
+        "red"
+      ],
+      "techniques": {
+        "base": "Sử dụng kem nền bán lì (semi-matte) che khuyết điểm tốt, bề mặt mịn màng và không bóng dầu.",
+        "eyes": "Đánh hốc mắt bằng phấn nâu nhạt, kẻ eyeliner xếch sắc nét, dán mi giả từng cụm và đính nhũ hạt lớn ở bầu mắt dưới.",
+        "brows": "Kẻ chân mày sợi mảnh, sắc nét, phần đầu phớt nhạt và đuôi vuốt nhọn.",
+        "cheeks": "Đánh má hồng phớt nhẹ ở gò má kết hợp tán xéo lên thái dương để tạo độ góc cạnh.",
+        "lips": "Thoa son full môi hoặc đánh lòng môi sắc nét với lớp son lì mịn, viền môi được che khuyết điểm gọn gàng.",
+        "contourHighlight": "Tạo khối sắc nét ở sống mũi, hốc má và cằm; đánh highlight bắt sáng mạnh tay ở chóp mũi và nhân trung."
+      },
+      "quickSteps": [
+        "Đánh nền mịn lì che phủ hoàn hảo các khuyết điểm trên mặt.",
+        "Tạo chiều sâu cho mắt bằng phấn nâu, kẻ eyeliner xếch và gắn mi giả cụm.",
+        "Vẽ bọng mắt giả sắc nét và chấm nhũ lấp lánh dưới mi mắt.",
+        "Tạo khối sống mũi cao thon và đánh highlight vùng chữ T.",
+        "Thoa son lì màu đỏ hồng hoặc cam đất sắc sảo."
+      ],
+      "whyTry": "Giúp hóa thân thành cô nàng sắc sảo, kiêu kỳ với đôi mắt to tròn long lanh thu hút mọi ánh nhìn trong các khung hình.",
+      "conditionalTips": [
+        {
+          "feature": "mouthWidth",
+          "observation": "relatively_low",
+          "tip": "Dùng chì kẻ viền ăn gian ra ngoài đường viền môi tự nhiên một chút ở hai bên khóe môi.",
+          "reason": "Giúp tỷ lệ chiều rộng môi hài hòa hơn với tổng thể gương mặt sắc sảo."
+        }
+      ],
+      "imageKey": "douyin.webp",
+      "imageBrief": "Portrait of an Asian woman with flawless matte skin, dramatic glittery eyes, sharp winged eyeliner, clear aegyo-sal, and bold gradient lips, studio setting.",
+      "visualFocus": "Sparkling glitter eyeshadow, defined aegyo-sal, sharp eyeliner.",
+      "occasionLabels": [
+        "Dự tiệc",
+        "Chụp ảnh",
+        "Hẹn hò"
+      ],
+      "tagLabels": [
+        "Douyin",
+        "Quyến rũ",
+        "Lấp lánh",
+        "Sắc sảo",
+        "Thời thượng"
+      ],
+      "colorPaletteLabels": [
+        "Hồng hoa hồng",
+        "Vàng champagne",
+        "Nâu",
+        "Đỏ"
+      ],
+      "intensityLabel": "Đậm nét"
+    },
+    {
+      "key": "clean-girl",
+      "name": "Clean Girl Makeup",
+      "displayName": "Trang điểm Clean Girl tối giản",
+      "shortDescription": "Phong cách đề cao vẻ đẹp khỏe khoắn, sang trọng và tối giản với làn da bóng khỏe tự nhiên và đường nét gọn gàng.",
+      "signatureLook": "Lông mày chải dựng bồng bềnh, da bóng khỏe khỏe khoắn và son dưỡng màu nude thanh lịch.",
+      "intensity": "light",
+      "occasions": [
+        "daily",
+        "work",
+        "school"
+      ],
+      "tags": [
+        "clean-girl",
+        "minimalist",
+        "natural",
+        "chic",
+        "polished"
+      ],
+      "colorPalette": [
+        "nude",
+        "warm beige",
+        "bronze",
+        "soft pink"
+      ],
+      "techniques": {
+        "base": "Sử dụng kem dưỡng ẩm kết hợp kem che khuyết điểm mỏng nhẹ ở những vùng cần thiết, giữ nguyên vẹn kết cấu da thật.",
+        "eyes": "Chuốt mascara kỹ cho mi tơi đều, không kẻ eyeliner đậm, có thể chuốt thêm gel màu cho mi mắt.",
+        "brows": "Chải lông mày bay bổng bằng gel định hình trong suốt, tạo các sợi lông mày dựng tự nhiên.",
+        "cheeks": "Dùng má hồng dạng kem tông nâu cam hoặc hồng nude tán nhẹ nhàng tạo hiệu ứng khỏe khoắn.",
+        "lips": "Thoa son dưỡng bóng hoặc son màu nude bóng nhẹ, tạo cảm giác môi đầy đặn tự nhiên.",
+        "contourHighlight": "Sử dụng bronzer dạng kem tán nhẹ vùng gò má và thái dương để tạo hiệu ứng da rám nắng khỏe mạnh."
+      },
+      "quickSteps": [
+        "Thoa kem dưỡng ẩm và che khuyết điểm tối giản trên da.",
+        "Định hình và chải dựng lông mày bằng gel trong suốt.",
+        "Chuốt mi cong tự nhiên và bỏ qua bước kẻ eyeliner.",
+        "Tán bronzer và má hồng dạng kem tạo hiệu ứng da khỏe khoắn.",
+        "Thoa son bóng tông nude tự nhiên."
+      ],
+      "whyTry": "Mang lại vẻ ngoài thanh lịch, phóng khoáng và hiện đại, thể hiện gu thẩm mỹ tinh tế không cần cố gắng.",
+      "conditionalTips": [
+        {
+          "feature": "browArch",
+          "observation": "relatively_high",
+          "tip": "Chải phần đỉnh chân mày hướng ngang thay vì vuốt thẳng đứng lên cao.",
+          "reason": "Giúp đường nét gương mặt trông mềm mại, hài hòa và tự nhiên hơn."
+        }
+      ],
+      "imageKey": "clean-girl.webp",
+      "imageBrief": "Close-up of a model with sleek slicked-back hair, glowing healthy skin, brushed-up fluffy eyebrows, subtle bronze glow, and nude glossy lips.",
+      "visualFocus": "Fluffy brows, healthy skin glow, polished minimalist look.",
+      "occasionLabels": [
+        "Hằng ngày",
+        "Đi làm",
+        "Đi học"
+      ],
+      "tagLabels": [
+        "Clean Girl",
+        "Tối giản",
+        "Tự nhiên",
+        "Thanh lịch",
+        "Chỉn chu"
+      ],
+      "colorPaletteLabels": [
+        "Nude",
+        "Be ấm",
+        "Ánh đồng",
+        "Hồng phấn"
+      ],
+      "intensityLabel": "Nhẹ nhàng"
+    },
+    {
+      "key": "natural",
+      "name": "Natural Makeup",
+      "displayName": "Trang điểm tự nhiên hằng ngày",
+      "shortDescription": "Lối trang điểm 'như không trang điểm', tôn lên trọn vẹn nét đẹp mộc mạc và tươi tắn vốn có của gương mặt.",
+      "signatureLook": "Lớp nền trong suốt như da thật, sắc hồng hào nhẹ nhàng ở má và môi.",
+      "intensity": "light",
+      "occasions": [
+        "daily",
+        "school",
+        "work"
+      ],
+      "tags": [
+        "natural",
+        "everyday",
+        "fresh",
+        "simple",
+        "lightweight"
+      ],
+      "colorPalette": [
+        "light pink",
+        "nude peach",
+        "soft beige"
+      ],
+      "techniques": {
+        "base": "Sử dụng kem chống nắng nâng tông nhẹ hoặc cushion lớp mỏng để làm đều màu da.",
+        "eyes": "Chỉ dùng phấn mắt màu da hoặc cam nhạt tán đều bầu mắt, chuốt một lớp mascara mỏng.",
+        "brows": "Dùng chì kẻ lông mày lấp đầy các khoảng trống theo dáng mày sẵn có.",
+        "cheeks": "Phớt một lớp má hồng dạng phấn màu hồng phớt hoặc cam nhẹ nhàng.",
+        "lips": "Sử dụng son dưỡng có màu hoặc son tint nhẹ nhàng cho đôi môi tươi tắn.",
+        "contourHighlight": "Không sử dụng tạo khối hay highlight để giữ nét tự nhiên nhất."
+      },
+      "quickSteps": [
+        "Thoa lớp kem nền hoặc cushion mỏng nhẹ đều màu da.",
+        "Kẻ nhẹ nhàng theo dáng chân mày tự nhiên.",
+        "Tán phấn mắt màu da và chuốt mi nhẹ.",
+        "Thoa chút má hồng và son môi màu tươi tắn."
+      ],
+      "whyTry": "Giúp bạn luôn giữ được vẻ ngoài rạng rỡ, tự nhiên mà không tốn nhiều thời gian chuẩn bị mỗi ngày.",
+      "conditionalTips": [],
+      "imageKey": "natural.webp",
+      "imageBrief": "Portrait of a natural-looking woman with minimal makeup, fresh skin, light pink lips, soft natural lighting.",
+      "visualFocus": "Fresh natural skin texture, understated everyday look.",
+      "occasionLabels": [
+        "Hằng ngày",
+        "Đi học",
+        "Đi làm"
+      ],
+      "tagLabels": [
+        "Tự nhiên",
+        "Hằng ngày",
+        "Tươi tắn",
+        "Đơn giản",
+        "Mỏng nhẹ"
+      ],
+      "colorPaletteLabels": [
+        "Hồng nhạt",
+        "Đào nude",
+        "Be nhạt"
+      ],
+      "intensityLabel": "Nhẹ nhàng"
+    },
+    {
+      "key": "peach",
+      "name": "Peach Makeup",
+      "displayName": "Trang điểm tông đào ngọt ngào",
+      "shortDescription": "Phong cách trang điểm tràn đầy năng lượng với các sắc thái ngọt ngào của quả đào chín mọng, mang lại cảm giác tươi trẻ và đáng yêu.",
+      "signatureLook": "Tone màu cam đào chủ đạo từ mắt, má đến môi tạo tổng thể hài hòa, rực rỡ.",
+      "intensity": "medium",
+      "occasions": [
+        "date",
+        "daily",
+        "photoshoot"
+      ],
+      "tags": [
+        "peach",
+        "sweet",
+        "vibrant",
+        "youthful",
+        "fruity"
+      ],
+      "colorPalette": [
+        "peach",
+        "coral",
+        "warm pink",
+        "apricot"
+      ],
+      "techniques": {
+        "base": "Sử dụng lớp nền mịn màng, sáng sủa và không quá bóng dầu.",
+        "eyes": "Dùng phấn mắt màu cam đào tán đều toàn bộ bầu mắt, nhấn nhẹ nhũ sáng ở giữa mí mắt và đầu mắt.",
+        "brows": "Kẻ chân mày màu nâu sáng mềm mại, phù hợp với tone màu ấm của tổng thể.",
+        "cheeks": "Tán má hồng đậm vừa phải ngay vùng trung tâm gò má với màu cam đào hoặc san hô.",
+        "lips": "Thoa son màu cam đào hoặc hồng san hô bóng nhẹ, mang lại đôi môi căng mọng.",
+        "contourHighlight": "Tạo khối sống mũi nhẹ nhàng và thêm chút highlight nhũ ấm ở đỉnh gò má."
+      },
+      "quickSteps": [
+        "Đánh nền sáng mịn tự nhiên.",
+        "Tán phấn mắt tông cam đào toàn bộ bầu mắt và viền mi dưới.",
+        "Kẻ chân mày nâu sáng mềm mại.",
+        "Đánh má hồng màu đào rực rỡ vùng gò má.",
+        "Thoa son màu cam đào căng mọng."
+      ],
+      "whyTry": "Mang đến năng lượng tươi mới, ngọt ngào và tràn đầy sức sống, rất hợp với những buổi hẹn hò ngoài trời.",
+      "conditionalTips": [
+        {
+          "feature": "eyeAspect",
+          "observation": "relatively_low",
+          "tip": "Tán phấn mắt đậm hơn ở đuôi mắt và chuốt cong mi mạnh mẽ về phía ngoài.",
+          "reason": "Giúp đôi mắt trông to tròn và có độ mở rộng hơn."
+        }
+      ],
+      "imageKey": "peach.webp",
+      "imageBrief": "Close-up portrait of a woman wearing warm peach eyeshadow, matching coral blush, and juicy glossy peach lips, bright natural light.",
+      "visualFocus": "Peach color harmony across eyes, cheeks, and lips.",
+      "occasionLabels": [
+        "Hẹn hò",
+        "Hằng ngày",
+        "Chụp ảnh"
+      ],
+      "tagLabels": [
+        "Tông đào",
+        "Ngọt ngào",
+        "Rực rỡ",
+        "Trẻ trung",
+        "Tông trái cây"
+      ],
+      "colorPaletteLabels": [
+        "Cam đào",
+        "San hô",
+        "Hồng ấm",
+        "Cam mơ"
+      ],
+      "intensityLabel": "Vừa phải"
+    },
+    {
+      "key": "strawberry",
+      "name": "Strawberry Makeup",
+      "displayName": "Trang điểm tông dâu ngọt ngào",
+      "shortDescription": "Lối trang điểm lấy cảm hứng từ quả dâu tây chín mọng với sắc hồng đỏ tươi tắn, kết hợp điểm nhấn đốm tàn nhang giả đáng yêu.",
+      "signatureLook": "Má hồng ửng đỏ tươi tắn, môi mọng nước và vài nốt tàn nhang lấp lánh.",
+      "intensity": "medium",
+      "occasions": [
+        "date",
+        "photoshoot",
+        "daily"
+      ],
+      "tags": [
+        "strawberry",
+        "pink-red",
+        "cute",
+        "fresh",
+        "playful"
+      ],
+      "colorPalette": [
+        "strawberry red",
+        "pink",
+        "berry",
+        "soft brown"
+      ],
+      "techniques": {
+        "base": "Lớp nền mỏng nhẹ, mướt mịn với hiệu ứng ửng hồng tự nhiên.",
+        "eyes": "Dùng phấn mắt màu hồng dâu nhạt, kẻ eyeliner mảnh dài nhẹ và chuốt mi cong vút.",
+        "brows": "Chải chân mày gọn gàng, tự nhiên với bột tán mày màu nâu mềm.",
+        "cheeks": "Tán má hồng màu đỏ dâu đậm hơn bình thường kéo dài ngang qua sống mũi tạo hiệu ứng ửng nắng.",
+        "lips": "Thoa son đỏ dâu hoặc hồng mâm xôi căng mọng, có thể dùng son bóng chồng lên.",
+        "contourHighlight": "Chấm thêm vài nốt tàn nhang giả nhẹ nhàng bằng bút kẻ mắt nâu ở mũi và gò má."
+      },
+      "quickSteps": [
+        "Thoa lớp nền mỏng mịn, sáng sủa.",
+        "Tán phấn mắt hồng dâu nhẹ nhàng và chuốt mi cong.",
+        "Đánh má hồng đậm màu dâu ngang qua sống mũi.",
+        "Chấm vài nốt tàn nhang giả tinh tế.",
+        "Thoa son bóng màu đỏ dâu ngọt ngào."
+      ],
+      "whyTry": "Tạo nên vẻ ngoài ngọt ngào, tinh nghịch và vô cùng nổi bật, trẻ trung trong mọi khung hình.",
+      "conditionalTips": [],
+      "imageKey": "strawberry.webp",
+      "imageBrief": "Portrait of a woman with vibrant strawberry red blush across her nose bridge, subtle faux freckles, glossy berry lips, and fresh glowing skin.",
+      "visualFocus": "Strawberry pink-red blush, glossy lips, playful freckles.",
+      "occasionLabels": [
+        "Hẹn hò",
+        "Chụp ảnh",
+        "Hằng ngày"
+      ],
+      "tagLabels": [
+        "Tông dâu",
+        "Hồng đỏ",
+        "Dễ thương",
+        "Tươi tắn",
+        "Tinh nghịch"
+      ],
+      "colorPaletteLabels": [
+        "Đỏ dâu",
+        "Hồng",
+        "Đỏ mọng",
+        "Nâu dịu"
+      ],
+      "intensityLabel": "Vừa phải"
+    },
+    {
+      "key": "latte",
+      "name": "Latte Makeup",
+      "displayName": "Trang điểm tông Latte ấm áp",
+      "shortDescription": "Phong cách trang điểm lấy cảm hứng từ màu cà phê sữa Latte ấm áp, mang lại vẻ ngoài thời thượng, cá tính và sang trọng.",
+      "signatureLook": "Sắc thái nâu ấm và caramel hài hòa từ mắt, má đến môi với lớp nền lì mượt.",
+      "intensity": "medium",
+      "occasions": [
+        "work",
+        "date",
+        "party"
+      ],
+      "tags": [
+        "latte",
+        "warm brown",
+        "chic",
+        "autumnal",
+        "sophisticated"
+      ],
+      "colorPalette": [
+        "caramel",
+        "latte brown",
+        "warm beige",
+        "bronze"
+      ],
+      "techniques": {
+        "base": "Lớp nền bán lì (semi-matte) mượt mà, đều màu và có độ che phủ trung bình khá.",
+        "eyes": "Sử dụng các sắc thái nâu latte, cà phê sữa và caramel tán đều bầu mắt, kẻ eyeliner nâu mảnh sắc sảo.",
+        "brows": "Kẻ chân mày sắc nét vừa phải, tô điểm màu nâu đậm ấm áp.",
+        "cheeks": "Dùng phấn má hồng cam đất hoặc bronzer nhạt đánh xéo nhẹ nhàng tạo góc cạnh.",
+        "lips": "Thoa son môi màu nâu cam đất hoặc nude caramel thời thượng.",
+        "contourHighlight": "Tạo khối rõ nét ở xương gò má và đường viền hàm để làm nổi bật tinh thần ấm áp."
+      },
+      "quickSteps": [
+        "Đánh nền bán lì mịn màng.",
+        "Tán các lớp phấn mắt tông nâu latte và caramel lên bầu mắt.",
+        "Kẻ chân mày và định hình dáng mày gọn gàng.",
+        "Đánh má hồng cam đất và tạo khối nhẹ nhàng.",
+        "Thoa son màu nâu caramel hoặc cam đất."
+      ],
+      "whyTry": "Mang lại cảm giác ấm áp, sang trọng và rất phù hợp với phong cách thời trang thu đông hoặc trang phục công sở hiện đại.",
+      "conditionalTips": [
+        {
+          "feature": "outlineAspect",
+          "observation": "relatively_high",
+          "tip": "Tạo khối tập trung vào vùng thái dương và xương hàm thay vì đánh dọc theo gò má.",
+          "reason": "Giúp cân đối cấu trúc gương mặt dài, tạo cảm giác hài hòa và ấm áp hơn."
+        }
+      ],
+      "imageKey": "latte.webp",
+      "imageBrief": "Portrait of a stylish woman with warm latte brown eyeshadow, caramel-toned lips, soft bronze contours, and chic autumn aesthetic.",
+      "visualFocus": "Warm caramel and latte brown tones, sophisticated matte finish.",
+      "occasionLabels": [
+        "Đi làm",
+        "Hẹn hò",
+        "Dự tiệc"
+      ],
+      "tagLabels": [
+        "Latte",
+        "Nâu ấm",
+        "Thanh lịch",
+        "Sắc thu",
+        "Tinh tế"
+      ],
+      "colorPaletteLabels": [
+        "Caramel",
+        "Nâu cà phê sữa",
+        "Be ấm",
+        "Ánh đồng"
+      ],
+      "intensityLabel": "Vừa phải"
+    },
+    {
+      "key": "soft-glam",
+      "name": "Soft Glam Makeup",
+      "displayName": "Trang điểm Soft Glam quyến rũ",
+      "shortDescription": "Sự kết hợp hoàn hảo giữa nét sắc sảo và sự mềm mại, mang lại vẻ ngoài kiêu sa, quyến rũ nhưng không quá nặng nề.",
+      "signatureLook": "Mắt khói nhẹ nhàng có nhũ bắt sáng, đường viền môi sắc nét và má hồng ấm.",
+      "intensity": "bold",
+      "occasions": [
+        "party",
+        "date",
+        "photoshoot"
+      ],
+      "tags": [
+        "soft-glam",
+        "glamorous",
+        "romantic",
+        "polished",
+        "evening"
+      ],
+      "colorPalette": [
+        "rose gold",
+        "warm brown",
+        "taupe",
+        "mauve"
+      ],
+      "techniques": {
+        "base": "Lớp nền che phủ hoàn hảo, mịn màng, giữ màu lâu trôi suốt cả buổi tiệc.",
+        "eyes": "Tán hốc mắt bằng phấn nâu trầm, nhấn nhũ hồng kim tuyến ở giữa bầu mắt và kẻ eyeliner sắc sảo.",
+        "brows": "Kẻ chân mày sắc nét, được chải định hình tỉ mỉ.",
+        "cheeks": "Đánh má hồng tông hồng đất hoặc cam đất nhẹ nhàng.",
+        "lips": "Kẻ viền môi rõ ràng và tô son màu hồng đất hoặc đỏ đất lì mềm mại.",
+        "contourHighlight": "Tạo khối và đánh highlight rõ nét ở gò má, sống mũi để bắt sáng dưới ánh đèn tiệc."
+      },
+      "quickSteps": [
+        "Đánh lớp nền mịn lì che phủ cao.",
+        "Tán phấn mắt khói nhẹ kết hợp nhũ ánh kim.",
+        "Kẻ chân mày sắc nét và chuốt mi dày.",
+        "Tạo khối và đánh má hồng định hình khuôn mặt.",
+        "Kẻ viền môi và tô son màu hồng đất quyến rũ."
+      ],
+      "whyTry": "Tôn lên trọn vẹn các đường nét sắc sảo, mang lại vẻ ngoài lộng lẫy và thu hút cho các buổi tiệc tối hoặc sự kiện quan trọng.",
+      "conditionalTips": [],
+      "imageKey": "soft-glam.webp",
+      "imageBrief": "Professional studio portrait of a woman with soft smokey eyeshadow, rose gold shimmer, defined contours, and dusty rose lipstick.",
+      "visualFocus": "Soft smokey eyes with shimmer, polished contour, elegant lips.",
+      "occasionLabels": [
+        "Dự tiệc",
+        "Hẹn hò",
+        "Chụp ảnh"
+      ],
+      "tagLabels": [
+        "Soft Glam",
+        "Quyến rũ",
+        "Lãng mạn",
+        "Chỉn chu",
+        "Tiệc tối"
+      ],
+      "colorPaletteLabels": [
+        "Vàng hồng",
+        "Nâu ấm",
+        "Nâu xám",
+        "Hồng tím đất"
+      ],
+      "intensityLabel": "Đậm nét"
+    },
+    {
+      "key": "thai-glam",
+      "name": "Thai Glam Makeup",
+      "displayName": "Trang điểm phong cách Thái Lan",
+      "shortDescription": "Phong cách sắc sảo kết hợp giữa nét quyến rũ phương Tây và sự khỏe khoắn Đông Nam Á với lông mày rậm bay bổng và khối mặt sắc nét.",
+      "signatureLook": "Lông mày rậm tơi bay tự nhiên, gò má rám nắng khỏe khoắn và đôi môi nude quyến rũ.",
+      "intensity": "bold",
+      "occasions": [
+        "party",
+        "photoshoot",
+        "date"
+      ],
+      "tags": [
+        "thai-look",
+        "sharp",
+        "bold",
+        "bronzed",
+        "striking"
+      ],
+      "colorPalette": [
+        "bronze",
+        "terracotta",
+        "warm nude",
+        "burnt orange"
+      ],
+      "techniques": {
+        "base": "Lớp nền lì, khỏe khoắn với tông màu ấm áp, độ che phủ cao.",
+        "eyes": "Tán phấn mắt tông nâu đồng hoặc cam đất, kẻ đường eyeliner đen sắc sảo và gắn mi giả dày dài.",
+        "brows": "Chải lông mày rậm bay bổng theo đúng chuẩn 'lông mày Thái' sắc nét.",
+        "cheeks": "Đánh bronzer và má hồng tông cam cháy hoặc cam đất xéo theo gò má.",
+        "lips": "Thoa son màu nude ấm hoặc cam đất viền môi đầy đặn sắc sảo.",
+        "contourHighlight": "Tạo khối và đánh highlight rất rõ nét để tạo chiều sâu và góc cạnh mạnh mẽ cho khuôn mặt."
+      },
+      "quickSteps": [
+        "Đánh nền lì khỏe khoắn, độ che phủ cao.",
+        "Kẻ lông mày rậm tơi bay đặc trưng.",
+        "Đánh mắt tông nâu đồng và gắn mi giả dày.",
+        "Tạo khối góc cạnh và đánh má hồng cam cháy.",
+        "Thoa son màu nude cam đất sắc sảo."
+      ],
+      "whyTry": "Tạo nên diện mạo vô cùng sắc sảo, cá tính, phóng khoáng và thu hút mọi ánh nhìn.",
+      "conditionalTips": [
+        {
+          "feature": "outlineAspect",
+          "observation": "relatively_low",
+          "tip": "Tán khối xéo rộng hơn ở vùng xương hàm và thái dương.",
+          "reason": "Giúp cân đối cấu trúc khuôn mặt, tăng thêm độ sắc nét và chiều sâu."
+        }
+      ],
+      "imageKey": "thai-glam.webp",
+      "imageBrief": "Close-up of a stunning woman with bold feathered eyebrows, bronzed skin, striking smokey bronze eyeshadow, and nude matte lips.",
+      "visualFocus": "Feathered bold eyebrows, bronzed complexion, sharp contour.",
+      "occasionLabels": [
+        "Dự tiệc",
+        "Chụp ảnh",
+        "Hẹn hò"
+      ],
+      "tagLabels": [
+        "Phong cách Thái",
+        "Sắc sảo",
+        "Đậm nét",
+        "Ánh đồng",
+        "Nổi bật"
+      ],
+      "colorPaletteLabels": [
+        "Ánh đồng",
+        "Đỏ đất nung",
+        "Nude ấm",
+        "Cam cháy"
+      ],
+      "intensityLabel": "Đậm nét"
+    },
+    {
+      "key": "smokey-eyes",
+      "name": "Smokey Eyes Makeup",
+      "displayName": "Trang điểm mắt khói cá tính",
+      "shortDescription": "Lối trang điểm tập trung mạnh vào đôi mắt khói quyến rũ và huyền bí, mang lại vẻ đẹp quyền lực, táo bạo và đầy cuốn hút.",
+      "signatureLook": "Đôi mắt đánh khói đen/nâu đậm huyền ảo kết hợp môi nude trầm.",
+      "intensity": "bold",
+      "occasions": [
+        "party",
+        "photoshoot"
+      ],
+      "tags": [
+        "smokey",
+        "dramatic",
+        "bold",
+        "mysterious",
+        "edgy"
+      ],
+      "colorPalette": [
+        "charcoal black",
+        "dark brown",
+        "silver",
+        "nude"
+      ],
+      "techniques": {
+        "base": "Lớp nền hoàn hảo, mịn lì, che khuyết điểm vùng quầng thâm mắt thật kỹ.",
+        "eyes": "Tán phấn đen hoặc xám than lan tỏa rộng trên bầu mắt và viền mi dưới, kết hợp kẻ eyeliner đen đậm và chuốt mi dày.",
+        "brows": "Kẻ chân mày đậm nét, sắc sảo để cân bằng với độ nặng của đôi mắt.",
+        "cheeks": "Đánh má hồng tối giản với tông màu nude trầm để tránh làm rối mắt.",
+        "lips": "Thoa son môi màu nude trầm hoặc hồng đất nhẹ để tôn lên đôi mắt khói làm tâm điểm.",
+        "contourHighlight": "Tạo khối sắc nét vùng má và cằm để tăng tính góc cạnh, mạnh mẽ."
+      },
+      "quickSteps": [
+        "Đánh nền mịn lì che khuyết điểm kỹ vùng mắt.",
+        "Tán phấn mắt khói đen/xám đậm lan tỏa toàn bộ bầu mắt.",
+        "Kẻ eyeliner đen và chuốt mi dày.",
+        "Kẻ chân mày sắc nét, đậm vừa phải.",
+        "Thoa son môi màu nude trầm để hoàn thiện."
+      ],
+      "whyTry": "Khẳng định phong cách cá tính mạnh mẽ, quyến rũ chết người và cực kỳ nổi bật trong các buổi tiệc đêm.",
+      "conditionalTips": [],
+      "imageKey": "smokey-eyes.webp",
+      "imageBrief": "Dramatic portrait of a woman with intense charcoal smokey eyes, sleek hair, sharp contours, and neutral nude lips.",
+      "visualFocus": "Intense smokey eye makeup, dramatic depth.",
+      "occasionLabels": [
+        "Dự tiệc",
+        "Chụp ảnh"
+      ],
+      "tagLabels": [
+        "Mắt khói",
+        "Ấn tượng",
+        "Đậm nét",
+        "Bí ẩn",
+        "Cá tính"
+      ],
+      "colorPaletteLabels": [
+        "Đen than",
+        "Nâu đậm",
+        "Bạc",
+        "Nude"
+      ],
+      "intensityLabel": "Đậm nét"
+    },
+    {
+      "key": "bridal-soft-glam",
+      "name": "Bridal Soft Glam Makeup",
+      "displayName": "Trang điểm cô dâu Soft Glam",
+      "shortDescription": "Phong cách trang điểm cô dâu tinh tế, lãng mạn và trang nhã, giúp tôn lên vẻ đẹp thanh khiết và rạng rỡ nhất trong ngày trọng đại.",
+      "signatureLook": "Lớp nền mướt mịn rạng rỡ, mắt ánh nhũ hồng ngọc trai trong trẻo và môi hồng ngọt ngào.",
+      "intensity": "medium",
+      "occasions": [
+        "wedding",
+        "photoshoot"
+      ],
+      "tags": [
+        "bridal",
+        "romantic",
+        "elegant",
+        "glowy",
+        "timeless"
+      ],
+      "colorPalette": [
+        "champagne",
+        "rose pink",
+        "soft peach",
+        "pearl white"
+      ],
+      "techniques": {
+        "base": "Sử dụng nền lâu trôi cao cấp, kết hợp bắt sáng tinh tế để da căng bóng rạng ngời dưới ánh đèn cưới.",
+        "eyes": "Tán phấn mắt hồng be kết hợp nhũ ngọc trai sáng ở khóe mắt và giữa mi, gắn mi giả mỏng nhẹ tự nhiên.",
+        "brows": "Kẻ chân mày mềm mại, hài hòa, không quá sắc bén.",
+        "cheeks": "Đánh má hồng phớt hồng đào tự nhiên, tạo hiệu ứng cô dâu rạng rỡ.",
+        "lips": "Thoa son màu hồng đất hoặc hồng cam sữa ngọt ngào, bền màu.",
+        "contourHighlight": "Tạo khối nhẹ nhàng và phủ highlight ngọc trai ở gò má và sóng mũi."
+      },
+      "quickSteps": [
+        "Đánh nền lâu trôi cao cấp tạo hiệu ứng da rạng rỡ.",
+        "Tán phấn mắt ánh nhũ ngọc trai và gắn mi giả tự nhiên.",
+        "Kẻ chân mày mềm mại, thanh thoát.",
+        "Đánh má hồng hồng đào ngọt ngào.",
+        "Thoa son môi hồng đất bền màu."
+      ],
+      "whyTry": "Mang lại vẻ đẹp lãng mạn, thanh lịch và trường tồn với thời gian cho ngày cưới của bạn.",
+      "conditionalTips": [],
+      "imageKey": "bridal-soft-glam.webp",
+      "imageBrief": "Bridal portrait of a radiant woman with glowing skin, soft champagne shimmer eyeshadow, natural pink cheeks, and elegant rose lips.",
+      "visualFocus": "Radiant bridal glow, soft pearl shimmer, elegant pink lips.",
+      "occasionLabels": [
+        "Đám cưới",
+        "Chụp ảnh"
+      ],
+      "tagLabels": [
+        "Cô dâu",
+        "Lãng mạn",
+        "Thanh lịch",
+        "Rạng rỡ",
+        "Cổ điển"
+      ],
+      "colorPaletteLabels": [
+        "Vàng champagne",
+        "Hồng hoa hồng",
+        "Đào nhạt",
+        "Trắng ngọc trai"
+      ],
+      "intensityLabel": "Vừa phải"
+    },
+    {
+      "key": "classic-glam",
+      "name": "Classic Glam Makeup",
+      "displayName": "Trang điểm cổ điển Classic Glam",
+      "shortDescription": "Lối trang điểm kinh điển mang cảm hứng Hollywood cổ điển với điểm nhấn là đường eyeliner mèo sắc nét và màu son đỏ quyến rũ.",
+      "signatureLook": "Môi đỏ quyến rũ kinh điển và đường kẻ mắt mèo đen tuyền sắc sảo.",
+      "intensity": "bold",
+      "occasions": [
+        "party",
+        "photoshoot",
+        "wedding"
+      ],
+      "tags": [
+        "classic",
+        "hollywood",
+        "red-lips",
+        "vintage",
+        "timeless"
+      ],
+      "colorPalette": [
+        "classic red",
+        "black",
+        "ivory",
+        "gold"
+      ],
+      "techniques": {
+        "base": "Lớp nền lì hoàn hảo, che khuyết điểm tuyệt đối với làn da trắng mịn màng.",
+        "eyes": "Đánh phấn mắt màu ivory hoặc be sáng, kẻ đường eyeliner mắt mèo (cat-eye) đen đậm sắc nét, gắn mi giả dài.",
+        "brows": "Kẻ chân mày cong cổ điển, gọn gàng và sắc sảo.",
+        "cheeks": "Đánh má hồng phớt nhẹ màu hồng hoặc đỏ nhạt để tôn lên màu son chính.",
+        "lips": "Kẻ viền môi sắc nét tuyệt đối và tô son đỏ cổ điển lì hoặc bán lì.",
+        "contourHighlight": "Tạo khối nhẹ nhàng ở gò má, giữ sự tập trung tối đa vào mắt và môi."
+      },
+      "quickSteps": [
+        "Đánh lớp nền lì hoàn hảo, mịn màng.",
+        "Kẻ đường eyeliner mắt mèo đen sắc sảo và chuốt mi dày.",
+        "Kẻ chân mày cong cổ điển gọn gàng.",
+        "Tán má hồng phớt nhẹ nhàng.",
+        "Kẻ viền môi và tô son đỏ cổ điển sắc nét."
+      ],
+      "whyTry": "Biến hóa bạn thành một quý cô Hollywood kiêu kỳ, sang trọng và quyến rũ bất chấp thời gian.",
+      "conditionalTips": [],
+      "imageKey": "classic-glam.webp",
+      "imageBrief": "Vintage Hollywood portrait of a woman with winged cat eyeliner, flawless porcelain skin, and iconic classic red lipstick.",
+      "visualFocus": "Sharp cat-eye eyeliner, iconic classic red lips.",
+      "occasionLabels": [
+        "Dự tiệc",
+        "Chụp ảnh",
+        "Đám cưới"
+      ],
+      "tagLabels": [
+        "Cổ điển",
+        "Hollywood",
+        "Môi đỏ",
+        "Hoài cổ",
+        "Cổ điển"
+      ],
+      "colorPaletteLabels": [
+        "Đỏ cổ điển",
+        "Đen",
+        "Trắng ngà",
+        "Vàng kim"
+      ],
+      "intensityLabel": "Đậm nét"
+    },
+    {
+      "key": "j-beauty",
+      "name": "J-Beauty Makeup",
+      "displayName": "Trang điểm Nhật Bản tự nhiên",
+      "shortDescription": "Trang điểm trong trẻo, chú trọng lớp nền mỏng và má hồng dịu.",
+      "signatureLook": "Da tự nhiên, má hồng nhẹ, môi màu trong.",
+      "intensity": "light",
+      "occasions": [
+        "daily",
+        "school",
+        "date"
+      ],
+      "occasionLabels": [
+        "Hằng ngày",
+        "Đi học",
+        "Hẹn hò"
+      ],
+      "tags": [
+        "japanese",
+        "natural",
+        "soft"
+      ],
+      "tagLabels": [
+        "Nhật Bản",
+        "Tự nhiên",
+        "Nhẹ nhàng"
+      ],
+      "colorPalette": [
+        "soft pink",
+        "beige",
+        "coral"
+      ],
+      "techniques": {
+        "base": "Dặm cushion mỏng chỉ tại vùng cần đều màu, giữ bề mặt da tự nhiên.",
+        "eyes": "Tán be hồng lên mí, kẻ sát chân mi bằng chì nâu và chuốt mi tơi.",
+        "brows": "Tô những khoảng thưa theo chiều sợi mày, tránh viền quá đậm.",
+        "cheeks": "Tán má hồng hồng phấn nhẹ từ trung tâm má ra ngoài.",
+        "lips": "Dùng son tint hồng san hô lớp mỏng, thêm dưỡng bóng nếu thích.",
+        "contourHighlight": "Bắt sáng rất nhẹ ở gò má; hạn chế tạo khối đậm."
+      },
+      "quickSteps": [
+        "Dặm cushion mỏng chỉ tại vùng cần đều màu, giữ bề mặt da tự nhiên.",
+        "Tán be hồng lên mí, kẻ sát chân mi bằng chì nâu và chuốt mi tơi.",
+        "Tán má hồng hồng phấn nhẹ từ trung tâm má ra ngoài.",
+        "Dùng son tint hồng san hô lớp mỏng, thêm dưỡng bóng nếu thích."
+      ],
+      "whyTry": "Trang điểm trong trẻo, chú trọng lớp nền mỏng và má hồng dịu.",
+      "conditionalTips": [],
+      "imageKey": "j-beauty.webp",
+      "imageBrief": "Photorealistic editorial beauty portrait showing J-Beauty Makeup, makeup details clearly visible, soft studio light, clean background.",
+      "visualFocus": "Da tự nhiên, má hồng nhẹ, môi màu trong.",
+      "colorPaletteLabels": [
+        "Hồng phấn",
+        "Be",
+        "San hô"
+      ],
+      "intensityLabel": "Nhẹ nhàng"
+    },
+    {
+      "key": "igari",
+      "name": "Igari Makeup",
+      "displayName": "Trang điểm Igari má hồng say",
+      "shortDescription": "Phong cách Nhật Bản với má hồng ửng cao gần vùng dưới mắt.",
+      "signatureLook": "Má hồng lan nhẹ qua sống mũi, môi trong trẻo.",
+      "intensity": "medium",
+      "occasions": [
+        "date",
+        "photoshoot",
+        "daily"
+      ],
+      "occasionLabels": [
+        "Hẹn hò",
+        "Chụp ảnh",
+        "Hằng ngày"
+      ],
+      "tags": [
+        "japanese",
+        "blush",
+        "playful"
+      ],
+      "tagLabels": [
+        "Nhật Bản",
+        "Má hồng",
+        "Tinh nghịch"
+      ],
+      "colorPalette": [
+        "rose pink",
+        "coral",
+        "peach"
+      ],
+      "techniques": {
+        "base": "Giữ nền mỏng, che khuyết điểm từng vùng để má hồng nổi bật.",
+        "eyes": "Dùng màu mắt hồng be trong, nhấn một chút nhũ mịn ở giữa mí.",
+        "brows": "Chải mày mềm, giữ dáng tự nhiên.",
+        "cheeks": "Tán hồng phấn cao dưới mắt, nối nhẹ qua sống mũi, tăng màu từng lớp.",
+        "lips": "Chọn son hồng trong hoặc đỏ hồng tán mờ viền môi.",
+        "contourHighlight": "Không tạo khối mạnh; bắt sáng ít để giữ vẻ ửng hồng."
+      },
+      "quickSteps": [
+        "Giữ nền mỏng, che khuyết điểm từng vùng để má hồng nổi bật.",
+        "Dùng màu mắt hồng be trong, nhấn một chút nhũ mịn ở giữa mí.",
+        "Tán hồng phấn cao dưới mắt, nối nhẹ qua sống mũi, tăng màu từng lớp.",
+        "Chọn son hồng trong hoặc đỏ hồng tán mờ viền môi."
+      ],
+      "whyTry": "Phong cách Nhật Bản với má hồng ửng cao gần vùng dưới mắt.",
+      "conditionalTips": [],
+      "imageKey": "igari.webp",
+      "imageBrief": "Photorealistic editorial beauty portrait showing Igari Makeup, makeup details clearly visible, soft studio light, clean background.",
+      "visualFocus": "Má hồng lan nhẹ qua sống mũi, môi trong trẻo.",
+      "colorPaletteLabels": [
+        "Hồng hoa hồng",
+        "San hô",
+        "Cam đào"
+      ],
+      "intensityLabel": "Vừa phải"
+    },
+    {
+      "key": "ulzzang",
+      "name": "Ulzzang Makeup",
+      "displayName": "Trang điểm Ulzzang Hàn Quốc",
+      "shortDescription": "Phong cách trẻ trung nhấn vào đôi mắt rõ nét và môi chuyển màu.",
+      "signatureLook": "Mắt long lanh, chân mày mềm, môi tint chuyển sắc.",
+      "intensity": "medium",
+      "occasions": [
+        "date",
+        "photoshoot",
+        "daily"
+      ],
+      "occasionLabels": [
+        "Hẹn hò",
+        "Chụp ảnh",
+        "Hằng ngày"
+      ],
+      "tags": [
+        "korean",
+        "youthful",
+        "glossy"
+      ],
+      "tagLabels": [
+        "Hàn Quốc",
+        "Trẻ trung",
+        "Bóng nhẹ"
+      ],
+      "colorPalette": [
+        "pink",
+        "brown",
+        "coral"
+      ],
+      "techniques": {
+        "base": "Tán cushion mỏng, phủ phấn vùng chữ T nếu cần.",
+        "eyes": "Tán nâu nhạt ở đuôi mắt, kẻ eyeliner nâu mảnh và nhấn bọng mắt rất nhẹ.",
+        "brows": "Kẻ mày ngang mềm theo dáng sẵn có.",
+        "cheeks": "Tán má hồng phớt hồng ở giữa má.",
+        "lips": "Đánh son tint đậm ở lòng môi rồi tán chuyển sắc ra viền.",
+        "contourHighlight": "Tạo khối sống mũi thật nhẹ, nhấn sáng đầu mắt."
+      },
+      "quickSteps": [
+        "Tán cushion mỏng, phủ phấn vùng chữ T nếu cần.",
+        "Tán nâu nhạt ở đuôi mắt, kẻ eyeliner nâu mảnh và nhấn bọng mắt rất nhẹ.",
+        "Tán má hồng phớt hồng ở giữa má.",
+        "Đánh son tint đậm ở lòng môi rồi tán chuyển sắc ra viền."
+      ],
+      "whyTry": "Phong cách trẻ trung nhấn vào đôi mắt rõ nét và môi chuyển màu.",
+      "conditionalTips": [],
+      "imageKey": "ulzzang.webp",
+      "imageBrief": "Photorealistic editorial beauty portrait showing Ulzzang Makeup, makeup details clearly visible, soft studio light, clean background.",
+      "visualFocus": "Mắt long lanh, chân mày mềm, môi tint chuyển sắc.",
+      "colorPaletteLabels": [
+        "Hồng",
+        "Nâu",
+        "San hô"
+      ],
+      "intensityLabel": "Vừa phải"
+    },
+    {
+      "key": "western-glam",
+      "name": "Western Glam Makeup",
+      "displayName": "Trang điểm Tây sắc sảo",
+      "shortDescription": "Phong cách trang điểm đậm với tạo khối rõ và đôi mắt nổi bật.",
+      "signatureLook": "Tạo khối sắc nét, mi dày, môi có viền rõ.",
+      "intensity": "bold",
+      "occasions": [
+        "party",
+        "photoshoot"
+      ],
+      "occasionLabels": [
+        "Dự tiệc",
+        "Chụp ảnh"
+      ],
+      "tags": [
+        "glamorous",
+        "contour",
+        "bold"
+      ],
+      "tagLabels": [
+        "Quyến rũ",
+        "Tạo khối",
+        "Đậm nét"
+      ],
+      "colorPalette": [
+        "bronze",
+        "warm brown",
+        "nude"
+      ],
+      "techniques": {
+        "base": "Dùng nền bán lì theo đúng màu da, che phủ từng lớp mỏng.",
+        "eyes": "Tán nâu chuyển sắc, kẻ eyeliner có đuôi và gắn mi cụm nếu muốn.",
+        "brows": "Định hình chân mày rõ nét nhưng không quá đậm ở đầu mày.",
+        "cheeks": "Tán má màu nâu hồng phía trên gò má.",
+        "lips": "Kẻ viền môi gần màu son, phủ son nude hoặc hồng đất.",
+        "contourHighlight": "Tán bronzer dưới gò má và viền hàm, làm mờ ranh giới kỹ."
+      },
+      "quickSteps": [
+        "Dùng nền bán lì theo đúng màu da, che phủ từng lớp mỏng.",
+        "Tán nâu chuyển sắc, kẻ eyeliner có đuôi và gắn mi cụm nếu muốn.",
+        "Tán má màu nâu hồng phía trên gò má.",
+        "Kẻ viền môi gần màu son, phủ son nude hoặc hồng đất."
+      ],
+      "whyTry": "Phong cách trang điểm đậm với tạo khối rõ và đôi mắt nổi bật.",
+      "conditionalTips": [],
+      "imageKey": "western-glam.webp",
+      "imageBrief": "Photorealistic editorial beauty portrait showing Western Glam Makeup, makeup details clearly visible, soft studio light, clean background.",
+      "visualFocus": "Tạo khối sắc nét, mi dày, môi có viền rõ.",
+      "colorPaletteLabels": [
+        "Ánh đồng",
+        "Nâu ấm",
+        "Nude"
+      ],
+      "intensityLabel": "Đậm nét"
+    },
+    {
+      "key": "nude-makeup",
+      "name": "Nude Makeup",
+      "displayName": "Trang điểm tông nude thanh lịch",
+      "shortDescription": "Phối sắc be, nâu và hồng đất tạo vẻ hài hòa, tinh tế.",
+      "signatureLook": "Mắt nâu nhạt, má nude, môi hồng đất.",
+      "intensity": "medium",
+      "occasions": [
+        "work",
+        "date",
+        "daily"
+      ],
+      "occasionLabels": [
+        "Đi làm",
+        "Hẹn hò",
+        "Hằng ngày"
+      ],
+      "tags": [
+        "minimalist",
+        "nude",
+        "elegant"
+      ],
+      "tagLabels": [
+        "Tối giản",
+        "Tông nude",
+        "Thanh lịch"
+      ],
+      "colorPalette": [
+        "nude",
+        "taupe",
+        "mauve"
+      ],
+      "techniques": {
+        "base": "Đánh nền mỏng bán lì, chỉ che khuyết điểm tại vùng cần thiết.",
+        "eyes": "Tán nâu be nhạt ở mí, kẻ sát chân mi bằng nâu xám.",
+        "brows": "Chải và lấp khoảng trống của chân mày.",
+        "cheeks": "Tán má hồng nude hoặc hồng đất rất nhẹ.",
+        "lips": "Dùng son hồng đất gần sắc môi tự nhiên, thêm lớp bóng mỏng.",
+        "contourHighlight": "Tạo khối nhẹ bằng màu nâu trung tính, tránh tương phản mạnh."
+      },
+      "quickSteps": [
+        "Đánh nền mỏng bán lì, chỉ che khuyết điểm tại vùng cần thiết.",
+        "Tán nâu be nhạt ở mí, kẻ sát chân mi bằng nâu xám.",
+        "Tán má hồng nude hoặc hồng đất rất nhẹ.",
+        "Dùng son hồng đất gần sắc môi tự nhiên, thêm lớp bóng mỏng."
+      ],
+      "whyTry": "Phối sắc be, nâu và hồng đất tạo vẻ hài hòa, tinh tế.",
+      "conditionalTips": [],
+      "imageKey": "nude-makeup.webp",
+      "imageBrief": "Photorealistic editorial beauty portrait showing Nude Makeup, makeup details clearly visible, soft studio light, clean background.",
+      "visualFocus": "Mắt nâu nhạt, má nude, môi hồng đất.",
+      "colorPaletteLabels": [
+        "Nude",
+        "Nâu xám",
+        "Hồng tím đất"
+      ],
+      "intensityLabel": "Vừa phải"
+    },
+    {
+      "key": "fox-eye",
+      "name": "Fox Eye Makeup",
+      "displayName": "Trang điểm mắt cáo cá tính",
+      "shortDescription": "Kỹ thuật tán mắt và kẻ đuôi mắt kéo dài tạo hiệu ứng sắc sảo.",
+      "signatureLook": "Đuôi mắt kéo dài, eyeliner mảnh, môi cân bằng.",
+      "intensity": "bold",
+      "occasions": [
+        "party",
+        "photoshoot",
+        "date"
+      ],
+      "occasionLabels": [
+        "Dự tiệc",
+        "Chụp ảnh",
+        "Hẹn hò"
+      ],
+      "tags": [
+        "sharp",
+        "eyeliner",
+        "bold"
+      ],
+      "tagLabels": [
+        "Sắc sảo",
+        "Kẻ mắt",
+        "Đậm nét"
+      ],
+      "colorPalette": [
+        "dark brown",
+        "taupe",
+        "rose pink"
+      ],
+      "techniques": {
+        "base": "Tán nền mịn tự nhiên, giữ vùng mắt sạch để đường kẻ rõ.",
+        "eyes": "Tán nâu xám kéo xéo ra thái dương, kẻ eyeliner mảnh dài ở đuôi mắt.",
+        "brows": "Chải phần đuôi mày theo hướng hơi ngang, không ép thay đổi dáng mày.",
+        "cheeks": "Tán má hồng hướng xéo lên thái dương.",
+        "lips": "Chọn son nude hồng hoặc hồng đất cân bằng điểm nhấn mắt.",
+        "contourHighlight": "Tạo khối nhẹ vùng thái dương và gò má, tán đều."
+      },
+      "quickSteps": [
+        "Tán nền mịn tự nhiên, giữ vùng mắt sạch để đường kẻ rõ.",
+        "Tán nâu xám kéo xéo ra thái dương, kẻ eyeliner mảnh dài ở đuôi mắt.",
+        "Tán má hồng hướng xéo lên thái dương.",
+        "Chọn son nude hồng hoặc hồng đất cân bằng điểm nhấn mắt."
+      ],
+      "whyTry": "Kỹ thuật tán mắt và kẻ đuôi mắt kéo dài tạo hiệu ứng sắc sảo.",
+      "conditionalTips": [],
+      "imageKey": "fox-eye.webp",
+      "imageBrief": "Photorealistic editorial beauty portrait showing Fox Eye Makeup, makeup details clearly visible, soft studio light, clean background.",
+      "visualFocus": "Đuôi mắt kéo dài, eyeliner mảnh, môi cân bằng.",
+      "colorPaletteLabels": [
+        "Nâu đậm",
+        "Nâu xám",
+        "Hồng hoa hồng"
+      ],
+      "intensityLabel": "Đậm nét"
+    },
+    {
+      "key": "sunkissed",
+      "name": "Sun-Kissed Makeup",
+      "displayName": "Trang điểm rám nắng khỏe khoắn",
+      "shortDescription": "Hiệu ứng nắng nhẹ với bronzer và má hồng ấm áp.",
+      "signatureLook": "Da ánh đồng nhẹ, má cam ấm, môi bóng tự nhiên.",
+      "intensity": "medium",
+      "occasions": [
+        "daily",
+        "date",
+        "photoshoot"
+      ],
+      "occasionLabels": [
+        "Hằng ngày",
+        "Hẹn hò",
+        "Chụp ảnh"
+      ],
+      "tags": [
+        "bronzed",
+        "fresh",
+        "warm"
+      ],
+      "tagLabels": [
+        "Ánh đồng",
+        "Tươi tắn",
+        "Ấm áp"
+      ],
+      "colorPalette": [
+        "bronze",
+        "coral",
+        "caramel"
+      ],
+      "techniques": {
+        "base": "Dùng nền mỏng đúng tông da, ưu tiên bề mặt khỏe tự nhiên.",
+        "eyes": "Phủ màu nâu đồng nhạt trên mí và chuốt mascara tơi.",
+        "brows": "Chải mày gọn theo dáng tự nhiên.",
+        "cheeks": "Tán bronzer nhẹ ở vùng thường đón nắng, thêm má cam san hô trên gò má.",
+        "lips": "Thoa son san hô hoặc nude ấm có độ bóng nhẹ.",
+        "contourHighlight": "Bắt sáng ánh vàng tinh tế ở gò má, tránh làm tối màu da quá mức."
+      },
+      "quickSteps": [
+        "Dùng nền mỏng đúng tông da, ưu tiên bề mặt khỏe tự nhiên.",
+        "Phủ màu nâu đồng nhạt trên mí và chuốt mascara tơi.",
+        "Tán bronzer nhẹ ở vùng thường đón nắng, thêm má cam san hô trên gò má.",
+        "Thoa son san hô hoặc nude ấm có độ bóng nhẹ."
+      ],
+      "whyTry": "Hiệu ứng nắng nhẹ với bronzer và má hồng ấm áp.",
+      "conditionalTips": [],
+      "imageKey": "sunkissed.webp",
+      "imageBrief": "Photorealistic editorial beauty portrait showing Sun-Kissed Makeup, makeup details clearly visible, soft studio light, clean background.",
+      "visualFocus": "Da ánh đồng nhẹ, má cam ấm, môi bóng tự nhiên.",
+      "colorPaletteLabels": [
+        "Ánh đồng",
+        "San hô",
+        "Caramel"
+      ],
+      "intensityLabel": "Vừa phải"
+    },
+    {
+      "key": "glass-skin",
+      "name": "Glass Skin Makeup",
+      "displayName": "Trang điểm da căng bóng",
+      "shortDescription": "Phong cách chú trọng nền ẩm mượt, bắt sáng vừa phải và màu sắc nhẹ.",
+      "signatureLook": "Nền bóng khỏe, mắt nhẹ, môi bóng trong.",
+      "intensity": "light",
+      "occasions": [
+        "daily",
+        "date",
+        "work"
+      ],
+      "occasionLabels": [
+        "Hằng ngày",
+        "Hẹn hò",
+        "Đi làm"
+      ],
+      "tags": [
+        "dewy",
+        "glowy",
+        "minimalist"
+      ],
+      "tagLabels": [
+        "Căng bóng",
+        "Rạng rỡ",
+        "Tối giản"
+      ],
+      "colorPalette": [
+        "soft pink",
+        "champagne",
+        "peach"
+      ],
+      "techniques": {
+        "base": "Dưỡng ẩm phù hợp, dùng cushion mỏng có độ bóng nhẹ và chỉ phủ phấn vùng cần thiết.",
+        "eyes": "Tán be hồng mờ trên mí, kẻ nâu sát chân mi và chuốt mi nhẹ.",
+        "brows": "Chải mày tự nhiên, tránh vẽ viền sắc.",
+        "cheeks": "Dùng má hồng kem hồng đào tán mỏng để hòa vào nền.",
+        "lips": "Dùng son tint trong và phủ một lớp son bóng.",
+        "contourHighlight": "Chấm highlight dạng kem ít ở đỉnh gò má, tránh phủ toàn mặt."
+      },
+      "quickSteps": [
+        "Dưỡng ẩm phù hợp, dùng cushion mỏng có độ bóng nhẹ và chỉ phủ phấn vùng cần thiết.",
+        "Tán be hồng mờ trên mí, kẻ nâu sát chân mi và chuốt mi nhẹ.",
+        "Dùng má hồng kem hồng đào tán mỏng để hòa vào nền.",
+        "Dùng son tint trong và phủ một lớp son bóng."
+      ],
+      "whyTry": "Phong cách chú trọng nền ẩm mượt, bắt sáng vừa phải và màu sắc nhẹ.",
+      "conditionalTips": [],
+      "imageKey": "glass-skin.webp",
+      "imageBrief": "Photorealistic editorial beauty portrait showing Glass Skin Makeup, makeup details clearly visible, soft studio light, clean background.",
+      "visualFocus": "Nền bóng khỏe, mắt nhẹ, môi bóng trong.",
+      "colorPaletteLabels": [
+        "Hồng phấn",
+        "Vàng champagne",
+        "Cam đào"
+      ],
+      "intensityLabel": "Nhẹ nhàng"
+    }
+  ],
+  "localizationNote": "Machine fields key/name/intensity/occasions/tags/colorPalette retained for compatibility; UI must render displayName/intensityLabel/occasionLabels/tagLabels/colorPaletteLabels. Editorial content needs professional review."
+}

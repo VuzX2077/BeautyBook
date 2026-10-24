@@ -53,7 +53,7 @@ namespace BeautyBookBackend.Services
 
         private async Task<List<FeedItemDto>> LoadPosts(Guid[] ids, Guid? userId, HashSet<Guid> boosted)
         {
-            var posts = await PublicPosts(userId).Where(p => ids.Contains(p.PortfolioId))
+            var posts = await PublicPosts(userId).WithTagging().Where(p => ids.Contains(p.PortfolioId))
                 .Include(p => p.MakeupArtistProfile).ThenInclude(m => m!.User)
                 .Include(p => p.Likes).Include(p => p.Saves).Include(p => p.Comments)
                 .Include(p => p.Service).ThenInclude(s => s!.Styles).ThenInclude(s => s.MakeupStyle)
@@ -97,7 +97,7 @@ namespace BeautyBookBackend.Services
             }
             // Recheck current visibility before choosing separators; hidden posts must
             // not accidentally join three same-author posts across a page boundary.
-            var visible = await PublicPosts(userId).Where(p => snapshot.Ids.Contains(p.PortfolioId))
+            var visible = await PublicPosts(userId).WithTagging().Where(p => snapshot.Ids.Contains(p.PortfolioId))
                 .Select(p => new { p.PortfolioId, p.ImageUrls }).ToListAsync();
             var valid = visible.Where(p => p.ImageUrls.Any(MuaEligibilityService.IsValidPublicUrl)).Select(p => p.PortfolioId).ToHashSet();
             var remaining = snapshot.Ids.Where(valid.Contains).ToList();
@@ -138,7 +138,7 @@ namespace BeautyBookBackend.Services
         {
             return new FeedItemDto
             {
-                PortfolioId = p.PortfolioId,
+                PortfolioId = p.PortfolioId, ServiceId = p.ServiceId, Version = p.Version, Tagging = PortfolioTaggingProjection.Tagging(p),
                 Title = p.Title ?? string.Empty,
                 ImageUrls = p.ImageUrls,
                 Description = p.Description ?? string.Empty,

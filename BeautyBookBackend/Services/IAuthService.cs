@@ -8,6 +8,8 @@ namespace BeautyBookBackend.Services
     {
         Task<TokenDto?> BecomeMuaAsync(Guid userId, MuaApplicationRequestDto request);
         Task<TokenDto?> GoogleLoginAsync(GoogleLoginDto googleLoginDto);
+        Task<TokenDto?> RefreshAsync(string refreshToken);
+        Task RevokeRefreshAsync(string refreshToken);
         Task<TokenDto?> LoginAsync(LoginDto loginDto);
         Task<string?> SendRegistrationOtpAsync(string email);
         Task<UserDto?> RegisterAsync(RegisterDto registerDto);

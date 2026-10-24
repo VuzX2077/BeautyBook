@@ -66,8 +66,15 @@ namespace BeautyBookBackend.DTOs
         public string NewPassword { get; set; } = null!;
     }
 
+    public class RefreshSessionDto
+    {
+        [Required, StringLength(64, MinimumLength = 64)]
+        public string RefreshToken { get; set; } = null!;
+    }
+
     public class LoginDto
     {
+        public bool UseRefreshSession { get; set; }
         [Required]
         [EmailAddress]
         public string Email { get; set; } = null!;
@@ -84,6 +91,7 @@ namespace BeautyBookBackend.DTOs
 
     public class TokenDto
     {
+        public string? RefreshToken { get; set; }
         public string Token { get; set; } = null!;
         public DateTime Expiration { get; set; }
         public Guid UserId { get; set; }

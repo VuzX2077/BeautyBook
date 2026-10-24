@@ -177,7 +177,7 @@ namespace BeautyBookBackend.Services
                 await _unitOfWork.SaveChangesAsync();
             }
 
-            return await GenerateJwtTokenAsync(user);
+            return await GenerateJwtTokenAsync(user, loginDto.UseRefreshSession);
         }
 
         public async Task<bool> VerifyPasswordAsync(Guid userId, string password)
@@ -376,7 +376,59 @@ namespace BeautyBookBackend.Services
                 .ToList();
         }
 
-        private async Task<TokenDto> GenerateJwtTokenAsync(User user)
+        private string NewRefreshSession(User user, Guid family, DateTime expiresAt)
+        {
+            var raw = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+            _dbContext.RefreshSessions.Add(new RefreshSession { Id = Guid.NewGuid(), FamilyId = family,
+                UserId = user.UserId, TokenHash = HashResetValue(raw), PasswordContext = HashResetValue(user.PasswordHash ?? ""), ExpiresAt = expiresAt });
+            return raw;
+        }
+
+        public async Task<TokenDto?> RefreshAsync(string refreshToken)
+        {
+            var hash = HashResetValue(refreshToken);
+            await using var transaction = await _dbContext.Database.BeginTransactionAsync();
+            var session = await _dbContext.RefreshSessions.AsNoTracking().SingleOrDefaultAsync(x => x.TokenHash == hash);
+            if (session == null) return null;
+            var now = DateTime.UtcNow;
+            var user = await _userRepository.GetByIdAsync(session.UserId);
+            if (user == null || !user.IsActive || user.DeletedAt != null) {
+                await _dbContext.RefreshSessions.Where(x => x.FamilyId == session.FamilyId).ExecuteDeleteAsync();
+                await transaction.CommitAsync();
+                return null;
+            }
+            if (session.RevokedAt != null || session.ExpiresAt <= now ||
+                session.PasswordContext != HashResetValue(user.PasswordHash ?? ""))
+            {
+                await _dbContext.RefreshSessions.Where(x => x.FamilyId == session.FamilyId && x.RevokedAt == null)
+                    .ExecuteUpdateAsync(s => s.SetProperty(x => x.RevokedAt, now));
+                await transaction.CommitAsync();
+                return null;
+            }
+            // Atomic consume prevents two concurrent requests from rotating the same credential.
+            var consumed = await _dbContext.RefreshSessions.Where(x => x.Id == session.Id && x.RevokedAt == null)
+                .ExecuteUpdateAsync(s => s.SetProperty(x => x.RevokedAt, now));
+            if (consumed != 1) {
+                await _dbContext.RefreshSessions.Where(x => x.FamilyId == session.FamilyId && x.RevokedAt == null)
+                    .ExecuteUpdateAsync(s => s.SetProperty(x => x.RevokedAt, now));
+                await transaction.CommitAsync();
+                return null;
+            }
+            var result = await GenerateJwtTokenAsync(user, shortAccess: true);
+            result.RefreshToken = NewRefreshSession(user, session.FamilyId, session.ExpiresAt);
+            await _dbContext.SaveChangesAsync();
+            await transaction.CommitAsync();
+            return result;
+        }
+
+        public async Task RevokeRefreshAsync(string refreshToken)
+        {
+            var hash = HashResetValue(refreshToken);
+            var family = await _dbContext.RefreshSessions.Where(x => x.TokenHash == hash).Select(x => (Guid?)x.FamilyId).SingleOrDefaultAsync();
+            if (family != null) await _dbContext.RefreshSessions.Where(x => x.FamilyId == family).ExecuteDeleteAsync();
+        }
+
+        private async Task<TokenDto> GenerateJwtTokenAsync(User user, bool issueRefresh = false, bool shortAccess = false)
         {
             var jwtKey = _configuration["Jwt:Key"]
                 ?? throw new InvalidOperationException("Jwt:Key is not configured.");
@@ -391,6 +443,7 @@ namespace BeautyBookBackend.Services
 
             var claims = new[]
             {
+                new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString("N")),
                 new Claim(JwtRegisteredClaimNames.Sub, user.UserId.ToString()),
                 new Claim(JwtRegisteredClaimNames.Email, user.Email ?? ""),
                 new Claim(ClaimTypes.NameIdentifier, user.UserId.ToString()),
@@ -398,7 +451,7 @@ namespace BeautyBookBackend.Services
                 new Claim(ClaimTypes.Role, user.Role.ToString())
             };
 
-            var expiration = DateTime.UtcNow.AddMinutes(jwtDuration);
+            var expiration = DateTime.UtcNow.AddMinutes(issueRefresh || shortAccess ? 15 : jwtDuration);
 
             var token = new JwtSecurityToken(
                 issuer: jwtIssuer,
@@ -410,8 +463,13 @@ namespace BeautyBookBackend.Services
 
             bool hasMuaProfile = await _muaRepository.ProfileExistsAsync(user.UserId);
 
+            if (issueRefresh)
+                await _dbContext.RefreshSessions.Where(x => x.UserId == user.UserId && x.ExpiresAt < DateTime.UtcNow).ExecuteDeleteAsync();
+            var refresh = issueRefresh ? NewRefreshSession(user, Guid.NewGuid(), DateTime.UtcNow.AddDays(30)) : null;
+            if (refresh != null) await _dbContext.SaveChangesAsync();
             return new TokenDto
             {
+                RefreshToken = refresh,
                 Token = new JwtSecurityTokenHandler().WriteToken(token),
                 Expiration = expiration,
                 UserId = user.UserId,

@@ -15,6 +15,9 @@ namespace BeautyBookBackend.Models
         public bool IsPinned { get; set; } = false;
         public DateTime CreatedAt { get; set; }
         public Guid? ServiceId { get; set; }
+        public long Version { get; set; } = 1;
+        public ICollection<PortfolioStyleLink> StyleLinks { get; set; } = new List<PortfolioStyleLink>();
+        public ICollection<PortfolioTermLink> TermLinks { get; set; } = new List<PortfolioTermLink>();
 
         public MakeupArtistProfile? MakeupArtistProfile { get; set; }
         public Service? Service { get; set; }

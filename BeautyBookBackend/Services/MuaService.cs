@@ -306,7 +306,7 @@ namespace BeautyBookBackend.Services
 
         public async Task<List<PortfolioDto>> GetMuaPortfolioAsync(Guid muaId, Guid? currentUserId = null)
         {
-            var portfolios = await ModerationService.VisiblePortfolios(_dbContext, _dbContext.Portfolios, currentUserId)
+            var portfolios = await ModerationService.VisiblePortfolios(_dbContext, _dbContext.Portfolios.WithTagging(), currentUserId)
                 .Include(p => p.Likes)
                 .Include(p => p.Saves)
                 .Include(p => p.Comments)
@@ -327,7 +327,7 @@ namespace BeautyBookBackend.Services
 
             return portfolios.Select(p => new PortfolioDto
             {
-                PortfolioId = p.PortfolioId,
+                PortfolioId = p.PortfolioId, ServiceId = p.ServiceId, Version = p.Version, Tagging = PortfolioTaggingProjection.Tagging(p),
                 MUAId = p.MUAId,
                 Title = p.Title,
                 ImageUrls = isOwner ? p.ImageUrls : p.ImageUrls.Where(MuaEligibilityService.IsValidPublicUrl).ToList(),
@@ -349,77 +349,34 @@ namespace BeautyBookBackend.Services
 
         public async Task<bool> AddPortfolioImageAsync(Guid muaId, PortfolioCreateRequest request)
         {
-            if (!await _muaRepository.ProfileExistsAsync(muaId)) return false;
-            if (request.ServiceId.HasValue && !await _dbContext.Services.AnyAsync(s => s.ServiceId == request.ServiceId && s.MUAId == muaId)) return false;
-
-            await _muaRepository.AddPortfolioAsync(new Portfolio
-            {
-                PortfolioId = Guid.NewGuid(),
-                MUAId = muaId,
-                Title = request.Title,
-                ImageUrls = request.ImageUrls,
-                Description = request.Description,
-                Tags = request.Tags ?? new List<string>(),
-                IsHidden = false,
-                IsPinned = false,
-                CreatedAt = DateTime.UtcNow
-                ,ServiceId = request.ServiceId
-            });
-
-            await _unitOfWork.SaveChangesAsync();
-            await _eligibilityService.EvaluateAsync(muaId);
-            return true;
-        }
-
-        public async Task<bool> UpdatePortfolioImageAsync(Guid muaId, Guid portfolioId, PortfolioCreateRequest request)
-        {
-            var portfolio = await _muaRepository.GetPortfolioByIdForMuaAsync(portfolioId, muaId);
-            if (portfolio == null) return false;
-            if (request.ServiceId.HasValue && !await _dbContext.Services.AnyAsync(s => s.ServiceId == request.ServiceId && s.MUAId == muaId)) return false;
-
-            portfolio.Title = request.Title;
-            portfolio.ImageUrls = request.ImageUrls;
-            portfolio.Description = request.Description;
-            portfolio.Tags = request.Tags ?? new List<string>();
-            portfolio.ServiceId = request.ServiceId;
-
-            await _unitOfWork.SaveChangesAsync();
-            await _eligibilityService.EvaluateAsync(muaId);
-            return true;
-        }
-
-        public async Task<bool> SetPortfolioVisibilityAsync(Guid muaId, Guid portfolioId, bool isHidden)
-        {
-            var portfolio = await _muaRepository.GetPortfolioByIdForMuaAsync(portfolioId, muaId);
-            if (portfolio == null) return false;
-
-            if (!isHidden) await new ModerationService(_dbContext).EnsureContent("Portfolio", portfolioId);
-            portfolio.IsHidden = isHidden;
-            await _unitOfWork.SaveChangesAsync();
-            await _eligibilityService.EvaluateAsync(muaId);
-            return true;
-        }
-
-        public async Task<bool> TogglePortfolioPinAsync(Guid muaId, Guid portfolioId)
-        {
-            var portfolio = await _muaRepository.GetPortfolioByIdForMuaAsync(portfolioId, muaId);
-            if (portfolio == null) return false;
-
-            portfolio.IsPinned = !portfolio.IsPinned;
-            return await _unitOfWork.SaveChangesAsync() > 0;
-        }
-
-        public async Task<bool> DeletePortfolioAsync(Guid muaId, Guid portfolioId)
-        {
-            var portfolio = await _muaRepository.GetPortfolioByIdForMuaAsync(portfolioId, muaId);
-            if (portfolio == null) return false;
-
-            _muaRepository.RemovePortfolio(portfolio);
-            var success = await _unitOfWork.SaveChangesAsync() > 0;
+            var success = await new PortfolioTaggingService(_dbContext).Save(muaId, null, request);
             if (success) await _eligibilityService.EvaluateAsync(muaId);
             return success;
         }
 
+        public async Task<bool> UpdatePortfolioImageAsync(Guid muaId, Guid portfolioId, PortfolioCreateRequest request)
+        {
+            var success = await new PortfolioTaggingService(_dbContext).Save(muaId, portfolioId, request);
+            if (success) await _eligibilityService.EvaluateAsync(muaId);
+            return success;
+        }
+
+        public async Task<bool> SetPortfolioVisibilityAsync(Guid muaId, Guid portfolioId, bool isHidden)
+        {
+            var success = await new PortfolioTaggingService(_dbContext).ChangeState(muaId, portfolioId, p => p.IsHidden = isHidden, !isHidden);
+            if (success) await _eligibilityService.EvaluateAsync(muaId);
+            return success;
+        }
+
+        public Task<bool> TogglePortfolioPinAsync(Guid muaId, Guid portfolioId) =>
+            new PortfolioTaggingService(_dbContext).ChangeState(muaId, portfolioId, p => p.IsPinned = !p.IsPinned);
+
+        public async Task<bool> DeletePortfolioAsync(Guid muaId, Guid portfolioId)
+        {
+            var success = await new PortfolioTaggingService(_dbContext).ChangeState(muaId, portfolioId, p => _dbContext.Portfolios.Remove(p), false);
+            if (success) await _eligibilityService.EvaluateAsync(muaId);
+            return success;
+        }
         // Portfolio Interactions
         public async Task<bool> TogglePortfolioLikeAsync(Guid userId, Guid portfolioId)
         {
@@ -569,7 +526,7 @@ namespace BeautyBookBackend.Services
 
         public async Task<List<PortfolioDto>> GetFavoritePortfolioAsync(Guid userId, string type)
         {
-            var query = _dbContext.Portfolios
+            var query = _dbContext.Portfolios.WithTagging()
                 .Include(p => p.Likes).Include(p => p.Saves).Include(p => p.Comments)
                 .Include(p => p.MakeupArtistProfile).ThenInclude(m => m.User)
                 .Include(p => p.Service).ThenInclude(s => s!.Styles).ThenInclude(s => s.MakeupStyle).AsQueryable();
@@ -583,7 +540,7 @@ namespace BeautyBookBackend.Services
                 && p.MakeupArtistProfile.User.DeletedAt == null);
             query = type == "liked" ? query.Where(p => p.Likes.Any(x => x.UserId == userId)) : query.Where(p => p.Saves.Any(x => x.UserId == userId));
             var posts = await query.OrderByDescending(p => type == "liked" ? p.Likes.First(x => x.UserId == userId).CreatedAt : p.Saves.First(x => x.UserId == userId).CreatedAt).ToListAsync();
-            return posts.Select(p => new PortfolioDto { PortfolioId = p.PortfolioId, MUAId = p.MUAId, Title = p.Title, ImageUrls = p.ImageUrls.Where(MuaEligibilityService.IsValidPublicUrl).ToList(), Description = p.Description, Tags = p.Tags, CreatedAt = p.CreatedAt, LikesCount = p.Likes.Count, CommentsCount = p.Comments.Count, SavesCount = p.Saves.Count, IsLiked = p.Likes.Any(x => x.UserId == userId), IsSaved = p.Saves.Any(x => x.UserId == userId), AuthorName = p.MakeupArtistProfile?.User?.FullName, AuthorAvatarUrl = p.MakeupArtistProfile?.User?.AvatarUrl, Service = p.Service == null ? null : ToServiceDto(p.Service) }).Where(p => p.ImageUrls.Count > 0).ToList();
+            return posts.Select(p => new PortfolioDto { PortfolioId = p.PortfolioId, ServiceId = p.ServiceId, Version = p.Version, Tagging = PortfolioTaggingProjection.Tagging(p), MUAId = p.MUAId, Title = p.Title, ImageUrls = p.ImageUrls.Where(MuaEligibilityService.IsValidPublicUrl).ToList(), Description = p.Description, Tags = p.Tags, CreatedAt = p.CreatedAt, LikesCount = p.Likes.Count, CommentsCount = p.Comments.Count, SavesCount = p.Saves.Count, IsLiked = p.Likes.Any(x => x.UserId == userId), IsSaved = p.Saves.Any(x => x.UserId == userId), AuthorName = p.MakeupArtistProfile?.User?.FullName, AuthorAvatarUrl = p.MakeupArtistProfile?.User?.AvatarUrl, Service = p.Service == null ? null : ToServiceDto(p.Service) }).Where(p => p.ImageUrls.Count > 0).ToList();
         }
 
         public Task<bool> UpdateStylesAsync(Guid muaId, List<int> styleIds) =>
@@ -730,7 +687,7 @@ namespace BeautyBookBackend.Services
         {
             return new PortfolioDto
             {
-                PortfolioId = portfolio.PortfolioId,
+                PortfolioId = portfolio.PortfolioId, ServiceId = portfolio.ServiceId, Version = portfolio.Version, Tagging = PortfolioTaggingProjection.Tagging(portfolio),
                 MUAId = portfolio.MUAId,
                 Title = portfolio.Title,
                 ImageUrls = portfolio.ImageUrls,

@@ -30,6 +30,10 @@ public sealed partial class AccountDeletionService
 
     private async Task MinimizeRelatedDataAsync(Guid userId, string? email)
     {
+        await _context.RefreshSessions.Where(x => x.UserId == userId).ExecuteDeleteAsync();
+        var ownedPortfolios = _context.Portfolios.Where(x => x.MUAId == userId).Select(x => x.PortfolioId);
+        await _context.PortfolioStyleLinks.Where(x => ownedPortfolios.Contains(x.PortfolioId)).ExecuteDeleteAsync();
+        await _context.PortfolioTermLinks.Where(x => ownedPortfolios.Contains(x.PortfolioId)).ExecuteDeleteAsync();
         await _context.UserBlocks.Where(x => x.BlockerId == userId || x.BlockedId == userId).ExecuteDeleteAsync();
         // Keep decisions/IDs to avoid resurrecting removed content; erase free-text identifiers.
         await _context.ContentReports.Where(x => x.ReporterId == userId || x.TargetOwnerId == userId || x.ReviewedBy == userId)

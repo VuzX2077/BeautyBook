@@ -25,6 +25,8 @@
     <Folder Include="Controllers\" />
     <EmbeddedResource Include="Data\vietnamAreas.json" />
     <EmbeddedResource Include="Data\operatingAreas.json" />
+    <EmbeddedResource Include="Data\MakeupCatalog\baseline-v1.2.json" />
+    <EmbeddedResource Include="Data\MakeupCatalog\catalog-v1.3.json" />
   </ItemGroup>
 
 </Project>

@@ -49,6 +49,14 @@ else
         ?? throw new InvalidOperationException("DefaultConnection is not configured. Set ConnectionStrings:DefaultConnection or DB_* environment variables.");
 }
 
+// Bound the final connection string after DB_* overrides. All EF consumers use
+// this same pool, including workers and payment callbacks.
+connectionString = DatabasePoolPolicy.Apply(connectionString, builder.Configuration);
+var poolSettings = new NpgsqlConnectionStringBuilder(connectionString);
+// Pool metadata only: never log credentials or the connection string.
+Console.WriteLine("Database pool: enabled={0}, max={1}, min={2}, idleSeconds={3}",
+    poolSettings.Pooling, poolSettings.MaxPoolSize, poolSettings.MinPoolSize, poolSettings.ConnectionIdleLifetime);
+
 // Configure DbContext with PostgreSQL
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseNpgsql(connectionString));
@@ -355,6 +363,7 @@ app.UseAuthorization();
 app.UseRateLimiter();
 
 app.MapGet("/health", () => Results.Ok(new { Status = "Healthy" }));
+app.MapGet("/health/ready", DatabaseReadiness.CheckAsync);
 app.MapControllers();
 app.MapHub<ChatHub>("/chathub");
 

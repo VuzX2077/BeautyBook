@@ -9,6 +9,21 @@ public class FollowController(FollowService service) : ControllerBase
     private Guid? UserId => Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : null;
     [HttpGet("{muaId:guid}")]
     public async Task<IActionResult> Status(Guid muaId) => await service.GetStatus(muaId, UserId) is { } status ? Ok(status) : NotFound();
+    [Authorize, HttpGet("me/summary"), ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+    public async Task<IActionResult> OwnSummary()
+    {
+        if (UserId is not { } userId) return Unauthorized();
+        try { return Ok(await service.GetOwnSummary(userId)); }
+        catch (BookingRuleException error) { return StatusCode(error.StatusCode, new { error.Code, error.Message }); }
+    }
+    [Authorize, HttpGet("me/followers"), ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+    public async Task<IActionResult> Followers(string? cursor = null, int limit = 20, string? q = null)
+    {
+        if (UserId is not { } userId) return Unauthorized();
+        try { return Ok(await service.GetOwnFollowers(userId, cursor, limit, q)); }
+        catch (ArgumentException error) { return BadRequest(new { error.Message }); }
+        catch (BookingRuleException error) { return StatusCode(error.StatusCode, new { error.Code, error.Message }); }
+    }
     [Authorize, HttpPut("{muaId:guid}")]
     public Task<IActionResult> Follow(Guid muaId) => Set(muaId, true);
     [Authorize, HttpDelete("{muaId:guid}")]

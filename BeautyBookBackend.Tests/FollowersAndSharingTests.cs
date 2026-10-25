@@ -78,16 +78,17 @@ public class FollowersAndSharingTests
         Assert.Contains("property=\"og:title\"", html); Assert.Contains(result.Url, html);
         Assert.Contains($"bbookapp://mua-detail?id={owner.UserId:D}", html);
         if (Environment.GetEnvironmentVariable("BBOOK_SHARE_PREVIEW_OUTPUT") is { Length: > 0 } previewPath)
-            await File.WriteAllTextAsync(previewPath, ProfileSharingService.Html(result with { Name = "Lý Huỳnh My", AvatarUrl = "/preview-look.jpg", Bio = "Nghệ sĩ trang điểm · Phong cách nhẹ nhàng, trong sáng.", Images = ["/preview-look.jpg", "/preview-look.jpg", "/preview-look.jpg"] }, service.Origin));
+            await File.WriteAllTextAsync(previewPath, ProfileSharingService.Html(result with { Name = "Lý Huỳnh My", City = "Thành phố Hồ Chí Minh", AvatarUrl = "/preview-look.jpg", Bio = "Chuyên makeup cô dâu, dự tiệc, chụp ảnh và cá nhân hoá phong cách phù hợp với từng gương mặt.", Images = Enumerable.Repeat("/preview-look.jpg", 6).ToList(), Works = [], Specializations = ["Makeup cô dâu", "Dự tiệc", "Chụp ảnh", "Cá nhân hoá"], Services = [new(Guid.NewGuid(), "Makeup thái lan", 300000, 50, "/preview-look.jpg"), new(Guid.NewGuid(), "Makeup nhẹ nhàng", 500000, 50, "/preview-look.jpg")], AverageRating = 5, ReviewCount = 1, ExperienceYears = 3, CompletedCustomers = 1 }, service.Origin));
         profile.Status = MuaStatus.Draft; await db.SaveChangesAsync(); Assert.Null(await service.Get(owner.UserId));
         profile.Status = MuaStatus.Listed; owner.IsDemoAccount = true; await db.SaveChangesAsync(); Assert.Null(await service.Get(owner.UserId));
         owner.IsDemoAccount = false; var viewer = Person("Viewer"); db.Users.Add(viewer); db.UserBlocks.Add(new() { BlockerId = viewer.UserId, BlockedId = owner.UserId }); await db.SaveChangesAsync();
         Assert.Null(await service.Get(owner.UserId, viewer.UserId));
     }
-    [Fact]
-    public void Qr_decodes_to_the_exact_canonical_URL_and_rejects_unsafe_origin()
+    [Theory]
+    [InlineData("https://bbookmakeup.com/mua/10000000-0000-0000-0000-000000000001")]
+    [InlineData("https://bbookmakeup.com/posts/10000000-0000-0000-0000-000000000002")]
+    public void Qr_decodes_to_the_exact_canonical_URL_and_rejects_unsafe_origin(string url)
     {
-        const string url = "https://bbookmakeup.com/mua/10000000-0000-0000-0000-000000000001";
         var svg = XDocument.Parse(ProfileSharingService.QrSvg(url)); var dimension = int.Parse(svg.Root!.Attribute("viewBox")!.Value.Split(' ')[2]);
         var matrix = new BitMatrix(dimension, dimension);
         var path = svg.Descendants().Single(e => e.Name.LocalName == "path").Attribute("d")!.Value;

@@ -38,6 +38,8 @@ public class ProfileSharingHttpTests
         var follower = new User { UserId = Guid.NewGuid(), FullName = "Customer", IsActive = true, Email = "never-return@example.test" };
         store.Db.MakeupArtistProfiles.Add(new() { MUAId = owner.UserId, User = owner, Status = MuaStatus.Listed, VerificationStatus = MuaVerificationStatus.Approved });
         store.Db.Users.Add(follower); store.Db.MuaFollows.Add(new() { MuaId = owner.UserId, UserId = follower.UserId }); await store.Db.SaveChangesAsync();
+        var post = new Portfolio { PortfolioId = Guid.NewGuid(), MUAId = owner.UserId, Title = "Public post", ImageUrls = ["https://media.test/public.jpg"] };
+        store.Db.Portfolios.Add(post); await store.Db.SaveChangesAsync();
         var builder = WebApplication.CreateBuilder(); builder.WebHost.UseTestServer();
         builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?> { ["ProfileSharing:PublicOrigin"] = "https://bbookmakeup.com", ["ProfileSharing:AndroidFingerprints:0"] = string.Join(":", Enumerable.Repeat("AB", 32)) });
         builder.Services.AddSingleton(store.Db); builder.Services.AddScoped<FollowService>(); builder.Services.AddScoped<ProfileSharingService>();
@@ -51,6 +53,13 @@ public class ProfileSharingHttpTests
         Assert.True(page.Headers.Contains("Content-Security-Policy")); Assert.Contains("og:title", await page.Content.ReadAsStringAsync());
         Assert.Contains($"https://bbookmakeup.com/mua/{owner.UserId:D}", await page.Content.ReadAsStringAsync());
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/mua/not-an-id")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/posts/not-an-id")).StatusCode);
+        var sharedPost = await client.GetStringAsync($"/api/post-sharing/{post.PortfolioId}?muaId={Guid.NewGuid()}");
+        Assert.Contains(owner.UserId.ToString(), sharedPost); Assert.Contains($"https://bbookmakeup.com/posts/{post.PortfolioId}", sharedPost);
+        var postPage = await client.GetAsync($"/posts/{post.PortfolioId}"); Assert.Equal(HttpStatusCode.OK, postPage.StatusCode); Assert.Contains("no-store", postPage.Headers.CacheControl!.ToString()); Assert.Contains("script-src 'sha256-", postPage.Headers.GetValues("Content-Security-Policy").Single());
+        post.IsHidden = true; await store.Db.SaveChangesAsync();
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"/api/post-sharing/{post.PortfolioId}")).StatusCode); Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"/posts/{post.PortfolioId}")).StatusCode);
+        post.IsHidden = false; await store.Db.SaveChangesAsync();
         var association = await client.GetStringAsync("/.well-known/assetlinks.json"); Assert.Contains("com.bbook.app", association); Assert.Contains("AB:AB", association);
         client.DefaultRequestHeaders.Add("X-Test-User", follower.UserId.ToString());
         Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync("/api/Follow/me/followers")).StatusCode);
@@ -61,6 +70,8 @@ public class ProfileSharingHttpTests
         client.DefaultRequestHeaders.Remove("X-Test-User"); client.DefaultRequestHeaders.Add("X-Test-User", follower.UserId.ToString());
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"/api/profile-sharing/{owner.UserId}")).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"/mua/{owner.UserId}")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"/posts/{post.PortfolioId}")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"/api/post-sharing/{post.PortfolioId}")).StatusCode);
         client.DefaultRequestHeaders.Remove("X-Test-User");
         Assert.Equal(HttpStatusCode.OK, (await client.GetAsync($"/mua/{owner.UserId}")).StatusCode);
         var profile = await store.Db.MakeupArtistProfiles.SingleAsync(); profile.Status = MuaStatus.Draft; await store.Db.SaveChangesAsync();

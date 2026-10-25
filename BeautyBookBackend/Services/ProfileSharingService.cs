@@ -1,5 +1,3 @@
-using System.Globalization;
-using System.Net;
 using System.Text;
 using BeautyBookBackend.Data;
 using BeautyBookBackend.Models.Enums;
@@ -8,9 +6,20 @@ using ZXing;
 
 namespace BeautyBookBackend.Services;
 
-public record SharedService(Guid Id, string Name, decimal Price, int DurationMinutes);
+public record SharedService(Guid Id, string Name, decimal Price, int DurationMinutes, string? ImageUrl = null);
+public record SharedWork(Guid Id, string ImageUrl);
 public record SharedProfile(Guid MuaId, string Name, string? AvatarUrl, string? City, string? Bio, string Url, string QrSvg,
-    List<SharedService> Services, List<string> Images);
+    List<SharedService> Services, List<string> Images)
+{
+    public decimal AverageRating { get; init; }
+    public int ReviewCount { get; init; }
+    public int CompletedCustomers { get; init; }
+    public int ExperienceYears { get; init; }
+    public List<string> Specializations { get; init; } = [];
+    public List<SharedWork> Works { get; init; } = [];
+}
+public record SharedPost(Guid Id, Guid MuaId, string Name, string? AvatarUrl, string? City, string? Title,
+    string? Description, DateTime CreatedAt, List<string> Images, List<string> Tags, string Url, string QrSvg);
 
 // A separate public projection: never serialize the owner DTO or identity documents.
 public sealed class ProfileSharingService(ApplicationDbContext db, IConfiguration configuration)
@@ -34,13 +43,32 @@ public sealed class ProfileSharingService(ApplicationDbContext db, IConfiguratio
         if (profile == null) return null;
         if (viewer.HasValue && await db.UserBlocks.AnyAsync(b => (b.BlockerId == viewer && b.BlockedId == id) || (b.BlockerId == id && b.BlockedId == viewer))) return null;
         var services = await db.Services.AsNoTracking().Where(s => s.MUAId == id && s.IsActive).OrderBy(s => s.ServiceId).Take(20)
-            .Select(s => new SharedService(s.ServiceId, s.ServiceName ?? "Dịch vụ makeup", s.Price, s.DurationMinutes)).ToListAsync();
+            .Select(s => new SharedService(s.ServiceId, s.ServiceName ?? "Dịch vụ makeup", s.Price, s.DurationMinutes, s.ImageUrl)).ToListAsync();
         var albums = await ModerationService.VisiblePortfolios(db, db.Portfolios.AsNoTracking().Where(p => p.MUAId == id && !p.IsHidden), viewer)
-            .OrderByDescending(p => p.CreatedAt).ThenByDescending(p => p.PortfolioId).Take(12).Select(p => p.ImageUrls).ToListAsync();
-        var images = albums.SelectMany(a => a).Where(PublicImage).Take(12).ToList();
+            .OrderByDescending(p => p.CreatedAt).ThenByDescending(p => p.PortfolioId).Take(12).Select(p => new { p.PortfolioId, p.ImageUrls }).ToListAsync();
+        var images = albums.SelectMany(a => a.ImageUrls).Where(PublicImage).Take(12).ToList();
+        var ratings = await db.Reviews.Where(r => r.MUAId == id && !db.ContentReports.Any(c => c.TargetType == "Review" && c.TargetId == r.ReviewId && c.Status == "Removed")).Select(r => r.Rating).ToListAsync();
+        var customers = await db.Bookings.Where(b => b.MUAId == id && !b.IsDemo && (b.Status == BookingStatus.Completed || b.Status == BookingStatus.AutoCompleted)).Select(b => b.CustomerId).Distinct().CountAsync();
         var url = $"{Origin}/mua/{id:D}";
         return new(id, profile.User!.FullName ?? "Chuyên gia BBook", PublicImage(profile.User.AvatarUrl) ? profile.User.AvatarUrl : null,
-            profile.City, profile.Bio, url, QrSvg(url), services.OrderBy(s => s.Price).ThenBy(s => s.Id).ToList(), images);
+            profile.City, profile.Bio, url, QrSvg(url), services.Select(s => s with { ImageUrl = PublicImage(s.ImageUrl) ? s.ImageUrl : null }).OrderBy(s => s.Price).ThenBy(s => s.Id).ToList(), images)
+        {
+            AverageRating = ratings.Count == 0 ? 0 : (decimal)ratings.Average(), ReviewCount = ratings.Count,
+            CompletedCustomers = customers, ExperienceYears = Math.Max(0, profile.ExperienceYears),
+            Specializations = (profile.Specialization ?? "").Split([',', ';', '\n'], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).Distinct().Take(4).ToList(),
+            Works = albums.Where(a => a.ImageUrls.Any(PublicImage)).Select(a => new SharedWork(a.PortfolioId, a.ImageUrls.First(PublicImage))).ToList()
+        };
+    }
+    public async Task<SharedPost?> GetPost(Guid id, Guid? viewer = null)
+    {
+        var post = await ModerationService.VisiblePortfolios(db, db.Portfolios.AsNoTracking().Where(p => p.PortfolioId == id && !p.IsHidden
+            && p.MakeupArtistProfile!.Status == MuaStatus.Listed && p.MakeupArtistProfile.VerificationStatus == MuaVerificationStatus.Approved
+            && p.MakeupArtistProfile.User!.IsActive && p.MakeupArtistProfile.User.DeletedAt == null && !p.MakeupArtistProfile.User.IsDemoAccount), viewer)
+            .Include(p => p.MakeupArtistProfile!).ThenInclude(m => m.User).SingleOrDefaultAsync();
+        if (post == null) return null;
+        var owner = post.MakeupArtistProfile!; var url = $"{Origin}/posts/{id:D}";
+        return new(id, post.MUAId, owner.User!.FullName ?? "Chuyên gia BBook", PublicImage(owner.User.AvatarUrl) ? owner.User.AvatarUrl : null,
+            owner.City, post.Title, post.Description, post.CreatedAt, post.ImageUrls.Where(PublicImage).Take(20).ToList(), post.Tags.Take(20).ToList(), url, QrSvg(url));
     }
     private static bool PublicImage(string? value) => MuaEligibilityService.IsValidPublicUrl(value)
         && Uri.TryCreate(value, UriKind.Absolute, out var uri) && uri.Scheme == "https" && string.IsNullOrEmpty(uri.UserInfo);
@@ -53,27 +81,5 @@ public sealed class ProfileSharingService(ApplicationDbContext db, IConfiguratio
             for (var x = 0; x < matrix.Width; x++) if (matrix[x, y]) path.Append($"M{x} {y}h1v1h-1z");
         return $"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 {matrix.Width} {matrix.Height}\"><rect width=\"100%\" height=\"100%\" fill=\"white\"/><path d=\"{path}\" fill=\"#211a25\"/></svg>";
     }
-    public static string Html(SharedProfile? profile, string origin)
-    {
-        static string E(string? text) => WebUtility.HtmlEncode(text ?? "");
-        var title = profile == null ? "Hồ sơ không khả dụng · BBook" : $"{profile.Name} · Chuyên gia makeup trên BBook";
-        var description = string.IsNullOrWhiteSpace(profile?.Bio) ? "Tìm hiểu Portfolio và dịch vụ makeup trên BBook." : profile.Bio;
-        if (description.Length > 240) description = description[..240];
-        var meta = profile == null ? "<meta name=\"robots\" content=\"noindex\">" : $"<link rel=\"canonical\" href=\"{E(profile.Url)}\"><meta property=\"og:url\" content=\"{E(profile.Url)}\"><meta property=\"og:type\" content=\"profile\"><meta property=\"og:image\" content=\"{E(profile.AvatarUrl ?? profile.Images.FirstOrDefault() ?? "https://bbookmakeup.com/assets/images/bbook-logo.png")}\">";
-        var content = profile == null ? "<h1>Hồ sơ không khả dụng</h1><p>Hồ sơ này chưa công khai hoặc không còn hoạt động.</p>" : $"""
-            {(profile.AvatarUrl == null ? "" : $"<img class=\"avatar\" src=\"{E(profile.AvatarUrl)}\" alt=\"Ảnh đại diện\">")}
-            <p class="brand">BBOOK · MAKEUP ARTIST</p><h1>{E(profile.Name)}</h1><p>{E(profile.City)}</p><p class="bio">{E(profile.Bio)}</p>
-            <a class="button" href="bbookapp://mua-detail?id={profile.MuaId:D}">Mở trong BBook</a>
-            <a class="button secondary" href="https://play.google.com/store/apps/details?id=com.bbook.app">Tải BBook trên Google Play</a>
-            <p class="hint">Chưa có ứng dụng? Cài BBook rồi mở lại liên kết này để xem đúng chuyên gia.</p>
-            <h2>Dịch vụ</h2><div class="services">{string.Join("", profile.Services.Select(s => $"<article><h3>{E(s.Name)}</h3><p>{s.Price.ToString("N0", CultureInfo.GetCultureInfo("vi-VN"))}đ · {s.DurationMinutes} phút</p></article>"))}</div>
-            <h2>Portfolio</h2><div class="gallery">{string.Join("", profile.Images.Select(image => $"<img loading=\"lazy\" src=\"{E(image)}\" alt=\"Tác phẩm makeup\">"))}</div>
-            <p class="hint">Mở BBook để theo dõi, nhắn tin và đặt lịch với chuyên gia.</p>
-            """;
-        return $$"""
-            <!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{{E(title)}}</title><meta name="description" content="{{E(description)}}"><meta property="og:title" content="{{E(title)}}"><meta property="og:description" content="{{E(description)}}">{{meta}}<style>
-            *{box-sizing:border-box}body{margin:0;background:#fff7fa;color:#291d25;font:16px/1.6 system-ui,sans-serif}main{max-width:760px;margin:auto;padding:36px 22px}h1{font-size:32px;line-height:1.2;margin:12px 0}h2{margin-top:32px}.brand{color:#ac245b;font-size:12px;letter-spacing:2px;font-weight:700}.avatar{width:100px;height:100px;object-fit:cover;border-radius:50%;border:3px solid #ef5791}.bio{white-space:pre-wrap}.button{display:block;padding:14px 18px;margin:12px 0;border-radius:16px;background:#ac245b;color:white;text-decoration:none;text-align:center;font-weight:600}.secondary{background:#f4e4eb;color:#7b2449}.hint{font-size:13px;color:#75636d}.services article{background:white;padding:16px;border-radius:16px;margin-bottom:10px;border:1px solid #f0dce5}h3{margin:0;font-size:17px}.gallery{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.gallery img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px}footer{margin-top:36px}footer a{color:#ac245b}
-            </style></head><body><main>{{content}}<footer><a href="https://bbookmakeup.com">BBook — Đặt lịch makeup</a></footer></main></body></html>
-            """;
-    }
+    public static string Html(SharedProfile? profile, string origin) => SharedPageRenderer.Profile(profile);
 }

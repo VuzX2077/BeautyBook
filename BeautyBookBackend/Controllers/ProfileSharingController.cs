@@ -26,11 +26,23 @@ public sealed class ProfileSharingController(ProfileSharingService service, ICon
     public ContentResult InvalidPage(string value) => HtmlPage(null);
     private ContentResult HtmlPage(SharedProfile? profile)
     {
-        Response.Headers["Content-Security-Policy"] = "default-src 'none'; img-src https:; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'";
-        Response.Headers["X-Content-Type-Options"] = "nosniff";
-        Response.Headers["Referrer-Policy"] = "no-referrer";
-        return new ContentResult { Content = ProfileSharingService.Html(profile, service.Origin), ContentType = "text/html; charset=utf-8", StatusCode = profile == null ? 404 : 200 };
+        return SharedPageRenderer.Response(Response, SharedPageRenderer.Profile(profile), profile != null);
     }
+    [HttpGet("/api/post-sharing/{id:guid}")]
+    public async Task<IActionResult> GetPost(Guid id)
+    {
+        Guid? viewer = Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var actor) ? actor : null;
+        return await service.GetPost(id, viewer) is { } post ? Ok(post) : NotFound(new { message = "Bài viết chưa công khai hoặc không còn khả dụng." });
+    }
+    [HttpGet("/posts/{id:guid}")]
+    public async Task<ContentResult> PostPage(Guid id)
+    {
+        Guid? viewer = Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var actor) ? actor : null;
+        var post = await service.GetPost(id, viewer);
+        return SharedPageRenderer.Response(Response, SharedPageRenderer.Post(post), post != null);
+    }
+    [HttpGet("/posts/{value}")]
+    public ContentResult InvalidPostPage(string value) => SharedPageRenderer.Response(Response, SharedPageRenderer.Post(null), false);
     [HttpGet("/.well-known/assetlinks.json")]
     public IActionResult AndroidAssociation()
     {

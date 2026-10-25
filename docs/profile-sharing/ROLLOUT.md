@@ -20,6 +20,7 @@ Ngày 26/10/2026. Thay đổi nguồn cục bộ; chưa deploy backend, chưa t�
 - GET /api/profile-sharing/{muaId} — chỉ chiếu dữ liệu công khai, kiểm tra chặn nếu có người xem đăng nhập.
 - GET /mua/{muaId} — HTML công khai; không yêu cầu người nhận cài app hay đăng nhập để xem.
 - GET /.well-known/assetlinks.json — liên kết ứng dụng Android với domain.
+- GET /api/post-sharing/{postId}, GET /posts/{postId} — dữ liệu công khai/HTML của đúng bài viết, chỉ khi chủ hồ sơ Listed + Approved và bài không ẩn/gỡ.
 
 Các route Follow/status/follow/unfollow cũ vẫn giữ chữ ký và dạng phản hồi. Không có migration hoặc chỉnh sửa bảng tài chính/booking.
 
@@ -33,9 +34,9 @@ Các route Follow/status/follow/unfollow cũ vẫn giữ chữ ký và dạng ph
 
 Đây là dấu vân tay công khai, không phải khóa ký bí mật. Không sửa keystore, upload key, Firebase hay package ID `com.bbook.app`.
 
-App Links chỉ khai báo `bbookmakeup.com` và đường dẫn `/mua/`. Website bbook-web đã có tệp association để build/deploy lên đúng domain này. Android 11 trở xuống có thể thất bại xác minh khi một domain trong manifest chưa sẵn sàng. Bản Advisor/AI thử nghiệm không nhận liên kết của package production.
+App Links chỉ khai báo `bbookmakeup.com` và hai đường dẫn `/mua/`, `/posts/`. Website bbook-web đã có tệp association để build/deploy lên đúng domain này. Android 11 trở xuống có thể thất bại xác minh khi một domain trong manifest chưa sẵn sàng. Bản Advisor/AI thử nghiệm không nhận liên kết của package production.
 
-Link/QR dùng `https://bbookmakeup.com/mua/{id}`. Vì website hiện là Static Site, cần thêm một redirect `/mua/:muaId` sang `https://beautybook-v3bi.onrender.com/mua/:muaId` trên Render. Trình duyệt sẽ theo redirect sang backend render HTML; app mới được xác minh có thể nhận URL domain trực tiếp. Assetlinks phải phục vụ trực tiếp trên bbookmakeup.com, không redirect. Hướng dẫn chính xác tại D:/EXE/bbook-web/PROFILE_SHARING.md; chưa áp dụng rule lên hosting. API origin của app không đổi.
+Link/QR dùng `https://bbookmakeup.com/mua/{id}` hoặc `/posts/{id}`. Vì website hiện là Static Site, cần thêm hai redirect `/mua/:muaId` và `/posts/:postId` sang cùng đường dẫn trên `https://beautybook-v3bi.onrender.com`. Trình duyệt sẽ theo redirect sang backend render HTML; app mới được xác minh có thể nhận URL domain trực tiếp. Assetlinks phải phục vụ trực tiếp trên bbookmakeup.com, không redirect. Hướng dẫn chính xác tại D:/EXE/bbook-web/PROFILE_SHARING.md; chưa áp dụng rule lên hosting. API origin của app không đổi.
 
 Nếu máy chủ đang có biến môi trường `ProfileSharing__PublicOrigin` trỏ domain cũ, cần sửa biến đó; môi trường sẽ ghi đè appsettings.json.
 

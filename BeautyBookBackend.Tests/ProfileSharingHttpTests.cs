@@ -39,7 +39,7 @@ public class ProfileSharingHttpTests
         store.Db.MakeupArtistProfiles.Add(new() { MUAId = owner.UserId, User = owner, Status = MuaStatus.Listed, VerificationStatus = MuaVerificationStatus.Approved });
         store.Db.Users.Add(follower); store.Db.MuaFollows.Add(new() { MuaId = owner.UserId, UserId = follower.UserId }); await store.Db.SaveChangesAsync();
         var builder = WebApplication.CreateBuilder(); builder.WebHost.UseTestServer();
-        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?> { ["ProfileSharing:PublicOrigin"] = "https://share.bbookmakeup.com", ["ProfileSharing:AndroidFingerprints:0"] = string.Join(":", Enumerable.Repeat("AB", 32)) });
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?> { ["ProfileSharing:PublicOrigin"] = "https://bbookmakeup.com", ["ProfileSharing:AndroidFingerprints:0"] = string.Join(":", Enumerable.Repeat("AB", 32)) });
         builder.Services.AddSingleton(store.Db); builder.Services.AddScoped<FollowService>(); builder.Services.AddScoped<ProfileSharingService>();
         builder.Services.AddControllers().AddApplicationPart(typeof(FollowController).Assembly);
         builder.Services.AddAuthentication("fixture").AddScheme<AuthenticationSchemeOptions, FixtureAuth>("fixture", _ => {}); builder.Services.AddAuthorization();
@@ -49,6 +49,7 @@ public class ProfileSharingHttpTests
         var page = await client.GetAsync($"/mua/{owner.UserId}"); Assert.Equal(HttpStatusCode.OK, page.StatusCode);
         Assert.Equal("text/html", page.Content.Headers.ContentType!.MediaType); Assert.Contains("no-store", page.Headers.CacheControl!.ToString());
         Assert.True(page.Headers.Contains("Content-Security-Policy")); Assert.Contains("og:title", await page.Content.ReadAsStringAsync());
+        Assert.Contains($"https://bbookmakeup.com/mua/{owner.UserId:D}", await page.Content.ReadAsStringAsync());
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/mua/not-an-id")).StatusCode);
         var association = await client.GetStringAsync("/.well-known/assetlinks.json"); Assert.Contains("com.bbook.app", association); Assert.Contains("AB:AB", association);
         client.DefaultRequestHeaders.Add("X-Test-User", follower.UserId.ToString());
@@ -78,6 +79,7 @@ public class ProfileSharingHttpTests
     public void Packaged_association_uses_the_Play_App_Signing_fingerprint_provided_by_the_owner()
     {
         var configuration = new ConfigurationBuilder().AddJsonFile(Path.Combine(AppContext.BaseDirectory, "appsettings.json")).Build();
+        Assert.Equal("https://bbookmakeup.com", configuration["ProfileSharing:PublicOrigin"]);
         var controller = new ProfileSharingController(null!, configuration);
         var result = Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(controller.AndroidAssociation());
         var json = JsonSerializer.Serialize(result.Value);

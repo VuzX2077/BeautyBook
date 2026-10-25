@@ -240,6 +240,7 @@ builder.Services.AddHttpClient<IImageStorage, SupabaseImageStorage>();
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<IFeedService, FeedService>();
 builder.Services.AddScoped<FollowService>();
+builder.Services.AddScoped<ProfileSharingService>();
 builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddScoped<IChatNotificationService, ChatNotificationService>();
 builder.Services.AddHttpClient<IPayOsService, PayOsService>(client =>

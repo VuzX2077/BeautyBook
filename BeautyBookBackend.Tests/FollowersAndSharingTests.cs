@@ -70,8 +70,9 @@ public class FollowersAndSharingTests
         var profile = Artist(owner); profile.IdentityFrontUrl = "https://private.test/id.jpg"; db.MakeupArtistProfiles.Add(profile);
         db.Services.AddRange(new() { ServiceId = Guid.NewGuid(), MUAId = owner.UserId, IsActive = true, ServiceName = "Makeup", Price = 100000 }, new() { ServiceId = Guid.NewGuid(), MUAId = owner.UserId, IsActive = false, ServiceName = "Hidden service" });
         db.Portfolios.AddRange(new() { PortfolioId = Guid.NewGuid(), MUAId = owner.UserId, ImageUrls = ["https://media.test/public.jpg", "javascript:bad"] }, new() { PortfolioId = Guid.NewGuid(), MUAId = owner.UserId, IsHidden = true, ImageUrls = ["https://media.test/hidden.jpg"] });
-        await db.SaveChangesAsync(); var service = new ProfileSharingService(db, Config(new KeyValuePair<string, string?>("ProfileSharing:PublicOrigin", "https://share.bbookmakeup.com")));
+        await db.SaveChangesAsync(); var service = new ProfileSharingService(db, Config());
         var result = (await service.Get(owner.UserId))!; Assert.Single(result.Services); Assert.Equal("https://media.test/public.jpg", Assert.Single(result.Images));
+        Assert.Equal($"https://bbookmakeup.com/mua/{owner.UserId:D}", result.Url);
         var html = ProfileSharingService.Html(result, service.Origin); Assert.Contains("Nhi &lt;script&gt;", html); Assert.DoesNotContain("<script>alert", html);
         Assert.DoesNotContain("private-phone", html); Assert.DoesNotContain("secret@example", html); Assert.DoesNotContain("private.test", html); Assert.DoesNotContain("hidden.jpg", html); Assert.DoesNotContain("Hidden service", html);
         Assert.Contains("property=\"og:title\"", html); Assert.Contains(result.Url, html);
@@ -86,7 +87,7 @@ public class FollowersAndSharingTests
     [Fact]
     public void Qr_decodes_to_the_exact_canonical_URL_and_rejects_unsafe_origin()
     {
-        const string url = "https://share.bbookmakeup.com/mua/10000000-0000-0000-0000-000000000001";
+        const string url = "https://bbookmakeup.com/mua/10000000-0000-0000-0000-000000000001";
         var svg = XDocument.Parse(ProfileSharingService.QrSvg(url)); var dimension = int.Parse(svg.Root!.Attribute("viewBox")!.Value.Split(' ')[2]);
         var matrix = new BitMatrix(dimension, dimension);
         var path = svg.Descendants().Single(e => e.Name.LocalName == "path").Attribute("d")!.Value;

@@ -19,7 +19,7 @@ public sealed class ProfileSharingService(ApplicationDbContext db, IConfiguratio
     {
         get
         {
-            var value = configuration["ProfileSharing:PublicOrigin"] ?? "https://beautybook-v3bi.onrender.com";
+            var value = configuration["ProfileSharing:PublicOrigin"] ?? "https://bbookmakeup.com";
             if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) || uri.Scheme != "https" || uri.UserInfo.Length != 0
                 || uri.AbsolutePath != "/" || uri.Query.Length != 0 || uri.Fragment.Length != 0)
                 throw new InvalidOperationException("ProfileSharing:PublicOrigin must be an HTTPS origin.");

@@ -27,15 +27,17 @@ Các route Follow/status/follow/unfollow cũ vẫn giữ chữ ký và dạng ph
 
 `BeautyBookBackend/appsettings.json` chứa cấu hình công khai:
 
-- ProfileSharing:PublicOrigin = https://beautybook-v3bi.onrender.com
+- ProfileSharing:PublicOrigin = https://bbookmakeup.com
 - ProfileSharing:AndroidFingerprints chứa SHA-256 App Signing do chủ ứng dụng cung cấp và xác nhận:
   6A:65:69:18:C6:1C:95:91:E8:8E:DB:D4:C0:52:6A:78:FA:45:D5:FE:A0:E4:78:52:71:29:FD:AA:CB:1C:BB:3C
 
 Đây là dấu vân tay công khai, không phải khóa ký bí mật. Không sửa keystore, upload key, Firebase hay package ID `com.bbook.app`.
 
-App Links hiện chỉ khai báo domain backend ở trên và đường dẫn `/mua/`. Không khai báo thêm domain website chưa phục vụ assetlinks: Android 11 trở xuống có thể thất bại xác minh khi một domain trong manifest chưa sẵn sàng. Bản Advisor/AI thử nghiệm không nhận liên kết của package production.
+App Links chỉ khai báo `bbookmakeup.com` và đường dẫn `/mua/`. Website bbook-web đã có tệp association để build/deploy lên đúng domain này. Android 11 trở xuống có thể thất bại xác minh khi một domain trong manifest chưa sẵn sàng. Bản Advisor/AI thử nghiệm không nhận liên kết của package production.
 
-Nếu chuyển sang domain thương hiệu, phải phục vụ chính trang HTML và assetlinks trên domain đó, cấu hình PublicOrigin, cập nhật host khai báo trong app.config.ts và phát hành bản app đã kiểm tra. Không chỉ đổi PublicOrigin rồi giả định liên kết đã được xác minh.
+Link/QR dùng `https://bbookmakeup.com/mua/{id}`. Vì website hiện là Static Site, cần thêm một redirect `/mua/:muaId` sang `https://beautybook-v3bi.onrender.com/mua/:muaId` trên Render. Trình duyệt sẽ theo redirect sang backend render HTML; app mới được xác minh có thể nhận URL domain trực tiếp. Assetlinks phải phục vụ trực tiếp trên bbookmakeup.com, không redirect. Hướng dẫn chính xác tại D:/EXE/bbook-web/PROFILE_SHARING.md; chưa áp dụng rule lên hosting. API origin của app không đổi.
+
+Nếu máy chủ đang có biến môi trường `ProfileSharing__PublicOrigin` trỏ domain cũ, cần sửa biến đó; môi trường sẽ ghi đè appsettings.json.
 
 Nếu Google Play còn phân phối APK bằng chứng chỉ ký trước đó, thêm SHA-256 đã xác minh của chứng chỉ đó vào mảng AndroidFingerprints. Không thay hay nâng cấp khóa ký chỉ để làm App Links.
 
@@ -44,7 +46,7 @@ Nếu Google Play còn phân phối APK bằng chứng chỉ ký trước đó, 
 1. Đưa backend đã kiểm thử lên staging và kiểm tra bằng một MUA công khai thật của môi trường đó.
 2. Xác nhận /health là Healthy; /api/User/profile và hai API follower riêng trả 401 khi không đăng nhập; khách đã đăng nhập không có hồ sơ MUA nhận 403 cho danh sách riêng.
 3. Xác nhận /mua/{id} trả HTML 200, canonical URL đúng origin, tên/ảnh đúng; profile ẩn hoặc ID sai trả 404; ảnh ẩn không lộ.
-4. Xác nhận /.well-known/assetlinks.json trả 200 trực tiếp qua HTTPS, không redirect, đúng package và dấu vân tay App Signing thực tế.
+4. Deploy website và cấu hình rule hồ sơ theo PROFILE_SHARING.md. Xác nhận https://bbookmakeup.com/.well-known/assetlinks.json trả 200 trực tiếp qua HTTPS, không redirect, đúng package và dấu vân tay App Signing thực tế. Kiểm tra link hồ sơ trên domain đi đến đúng HTML và không lặp redirect; trang chủ/pháp lý/social vẫn hoạt động.
 5. Triển khai backend trước app mới. Bản app hiện có không phụ thuộc các API mới để tiếp tục hoạt động. Giữ nguyên endpoint, biến môi trường và cấu hình nghiệp vụ cũ.
 6. Tạo APK ứng viên bằng quy trình build hiện có; không dùng APK ký debug để chứng minh App Links của bản Google Play. Không thay khai báo device acceptance thành approved khi chưa thử thiết bị.
 7. Cài ứng viên qua track thử nghiệm phù hợp. Kiểm tra link ở Zalo/Messenger/trình duyệt, app đóng/mở, chưa đăng nhập/đã đăng nhập và Android cũ/mới trong phạm vi hỗ trợ.

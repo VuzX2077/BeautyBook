@@ -152,7 +152,12 @@ public sealed class ModerationService(ApplicationDbContext db)
     {
         if (await db.ContentReports.AnyAsync(x => x.TargetType == type && x.TargetId == id && x.Status == "Removed")) throw Denied();
     }
-    public static IQueryable<Portfolio> VisiblePortfolios(ApplicationDbContext db, IQueryable<Portfolio> query, Guid? viewer = null) => query.Where(p =>
+    public static IQueryable<Portfolio> VisiblePortfolios(ApplicationDbContext db, IQueryable<Portfolio> query, Guid? viewer = null)
+    {
+        var visible = query.Where(p =>
         !db.ContentReports.Any(r => r.TargetType == "Portfolio" && r.TargetId == p.PortfolioId && r.Status == "Removed") &&
         (!viewer.HasValue || !db.UserBlocks.Any(b => (b.BlockerId == viewer.Value && b.BlockedId == p.MUAId) || (b.BlockerId == p.MUAId && b.BlockedId == viewer.Value))));
+        return !db.PaidMuaEnforcement ? visible : visible.Where(p => p.MUAId == viewer || !db.MuaMonetizationAccounts.Any(a => a.MuaId == p.MUAId
+            && a.Cohort == MuaActivationCohort.PaidActivation && (a.ActivatedAt == null || a.ActivationRevokedAt != null || a.ActivationPurchaseReference == null)));
+    }
 }

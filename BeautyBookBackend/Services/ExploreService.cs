@@ -17,7 +17,7 @@ public sealed class ExploreService(ApplicationDbContext db, IDataProtectionProvi
     private readonly IDataProtector protector = protection.CreateProtector("BBook.Explore.Cursor.v1");
     private sealed record CursorState(string Filter, DateTime Cutoff, DateTime Expires,
         Guid Id, DateTime? CreatedAt = null, decimal? Value = null, double? Score = null, int? Rank = null);
-    public IQueryable<MakeupArtistProfile> PublicArtists => db.MakeupArtistProfiles.AsNoTracking().IgnoreAutoIncludes()
+    public IQueryable<MakeupArtistProfile> PublicArtists => Monetization.MuaAccessPolicy.Public(db, db.MakeupArtistProfiles).AsNoTracking().IgnoreAutoIncludes()
         .Where(p => p.Status == MuaStatus.Listed && p.VerificationStatus == MuaVerificationStatus.Approved &&
             p.User != null && p.User.IsActive && p.User.DeletedAt == null &&
             (!Viewer.HasValue || !db.UserBlocks.Any(b => (b.BlockerId == Viewer.Value && b.BlockedId == p.MUAId) || (b.BlockedId == Viewer.Value && b.BlockerId == p.MUAId))));

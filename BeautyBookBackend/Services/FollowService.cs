@@ -12,7 +12,7 @@ public record FollowerRow(Guid UserId, string Name, string? AvatarUrl, DateTime 
 public record FollowerPage(List<FollowerRow> Items, int TotalCount, string? NextCursor, bool HasMore);
 public class FollowService(ApplicationDbContext db)
 {
-    private IQueryable<BeautyBookBackend.Models.MakeupArtistProfile> PublicMuas => db.MakeupArtistProfiles.Where(m =>
+    private IQueryable<BeautyBookBackend.Models.MakeupArtistProfile> PublicMuas => BeautyBookBackend.Services.Monetization.MuaAccessPolicy.Public(db, db.MakeupArtistProfiles).Where(m =>
         m.Status == MuaStatus.Listed && m.VerificationStatus == MuaVerificationStatus.Approved &&
         m.User != null && m.User.IsActive && m.User.DeletedAt == null);
     private IQueryable<MuaFollow> Followers(Guid muaId) => db.MuaFollows.AsNoTracking().Where(f => f.MuaId == muaId

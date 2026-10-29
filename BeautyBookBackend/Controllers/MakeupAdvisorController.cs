@@ -9,7 +9,7 @@ using System.Text.Json;
 namespace BeautyBookBackend.Controllers;
 
 [ApiController, Route("api/MakeupAdvisor"), Authorize, EnableRateLimiting("feature-advisor")]
-public sealed class MakeupAdvisorController(FeatureAdvisorProvider provider, IMemoryCache cache) : ControllerBase
+public sealed class MakeupAdvisorController(FeatureAdvisorProvider provider, IMemoryCache cache, BeautyBookBackend.Services.Monetization.CustomerAiCommerce? customerAi = null) : ControllerBase
 {
     // In-memory TTL keys only. No photo, geometry, output, migration or daily usage table.
     private static readonly object Gate = new();
@@ -21,6 +21,9 @@ public sealed class MakeupAdvisorController(FeatureAdvisorProvider provider, IMe
     {
         Response.Headers.CacheControl = "no-store";
         if(provider.RequiresHttps&&!Request.IsHttps)return StatusCode(426,new {code="HTTPS_REQUIRED"});
+        if (customerAi == null && HttpContext.RequestServices.GetService<IConfiguration>()?.GetValue<bool>("CustomerAi:EnforcementEnabled") == true)
+            return StatusCode(503, new { code = "AI_ACCESS_VERIFICATION_UNAVAILABLE" });
+        if (customerAi != null && (!Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var owner) || !await customerAi.Allowed(owner, ct))) return StatusCode(403, new { code = "CUSTOMER_AI_PURCHASE_REQUIRED", message = "Đăng ký AI quét mặt 20.000đ một lần để dùng vĩnh viễn." });
         FeatureAdvisorRequest? request;
         try { request = body.Deserialize<FeatureAdvisorRequest>(FeatureAdvisorContract.Json); }
         catch (JsonException) { return BadRequest(new { code = "INVALID_SUMMARY" }); }

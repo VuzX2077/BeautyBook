@@ -74,6 +74,7 @@ namespace BeautyBookBackend.Services
             var profile = await _muaRepository.GetProfileWithFullDetailsAsync(muaId);
             if (profile == null) return null;
             var isOwner = currentUserId == muaId;
+            if (!isOwner && !await Monetization.MuaAccessPolicy.Allowed(_dbContext, muaId)) return null;
             if (!isOwner && (profile.Status != Models.Enums.MuaStatus.Listed || profile.VerificationStatus != Models.Enums.MuaVerificationStatus.Approved || profile.User?.IsActive != true || profile.User.DeletedAt.HasValue))
             {
                 if (!currentUserId.HasValue || muaId != _playReview.Simulation.CounterpartUserId) return null;
@@ -208,7 +209,7 @@ namespace BeautyBookBackend.Services
             var services = await _muaRepository.GetServicesByMuaIdAsync(muaId);
             if (currentUserId != muaId)
             {
-                var isPublic = await _dbContext.MakeupArtistProfiles.AnyAsync(x => x.MUAId == muaId
+                var isPublic = await Monetization.MuaAccessPolicy.Public(_dbContext, _dbContext.MakeupArtistProfiles).AnyAsync(x => x.MUAId == muaId
                     && x.Status == Models.Enums.MuaStatus.Listed && x.VerificationStatus == Models.Enums.MuaVerificationStatus.Approved && x.User != null && x.User.IsActive && x.User.DeletedAt == null);
                 if (!isPublic) return new List<ServiceDto>();
                 services = services.Where(x => x.IsActive).ToList();

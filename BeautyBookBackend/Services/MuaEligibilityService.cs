@@ -12,12 +12,14 @@ namespace BeautyBookBackend.Services
         private readonly ApplicationDbContext _db;
         private readonly IMuaScheduleService _scheduleService;
         private readonly VerificationMediaService _media;
+        private readonly MuaMonetizationReader? _monetization;
 
-        public MuaEligibilityService(ApplicationDbContext db, IMuaScheduleService scheduleService, VerificationMediaService media)
+        public MuaEligibilityService(ApplicationDbContext db, IMuaScheduleService scheduleService, VerificationMediaService media, MuaMonetizationReader? monetization = null)
         {
             _db = db;
             _scheduleService = scheduleService;
             _media = media;
+            _monetization = monetization;
         }
 
         public async Task<MuaEligibilityDto?> EvaluateAsync(Guid muaId, bool updateStatus = true)
@@ -51,15 +53,16 @@ namespace BeautyBookBackend.Services
             };
 
             var canPublish = requirements.All(x => x.IsMet);
+            var activationAllowed = await Monetization.MuaAccessPolicy.Allowed(_db, muaId);
             var hasValidSchedule = await _scheduleService.HasValidScheduleAsync(muaId);
             if (updateStatus && !profile.User.IsDemoAccount && profile.Status != MuaStatus.Suspended)
             {
-                if (canPublish && hasValidSchedule && profile.VerificationStatus == MuaVerificationStatus.Approved && profile.Status == MuaStatus.Draft)
+                if (activationAllowed && canPublish && hasValidSchedule && profile.VerificationStatus == MuaVerificationStatus.Approved && profile.Status == MuaStatus.Draft)
                 {
                     profile.Status = MuaStatus.Listed;
                     profile.ListedAt = DateTime.UtcNow;
                 }
-                else if ((!canPublish || !hasValidSchedule || profile.VerificationStatus != MuaVerificationStatus.Approved) && profile.Status == MuaStatus.Listed)
+                else if ((!activationAllowed || !canPublish || !hasValidSchedule || profile.VerificationStatus != MuaVerificationStatus.Approved) && profile.Status == MuaStatus.Listed)
                 {
                     profile.Status = MuaStatus.Draft;
                 }
@@ -86,10 +89,13 @@ namespace BeautyBookBackend.Services
                 && !_db.Refunds.Any(r => r.BookingId == x.BookingId && r.Status != RefundStatus.Completed));
             return new MuaEligibilityDto
             {
+                // Read-only shadow projection. Billing never changes the review checklist,
+                // profile completion, booking or withdrawal rights in this release.
+                Monetization = _monetization == null ? null : await _monetization.GetAsync(muaId),
                 CompletionPercentage = (int)Math.Round(requirements.Count(x => x.IsMet) * 100m / requirements.Count),
                 ProfileStatus = profile.Status.ToString(),
-                CanPublishProfile = !profile.User.IsDemoAccount && operational && profile.Status == MuaStatus.Listed && canPublish && hasValidSchedule && profile.VerificationStatus == MuaVerificationStatus.Approved,
-                CanReceiveBookings = operational && profile.Status == MuaStatus.Listed && canPublish && hasValidSchedule && profile.VerificationStatus == MuaVerificationStatus.Approved,
+                CanPublishProfile = activationAllowed && !profile.User.IsDemoAccount && operational && profile.Status == MuaStatus.Listed && canPublish && hasValidSchedule && profile.VerificationStatus == MuaVerificationStatus.Approved,
+                CanReceiveBookings = activationAllowed && operational && profile.Status == MuaStatus.Listed && canPublish && hasValidSchedule && profile.VerificationStatus == MuaVerificationStatus.Approved,
                 CanWithdraw = !profile.User.IsDemoAccount && operational && hasUsableBankAccount && hasWithdrawableReceivable,
                 VerificationStatus = profile.VerificationStatus.ToString(),
                 RejectionReason = profile.RejectionReason,
@@ -253,6 +259,8 @@ namespace BeautyBookBackend.Services
                     .SetProperty(x => x.RejectionReason, rejectionReason)
                     .SetProperty(x => x.RejectionDetailsJson, rejectionDetailsJson));
             if (changed != 1) { await transaction.RollbackAsync(); return false; }
+            var trackedReview = _db.MakeupArtistProfiles.Local.FirstOrDefault(x => x.MUAId == muaId);
+            if (trackedReview != null) await _db.Entry(trackedReview).ReloadAsync();
             if (approved)
             {
                 var scheduledDays = await _db.MuaWorkingSchedules.Where(x => x.MUAId == muaId && x.IsActive)
@@ -263,15 +271,19 @@ namespace BeautyBookBackend.Services
                         StartTime = TimeSpan.FromHours(8), EndTime = TimeSpan.FromHours(22), IsActive = true
                     }));
                 var profile = await _db.MakeupArtistProfiles.FirstAsync(x => x.MUAId == muaId);
-                profile.Status = MuaStatus.Listed;
-                profile.ListedAt ??= now;
+                if (await Monetization.MuaAccessPolicy.Allowed(_db, muaId))
+                {
+                    profile.Status = MuaStatus.Listed;
+                    profile.ListedAt ??= now;
+                }
             }
             await EvaluateAsync(muaId);
+            if (approved) await Monetization.MuaEmailCommerce.EnqueueApprovalAsync(_db, muaId, now);
             _db.AppNotifications.Add(new AppNotification
             {
                 Id = Guid.NewGuid(), UserId = muaId, Type = approved ? "MUA_APPLICATION_APPROVED" : "MUA_APPLICATION_REJECTED",
                 Title = approved ? "Hồ sơ MUA đã được duyệt" : "Hồ sơ MUA bị từ chối",
-                Body = approved ? "Hồ sơ của bạn đã được duyệt. Lịch nhận khách đã mở cả tuần từ 08:00 đến 22:00 và bạn có thể nhận booking ngay." : rejectionReason ?? "Vui lòng cập nhật hồ sơ và gửi lại để xét duyệt.",
+                Body = approved ? (await Monetization.MuaAccessPolicy.Allowed(_db, muaId) ? "Hồ sơ của bạn đã được duyệt. Lịch nhận khách đã mở cả tuần từ 08:00 đến 22:00 và bạn có thể nhận booking ngay." : "Hồ sơ của bạn đã được duyệt. Trạng thái kích hoạt: chưa có hiệu lực.") : rejectionReason ?? "Vui lòng cập nhật hồ sơ và gửi lại để xét duyệt.",
                 DataJson = System.Text.Json.JsonSerializer.Serialize(new { url = "/mua-onboarding/setup" }),
                 ScheduledAt = now, Status = "Pending", CreatedAt = now
             });

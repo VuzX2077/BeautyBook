@@ -11,6 +11,8 @@ namespace BeautyBookBackend.DTOs
 
     public sealed class MuaEligibilityDto
     {
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public MuaMonetizationDto? Monetization { get; set; }
         public int CompletionPercentage { get; set; }
         public string ProfileStatus { get; set; } = "Draft";
         public bool CanPublishProfile { get; set; }

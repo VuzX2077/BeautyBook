@@ -22,7 +22,7 @@ public sealed class NearbyMuasController(ApplicationDbContext db) : ControllerBa
     }
     public static IQueryable<NearbyArtistResult> BuildQuery(ApplicationDbContext db, NearbyQuery request)
     {
-        var profiles = db.MakeupArtistProfiles.AsNoTracking().IgnoreAutoIncludes().Where(p =>
+        var profiles = BeautyBookBackend.Services.Monetization.MuaAccessPolicy.Public(db, db.MakeupArtistProfiles).AsNoTracking().IgnoreAutoIncludes().Where(p =>
             p.Status == MuaStatus.Listed && p.VerificationStatus == MuaVerificationStatus.Approved &&
             p.User != null && p.User.IsActive && p.User.DeletedAt == null);
         if (request.ProvinceCode.HasValue) profiles = profiles.Where(p => p.OperatingProvinceCode == request.ProvinceCode);

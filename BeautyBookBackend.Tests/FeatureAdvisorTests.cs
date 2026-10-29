@@ -104,8 +104,13 @@ public sealed class FeatureAdvisorTests
     {
         var h=new Handler(HttpStatusCode.ServiceUnavailable,"");var p=new FeatureAdvisorProvider(new(h),Options.Create(Enabled()));
         using var cache=new MemoryCache(new MemoryCacheOptions());
-        var controller=new MakeupAdvisorController(p,cache) { ControllerContext=new() { HttpContext=new DefaultHttpContext() } };
-        controller.Request.Scheme="https";controller.HttpContext.User=new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier,"synthetic-user")],"Test"));
+        await using var store = await BeautyBookBackend.Tests.PlayReviewTestStore.CreateAsync();
+        var owner = Guid.NewGuid();
+        store.Db.Users.Add(new() { UserId = owner, IsActive = true, Role = BeautyBookBackend.Models.Enums.UserRole.Customer, CreatedAt = DateTime.UtcNow });
+        await store.Db.SaveChangesAsync();
+        var access = new BeautyBookBackend.Services.Monetization.CustomerAiCommerce(store.Db, null!, new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build(), TimeProvider.System);
+        var controller=new MakeupAdvisorController(p,cache,access) { ControllerContext=new() { HttpContext=new DefaultHttpContext() } };
+        controller.Request.Scheme="https";controller.HttpContext.User=new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier,owner.ToString())],"Test"));
         var body=JsonSerializer.SerializeToElement(new FeatureAdvisorRequest(Guid.NewGuid(),true,Summary()),FeatureAdvisorContract.Json);
         Assert.Equal(503,Assert.IsType<ObjectResult>(await controller.Recommend(body,default)).StatusCode);
         Assert.IsType<ConflictObjectResult>(await controller.Recommend(body,default));Assert.Equal(1,h.Count);

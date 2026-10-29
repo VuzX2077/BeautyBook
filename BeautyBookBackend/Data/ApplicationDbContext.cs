@@ -6,10 +6,28 @@ namespace BeautyBookBackend.Data
 {
     public class ApplicationDbContext : DbContext
     {
-        public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : base(options)
+        public bool PaidMuaEnforcement { get; }
+        public bool ApprovalPaymentEmails { get; }
+        public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options, Microsoft.Extensions.Options.IOptions<BeautyBookBackend.Services.MuaMonetizationOptions>? monetization = null) : base(options)
         {
+            PaidMuaEnforcement = false; // Activation fees retired; moderation still applies.
+            ApprovalPaymentEmails = monetization?.Value.ApprovalEmailEnabled == true;
         }
 
+        public DbSet<CustomerAiPurchase> CustomerAiPurchases { get; set; } = null!;
+        public DbSet<MuaMonetizationAccount> MuaMonetizationAccounts { get; set; } = null!;
+        public DbSet<MuaCommerceOrder> MuaCommerceOrders { get; set; } = null!;
+        public DbSet<MuaWebSession> MuaWebSessions { get; set; } = null!;
+        public DbSet<MuaFacebookTask> MuaFacebookTasks { get; set; } = null!;
+        public DbSet<MuaSponsoredEvent> MuaSponsoredEvents { get; set; } = null!;
+        public DbSet<MuaCommerceJob> MuaCommerceJobs { get; set; } = null!;
+        public DbSet<MuaCommerceIngress> MuaCommerceIngress { get; set; } = null!;
+        public DbSet<MuaCommerceOffer> MuaCommerceOffers { get; set; } = null!;
+        public DbSet<MuaCommerceAttempt> MuaCommerceAttempts { get; set; } = null!;
+        public DbSet<MuaCommerceInbox> MuaCommerceInbox { get; set; } = null!;
+        public DbSet<MuaCommerceOutbox> MuaCommerceOutbox { get; set; } = null!;
+        public DbSet<MuaCommerceAudit> MuaCommerceAudit { get; set; } = null!;
+        public DbSet<MuaVisibilityGrant> MuaVisibilityGrants { get; set; } = null!;
         public DbSet<RefreshSession> RefreshSessions { get; set; } = null!;
         public DbSet<UserFeedback> UserFeedbacks { get; set; } = null!;
         public DbSet<FeedbackEvent> FeedbackEvents { get; set; } = null!;
@@ -101,6 +119,18 @@ namespace BeautyBookBackend.Data
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
+            modelBuilder.Entity<CustomerAiPurchase>(b => {
+                b.HasKey(x => x.Id);
+                b.HasIndex(x => x.OrderCode).IsUnique();
+                b.HasIndex(x => new { x.UserId, x.IdempotencyKey }).IsUnique();
+                b.Property(x => x.IdempotencyKey).HasMaxLength(80);
+                b.Property(x => x.Channel).HasMaxLength(80);
+                b.Property(x => x.PaymentLinkId).HasMaxLength(100);
+                b.Property(x => x.CheckoutUrl).HasMaxLength(2000);
+                b.Property(x => x.State).HasMaxLength(32);
+                b.Property(x => x.RevocationReason).HasMaxLength(1000);
+                b.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
+            });
             modelBuilder.Entity<RefreshSession>(b => {
                 b.HasKey(x => x.Id);
                 b.HasIndex(x => x.TokenHash).IsUnique();
@@ -110,6 +140,8 @@ namespace BeautyBookBackend.Data
                 b.Property(x => x.PasswordContext).HasMaxLength(64);
                 b.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
             });
+            MuaMonetizationModel.Configure(modelBuilder);
+            MuaCommerceModel.Configure(modelBuilder);
             MakeupCatalogModel.Configure(modelBuilder);
             PortfolioCatalogModel.Configure(modelBuilder);
             modelBuilder.Entity<UserFeedback>(b => {

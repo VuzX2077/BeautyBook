@@ -148,7 +148,7 @@ public sealed partial class AccountDeletionService(ApplicationDbContext _context
 
 
         await MinimizeRelatedDataAsync(userId, user.Email);
-        user.FullName = "Người dùng đã xóa"; user.Email = $"deleted-{user.UserId:N}@deleted.bbook.local";
+        user.FullName = "Người dùng đã xóa"; user.Email = $"deleted-{user.UserId:N}@deleted.bbook.local"; user.VerifiedCommerceEmail = null;
         user.PhoneNumber = null; user.PhoneVerified = false; user.AvatarUrl = null;
         user.PasswordHash = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)); user.IsActive = false; user.DeletedAt = now;
         request.Status = "PendingStorage"; request.ErrorCode = null; request.DatabaseCompletedAt = now; request.NextAttemptAt = now;

@@ -67,6 +67,7 @@ builder.Services.AddControllers(options => {
     options.Filters.Add<StyleWriteExceptionFilter>();
 });
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddAuthentication().AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, BeautyBookBackend.Services.Monetization.MuaWebAuthentication>(BeautyBookBackend.Services.Monetization.MuaWebAuthentication.SchemeName, _ => { });
 builder.Services.AddWebsiteApkCounter(builder.Configuration);
 builder.Services.AddScoped<PlayReviewPolicy>();
 builder.Services.Configure<PlayReviewOptions>(builder.Configuration.GetSection("PlayReview"));
@@ -99,6 +100,7 @@ builder.Services.Configure<ApiBehaviorOptions>(options =>
 // Configure CORS to allow frontend connections
 builder.Services.AddCors(options =>
 {
+    options.AddPolicy("MuaWeb", policy => policy.WithOrigins(builder.Configuration["MuaWeb:Origin"] ?? "https://bbookmakeup.com").AllowAnyHeader().AllowAnyMethod().AllowCredentials());
     options.AddPolicy("AllowAll", policy =>
     {
         policy.SetIsOriginAllowed(_ => true)
@@ -202,6 +204,17 @@ builder.Services.AddHostedService<AccountDeletionWorker>();
 builder.Services.AddScoped<IMuaService, MuaService>();
 builder.Services.AddScoped<AdminMakeupStyleService>();
 builder.Services.AddScoped<IMuaEligibilityService, MuaEligibilityService>();
+builder.Services.Configure<MuaMonetizationOptions>(builder.Configuration.GetSection("MuaMonetization"));
+builder.Services.AddRateLimiter(options => options.AddPolicy("mua-web-auth", context =>
+    System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+    _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions { PermitLimit = 20, Window = TimeSpan.FromMinutes(5), QueueLimit = 0 })));
+builder.Services.AddSingleton<TimeProvider>(TimeProvider.System);
+builder.Services.AddScoped<MuaMonetizationReader>();
+builder.Services.AddHttpClient<BeautyBookBackend.Services.Monetization.ICommercePayOs, BeautyBookBackend.Services.Monetization.CommercePayOsHttp>(c => c.Timeout = TimeSpan.FromSeconds(15));
+builder.Services.AddHttpClient<BeautyBookBackend.Services.Monetization.ICommerceEmailSender, BeautyBookBackend.Services.Monetization.BrevoCommerceEmailSender>(c => c.Timeout = TimeSpan.FromSeconds(15));
+builder.Services.AddScoped<BeautyBookBackend.Services.Monetization.MuaEmailCommerce>();
+builder.Services.AddScoped<BeautyBookBackend.Services.Monetization.CustomerAiCommerce>();
+builder.Services.AddHostedService<BeautyBookBackend.Services.Monetization.MuaCommerceWorker>();
 builder.Services.AddScoped<VerificationMediaService>();
 builder.Services.AddRateLimiter(options => options.AddConcurrencyLimiter("media-upload", limiter =>
 {

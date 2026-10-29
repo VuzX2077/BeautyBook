@@ -77,6 +77,7 @@ namespace BeautyBookBackend.Services
                 UserId = Guid.NewGuid(),
                 FullName = registerDto.FullName,
                 Email = registerDto.Email,
+                VerifiedCommerceEmail = registerDto.Email,
                 PasswordHash = HashPassword(registerDto.Password),
                 PhoneNumber = registerDto.PhoneNumber,
                 Role = UserRole.Customer,
@@ -214,6 +215,7 @@ namespace BeautyBookBackend.Services
                     Status = MuaStatus.Draft
                     ,VerificationStatus = MuaVerificationStatus.Draft
                 };
+                _dbContext.MuaMonetizationAccounts.Add(new() { MuaId = user.UserId, Cohort = MuaActivationCohort.RolloutWaiver, EnrolledAt = DateTime.UtcNow });
                 await _muaRepository.AddProfileAsync(profile);
             }
             else if (profile.VerificationStatus is MuaVerificationStatus.PendingReview or MuaVerificationStatus.Approved)
@@ -300,6 +302,7 @@ namespace BeautyBookBackend.Services
                     UserId = Guid.NewGuid(),
                     FullName = payload.Name ?? payload.Email,
                     Email = payload.Email,
+                    VerifiedCommerceEmail = payload.Email.Trim().ToLowerInvariant(),
                     PasswordHash = string.Empty,
                     AvatarUrl = payload.Picture,
                     PhoneNumber = null,
@@ -315,7 +318,8 @@ namespace BeautyBookBackend.Services
             {
                 if (!user.IsActive || user.DeletedAt.HasValue) return null;
 
-                var changed = false;
+                var changed = user.VerifiedCommerceEmail != payload.Email.Trim().ToLowerInvariant();
+                user.VerifiedCommerceEmail = payload.Email.Trim().ToLowerInvariant();
 
                 if (string.IsNullOrWhiteSpace(user.FullName) && !string.IsNullOrWhiteSpace(payload.Name))
                 {

@@ -32,7 +32,7 @@ namespace BeautyBookBackend.Repositories
 
         public async Task<List<MakeupArtistProfile>> GetProfilesAsync(int page, int pageSize)
         {
-            return await _context.MakeupArtistProfiles
+            return await BeautyBookBackend.Services.Monetization.MuaAccessPolicy.Public(_context, _context.MakeupArtistProfiles)
                 .Include(m => m.User)
                 .Where(m => m.Status == Models.Enums.MuaStatus.Listed && m.VerificationStatus == Models.Enums.MuaVerificationStatus.Approved && m.User != null && m.User.IsActive && m.User.DeletedAt == null)
                 .OrderByDescending(m => m.RankScore)

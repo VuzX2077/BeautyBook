@@ -19,6 +19,9 @@
   </ItemGroup>
   <ItemGroup>
     <None Update="Fixtures\FrontendFeatureSummary.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\docs\MUA-MONETIZATION-LEGACY-PREVIEW.sql" Link="Fixtures\MUA-MONETIZATION-LEGACY-PREVIEW.sql" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\docs\MUA-MONETIZATION-LEGACY-BACKFILL.sql" Link="Fixtures\MUA-MONETIZATION-LEGACY-BACKFILL.sql" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\docs\MUA-MONETIZATION-MIGRATION-REVIEW.sql" Link="Fixtures\MUA-MONETIZATION-MIGRATION-REVIEW.sql" CopyToOutputDirectory="PreserveNewest" />
     <ProjectReference Include="..\BeautyBookBackend\BeautyBookBackend.csproj" />
     <ProjectReference Include="..\BeautyBookAdvisor.Api\BeautyBookAdvisor.Api.csproj" />
     <ProjectReference Include="..\BeautyBook.PlayReviewProvisioning\BeautyBook.PlayReviewProvisioning.csproj" />

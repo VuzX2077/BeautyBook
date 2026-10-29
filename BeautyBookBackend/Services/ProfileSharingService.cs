@@ -37,7 +37,7 @@ public sealed class ProfileSharingService(ApplicationDbContext db, IConfiguratio
     }
     public async Task<SharedProfile?> Get(Guid id, Guid? viewer = null)
     {
-        var profile = await db.MakeupArtistProfiles.AsNoTracking().Include(m => m.User)
+        var profile = await BeautyBookBackend.Services.Monetization.MuaAccessPolicy.Public(db, db.MakeupArtistProfiles).AsNoTracking().Include(m => m.User)
             .SingleOrDefaultAsync(m => m.MUAId == id && m.Status == MuaStatus.Listed && m.VerificationStatus == MuaVerificationStatus.Approved
                 && m.User!.IsActive && m.User.DeletedAt == null && !m.User.IsDemoAccount);
         if (profile == null) return null;

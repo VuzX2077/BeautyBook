@@ -9,6 +9,9 @@ namespace BeautyBookBackend.Models
         public Guid UserId { get; set; }
         public string? FullName { get; set; }
         public string? Email { get; set; }
+        // Exact email proven by OTP / verified Google identity. Equality is checked
+        // again on every commerce send; changing Email invalidates this evidence.
+        public string? VerifiedCommerceEmail { get; set; }
         public string? PasswordHash { get; set; }
         public string? AvatarUrl { get; set; }
         public string? PhoneNumber { get; set; }

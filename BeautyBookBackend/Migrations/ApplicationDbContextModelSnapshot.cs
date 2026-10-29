@@ -747,6 +747,68 @@ namespace BeautyBookBackend.Migrations
                     b.ToTable("ContentReports");
                 });
 
+            modelBuilder.Entity("BeautyBookBackend.Models.CustomerAiPurchase", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Channel")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("CheckoutUrl")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<long>("OrderCode")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime?>("PaidAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("PaymentLinkId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("RevocationReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTime?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrderCode")
+                        .IsUnique();
+
+                    b.HasIndex("UserId", "IdempotencyKey")
+                        .IsUnique();
+
+                    b.ToTable("CustomerAiPurchases");
+                });
+
             modelBuilder.Entity("BeautyBookBackend.Models.DevicePushToken", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1349,6 +1411,505 @@ namespace BeautyBookBackend.Migrations
                     b.ToTable("MessageReactions");
                 });
 
+            modelBuilder.Entity("BeautyBookBackend.Models.MuaCommerceAttempt", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Channel")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("CheckoutUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("CreationStartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("MuaId")
+                        .HasColumnType("uuid");
+
+                    b.Property<long>("OrderCode")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("PaymentLinkId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrderCode")
+                        .IsUnique();
+
+                    b.HasIndex("OrderId")
+                        .IsUnique();
+
+                    b.HasIndex("Channel", "PaymentLinkId")
+                        .IsUnique();
+
+                    b.HasIndex("OrderId", "MuaId");
+
+                    b.ToTable("MuaCommerceAttempts", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_MuaCommerceAttempts_Reference", "\"OrderCode\" > 0 AND length(trim(\"Channel\")) > 0 AND (\"PaymentLinkId\" IS NULL OR length(trim(\"PaymentLinkId\")) > 0)");
+                        });
+                });
+
+            modelBuilder.Entity("BeautyBookBackend.Models.MuaCommerceAudit", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("EvidenceHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<Guid>("MuaId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrderId", "CreatedAt");
+
+                    b.HasIndex("OrderId", "MuaId");
+
+                    b.ToTable("MuaCommerceAudit", (string)null);
+                });
+
+            modelBuilder.Entity("BeautyBookBackend.Models.MuaCommerceInbox", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("EventKey")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("EvidenceHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<Guid>("MuaId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<DateTime>("ReceivedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EventKey")
+                        .IsUnique();
+
+                    b.HasIndex("OrderId", "MuaId");
+
+                    b.ToTable("MuaCommerceInbox", (string)null);
+                });
+
+            modelBuilder.Entity("BeautyBookBackend.Models.MuaCommerceIngress", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<long>("AmountVnd")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("EventKey")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("EvidenceHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<long>("OrderCode")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("PaymentLinkId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTime>("ReceivedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Reference")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EventKey")
+                        .IsUnique();
+
+                    b.ToTable("MuaCommerceIngress", (string)null);
+                });
+
+            modelBuilder.Entity("BeautyBookBackend.Models.MuaCommerceJob", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("AvailableAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DedupKey")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)");
+
+                    b.Property<string>("DeliveryState")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<DateTime?>("FirstSendAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<Guid?>("LeaseToken")
+                        .IsConcurrencyToken()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("LeaseUntil")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ProviderMessageId")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("RecipientHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<Guid>("TargetId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DedupKey")
+                        .IsUnique();
+
+                    b.HasIndex("State", "AvailableAt");
+
+                    b.ToTable("MuaCommerceJobs", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_MuaCommerceJobs_Attempts", "\"Attempts\" >= 0");
+
+                            t.HasCheckConstraint("CK_MuaCommerceJobs_State", "\"State\" IN ('Pending','Processing','Done','ManualReview')");
+                        });
+                });
+
+            modelBuilder.Entity("BeautyBookBackend.Models.MuaCommerceOffer", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AdminId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("EmailSnapshot")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("character varying(320)");
+
+                    b.Property<string>("EvidenceReference")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<Guid>("MuaId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MuaId", "EvidenceReference")
+                        .IsUnique();
+
+                    b.ToTable("MuaCommerceOffers", (string)null);
+                });
+
+            modelBuilder.Entity("BeautyBookBackend.Models.MuaCommerceOrder", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("AmountVnd")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<Guid>("MuaId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Origin")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<bool>("PortfolioPromotionConsent")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("ProductId")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<string>("TermsVersion")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<DateTime?>("VerifiedPaidAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MuaId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_MuaCommerceOrders_Activation")
+                        .HasFilter("\"ProductId\" = 'bbook_mua_activation_v1' AND \"State\" NOT IN ('Cancelled','Refunded')");
+
+                    b.HasIndex("MuaId", "IdempotencyKey")
+                        .IsUnique();
+
+                    b.HasIndex("State", "CreatedAt");
+
+                    b.ToTable("MuaCommerceOrders", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_MuaCommerceOrders_Catalog", "(\"ProductId\" = 'bbook_mua_activation_v1' AND \"AmountVnd\" = 100000) OR (\"ProductId\" = 'bbook_visibility_30d_v1' AND \"AmountVnd\" = 75000)");
+
+                            t.HasCheckConstraint("CK_MuaCommerceOrders_Currency", "\"Currency\" = 'VND'");
+
+                            t.HasCheckConstraint("CK_MuaCommerceOrders_Expiry", "\"ExpiresAt\" > \"CreatedAt\"");
+
+                            t.HasCheckConstraint("CK_MuaCommerceOrders_Identity", "length(trim(\"IdempotencyKey\")) > 0 AND length(trim(\"TermsVersion\")) > 0");
+
+                            t.HasCheckConstraint("CK_MuaCommerceOrders_Origin", "\"Origin\" IN ('IndependentWebsite','AdminApproval','ExternalRequest')");
+
+                            t.HasCheckConstraint("CK_MuaCommerceOrders_State", "\"State\" IN ('PaymentPending','PaidAwaitingFulfillment','ManualReview','Fulfilled','Cancelled','Refunded')");
+                        });
+                });
+
+            modelBuilder.Entity("BeautyBookBackend.Models.MuaCommerceOutbox", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("AvailableAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("LastErrorCode")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<Guid>("MuaId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompletedAt", "AvailableAt");
+
+                    b.HasIndex("OrderId", "Kind")
+                        .IsUnique();
+
+                    b.HasIndex("OrderId", "MuaId");
+
+                    b.ToTable("MuaCommerceOutbox", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_MuaCommerceOutbox_Attempts", "\"Attempts\" >= 0");
+                        });
+                });
+
+            modelBuilder.Entity("BeautyBookBackend.Models.MuaFacebookTask", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("CycleStartsAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Draft")
+                        .IsRequired()
+                        .HasMaxLength(6000)
+                        .HasColumnType("character varying(6000)");
+
+                    b.Property<DateTime>("DueAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("GrantId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("MuaId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("PublishedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("PublishedUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("RemedyNote")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("RevisionRequest")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<int>("Revisions")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("GrantId")
+                        .IsUnique();
+
+                    b.HasIndex("OrderId", "MuaId");
+
+                    b.HasIndex("State", "DueAt");
+
+                    b.ToTable("MuaFacebookTasks", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_MuaFacebookTask_Revisions", "\"Revisions\" BETWEEN 0 AND 1");
+
+                            t.HasCheckConstraint("CK_MuaFacebookTask_State", "\"State\" IN ('Preparing','Scheduled','Published','NeedsContent','RevisionRequested')");
+                        });
+                });
+
             modelBuilder.Entity("BeautyBookBackend.Models.MuaFollow", b =>
                 {
                     b.Property<Guid>("UserId")
@@ -1369,6 +1930,54 @@ namespace BeautyBookBackend.Migrations
                     b.ToTable("MuaFollows", t =>
                         {
                             t.HasCheckConstraint("CK_MuaFollows_NoSelfFollow", "\"UserId\" <> \"MuaId\"");
+                        });
+                });
+
+            modelBuilder.Entity("BeautyBookBackend.Models.MuaMonetizationAccount", b =>
+                {
+                    b.Property<Guid>("MuaId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("ActivatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ActivationPurchaseReference")
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)");
+
+                    b.Property<DateTime?>("ActivationRevokedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Cohort")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<DateTime>("EnrolledAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("FirstPublishedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("PolicyVersion")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.HasKey("MuaId");
+
+                    b.HasIndex("ActivationPurchaseReference")
+                        .IsUnique();
+
+                    b.HasIndex("Cohort", "EnrolledAt");
+
+                    b.ToTable("MuaMonetizationAccounts", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_MuaMonetizationAccounts_Cohort", "\"Cohort\" IN ('LegacyWaiver','RolloutWaiver','PaidActivation')");
+
+                            t.HasCheckConstraint("CK_MuaMonetizationAccounts_PaidActivation", "(\"ActivatedAt\" IS NULL AND \"ActivationPurchaseReference\" IS NULL) OR (\"Cohort\" = 'PaidActivation' AND \"ActivatedAt\" IS NOT NULL AND length(trim(\"ActivationPurchaseReference\")) > 0 AND \"ActivationPurchaseReference\" IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_MuaMonetizationAccounts_Revocation", "\"ActivationRevokedAt\" IS NULL OR (\"ActivatedAt\" IS NOT NULL AND \"ActivationRevokedAt\" >= \"ActivatedAt\")");
                         });
                 });
 
@@ -1443,6 +2052,33 @@ namespace BeautyBookBackend.Migrations
                     b.ToTable("MuaReceivables");
                 });
 
+            modelBuilder.Entity("BeautyBookBackend.Models.MuaSponsoredEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<Guid>("MuaId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MuaId", "CreatedAt");
+
+                    b.ToTable("MuaSponsoredEvents", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_MuaSponsoredEvents_Kind", "\"Kind\" IN ('Impression','ProfileView')");
+                        });
+                });
+
             modelBuilder.Entity("BeautyBookBackend.Models.MuaTimeOff", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1473,6 +2109,102 @@ namespace BeautyBookBackend.Migrations
                         {
                             t.HasCheckConstraint("CK_MuaTimeOffs_ValidRange", "\"StartAt\" < \"EndAt\"");
                         });
+                });
+
+            modelBuilder.Entity("BeautyBookBackend.Models.MuaVisibilityGrant", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("EndsAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<Guid>("MuaId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("RevocationReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTime?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("SourceReference")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)");
+
+                    b.Property<DateTime>("StartsAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MuaId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_MuaVisibilityGrants_FirstGift")
+                        .HasFilter("\"Kind\" = 'FirstActivationGift'");
+
+                    b.HasIndex("SourceReference")
+                        .IsUnique();
+
+                    b.HasIndex("MuaId", "EndsAt");
+
+                    b.ToTable("MuaVisibilityGrants", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_MuaVisibilityGrants_Interval", "\"EndsAt\" > \"StartsAt\"");
+
+                            t.HasCheckConstraint("CK_MuaVisibilityGrants_Kind", "\"Kind\" IN ('FirstActivationGift','Paid','Compensation')");
+
+                            t.HasCheckConstraint("CK_MuaVisibilityGrants_Revocation", "(\"RevokedAt\" IS NULL AND \"RevocationReason\" IS NULL) OR (\"RevokedAt\" IS NOT NULL AND \"RevocationReason\" IS NOT NULL AND length(trim(\"RevocationReason\")) > 0)");
+
+                            t.HasCheckConstraint("CK_MuaVisibilityGrants_Source", "length(trim(\"SourceReference\")) > 0");
+                        });
+                });
+
+            modelBuilder.Entity("BeautyBookBackend.Models.MuaWebSession", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("CsrfToken")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpiresAt");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("MuaWebSessions", (string)null);
                 });
 
             modelBuilder.Entity("BeautyBookBackend.Models.MuaWorkingSchedule", b =>
@@ -2387,6 +3119,10 @@ namespace BeautyBookBackend.Migrations
                     b.Property<byte>("Role")
                         .HasColumnType("smallint");
 
+                    b.Property<string>("VerifiedCommerceEmail")
+                        .HasMaxLength(320)
+                        .HasColumnType("character varying(320)");
+
                     b.HasKey("UserId");
 
                     b.ToTable("Users");
@@ -2856,6 +3592,15 @@ namespace BeautyBookBackend.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("BeautyBookBackend.Models.CustomerAiPurchase", b =>
+                {
+                    b.HasOne("BeautyBookBackend.Models.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("BeautyBookBackend.Models.DevicePushToken", b =>
                 {
                     b.HasOne("BeautyBookBackend.Models.User", "User")
@@ -2991,6 +3736,80 @@ namespace BeautyBookBackend.Migrations
                     b.Navigation("Message");
                 });
 
+            modelBuilder.Entity("BeautyBookBackend.Models.MuaCommerceAttempt", b =>
+                {
+                    b.HasOne("BeautyBookBackend.Models.MuaCommerceOrder", null)
+                        .WithMany()
+                        .HasForeignKey("OrderId", "MuaId")
+                        .HasPrincipalKey("Id", "MuaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("BeautyBookBackend.Models.MuaCommerceAudit", b =>
+                {
+                    b.HasOne("BeautyBookBackend.Models.MuaCommerceOrder", null)
+                        .WithMany()
+                        .HasForeignKey("OrderId", "MuaId")
+                        .HasPrincipalKey("Id", "MuaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("BeautyBookBackend.Models.MuaCommerceInbox", b =>
+                {
+                    b.HasOne("BeautyBookBackend.Models.MuaCommerceOrder", null)
+                        .WithMany()
+                        .HasForeignKey("OrderId", "MuaId")
+                        .HasPrincipalKey("Id", "MuaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("BeautyBookBackend.Models.MuaCommerceOffer", b =>
+                {
+                    b.HasOne("BeautyBookBackend.Models.MakeupArtistProfile", null)
+                        .WithMany()
+                        .HasForeignKey("MuaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("BeautyBookBackend.Models.MuaCommerceOrder", b =>
+                {
+                    b.HasOne("BeautyBookBackend.Models.MakeupArtistProfile", null)
+                        .WithMany()
+                        .HasForeignKey("MuaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("BeautyBookBackend.Models.MuaCommerceOutbox", b =>
+                {
+                    b.HasOne("BeautyBookBackend.Models.MuaCommerceOrder", null)
+                        .WithMany()
+                        .HasForeignKey("OrderId", "MuaId")
+                        .HasPrincipalKey("Id", "MuaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("BeautyBookBackend.Models.MuaFacebookTask", b =>
+                {
+                    b.HasOne("BeautyBookBackend.Models.MuaVisibilityGrant", null)
+                        .WithMany()
+                        .HasForeignKey("GrantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("BeautyBookBackend.Models.MuaCommerceOrder", null)
+                        .WithMany()
+                        .HasForeignKey("OrderId", "MuaId")
+                        .HasPrincipalKey("Id", "MuaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("BeautyBookBackend.Models.MuaFollow", b =>
                 {
                     b.HasOne("BeautyBookBackend.Models.MakeupArtistProfile", "Mua")
@@ -3008,6 +3827,15 @@ namespace BeautyBookBackend.Migrations
                     b.Navigation("Mua");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("BeautyBookBackend.Models.MuaMonetizationAccount", b =>
+                {
+                    b.HasOne("BeautyBookBackend.Models.MakeupArtistProfile", null)
+                        .WithOne()
+                        .HasForeignKey("BeautyBookBackend.Models.MuaMonetizationAccount", "MuaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("BeautyBookBackend.Models.MuaOperatingArea", b =>
@@ -3040,6 +3868,15 @@ namespace BeautyBookBackend.Migrations
                     b.Navigation("Mua");
                 });
 
+            modelBuilder.Entity("BeautyBookBackend.Models.MuaSponsoredEvent", b =>
+                {
+                    b.HasOne("BeautyBookBackend.Models.MakeupArtistProfile", null)
+                        .WithMany()
+                        .HasForeignKey("MuaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("BeautyBookBackend.Models.MuaTimeOff", b =>
                 {
                     b.HasOne("BeautyBookBackend.Models.MakeupArtistProfile", "MakeupArtistProfile")
@@ -3049,6 +3886,24 @@ namespace BeautyBookBackend.Migrations
                         .IsRequired();
 
                     b.Navigation("MakeupArtistProfile");
+                });
+
+            modelBuilder.Entity("BeautyBookBackend.Models.MuaVisibilityGrant", b =>
+                {
+                    b.HasOne("BeautyBookBackend.Models.MuaMonetizationAccount", null)
+                        .WithMany()
+                        .HasForeignKey("MuaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("BeautyBookBackend.Models.MuaWebSession", b =>
+                {
+                    b.HasOne("BeautyBookBackend.Models.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("BeautyBookBackend.Models.MuaWorkingSchedule", b =>

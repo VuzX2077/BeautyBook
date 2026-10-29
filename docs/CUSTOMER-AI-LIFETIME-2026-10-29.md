@@ -1,5 +1,7 @@
 # Gói MUA và Customer AI — 29/10/2026
 
+Hướng dẫn triển khai luồng website payOS và app đồng bộ quyền mới nhất: [PAYOS-WEBSITE-APP-SETUP.md](PAYOS-WEBSITE-APP-SETUP.md). Chưa mở thanh toán thật cho đến khi có kênh payOS riêng và hoàn tất kiểm thử giao dịch thật.
+
 Yêu cầu mới thay thế phần thu phí kích hoạt trong kế hoạch 27/10:
 
 - Bỏ phí kích hoạt MUA 100.000đ. Hồ sơ MUA được hoạt động theo điều kiện duyệt/hồ sơ hiện có; không phụ thuộc thanh toán kích hoạt hoặc gói Visibility.

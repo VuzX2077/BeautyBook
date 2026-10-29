@@ -368,6 +368,8 @@ namespace BeautyBookBackend.Services
                 .GetSection("GoogleAuth:ClientIds")
                 .Get<List<string>>() ?? new List<string>();
 
+            var webClientId = _configuration["MuaWeb:GoogleClientId"];
+            if (!string.IsNullOrWhiteSpace(webClientId)) clientIds.Add(webClientId);
             var singleClientId = _configuration["GoogleAuth:ClientId"];
             if (!string.IsNullOrWhiteSpace(singleClientId))
             {

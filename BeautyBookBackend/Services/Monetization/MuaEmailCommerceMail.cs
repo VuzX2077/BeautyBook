@@ -13,7 +13,7 @@ public sealed partial class MuaEmailCommerce
         if (!options.Value.EmailDeliveryEnabled) throw new CommerceException("EMAIL_DELIVERY_DISABLED");
         var order = await db.MuaCommerceOrders.AsNoTracking().SingleAsync(x => x.Id == job.TargetId, ct);
         if (receipt ? order.State != MuaCommerceOrderState.Fulfilled : order.State != MuaCommerceOrderState.PaymentPending) return;
-        var user = await Recipient(order.MuaId, ct);
+        var user = await Recipient(order.MuaId, ct, requireVerifiedEmail: true);
         if (!receipt) { await CheckOffer(order, ct); if (order.ExpiresAt <= Now) throw new CommerceException("LINK_EXPIRED"); }
         var hash = PayOsCommerceProtocol.Hash(user.Email!.Trim().ToLowerInvariant());
         if (job.RecipientHash != null && job.RecipientHash != hash) throw new CommerceException("RECIPIENT_CHANGED");

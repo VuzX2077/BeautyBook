@@ -15,7 +15,6 @@ public sealed partial class MuaEmailCommerce
         if (order.ProductId == MuaCommerceCatalog.Activation) throw new CommerceException("ACTIVATION_RETIRED");
         if (order.Origin != "IndependentWebsite" || !order.PortfolioPromotionConsent) throw new CommerceException("EMAIL_CHECKOUT_RETIRED");
         await Recipient(order.MuaId, ct); await CheckOffer(order, ct);
-        if (order.ExpiresAt <= Now) throw new CommerceException("LINK_EXPIRED");
         var attempt = await db.MuaCommerceAttempts.SingleAsync(x => x.OrderId == id, ct);
         if (attempt.Channel != payos.Channel) throw new CommerceException("PAYOS_CHANNEL_MISMATCH");
         if (attempt.PaymentLinkId == null)
@@ -23,6 +22,7 @@ public sealed partial class MuaEmailCommerce
             JsonElement? response = null;
             var lookup = attempt.CreationStartedAt.HasValue;
             if (lookup) response = await payos.Get(attempt.OrderCode, ct);
+            if (response == null && order.ExpiresAt <= Now) { order.State = MuaCommerceOrderState.Cancelled; await db.SaveChangesAsync(ct); return; }
             if (response == null)
             {
                 attempt.CreationStartedAt ??= Now; await db.SaveChangesAsync(ct);
@@ -35,7 +35,7 @@ public sealed partial class MuaEmailCommerce
                 || !lookup && PayOsCommerceProtocol.Text(data, "currency") != "VND" || link.Length > 100)
                 throw new CommerceException("PAYOS_LINK_MISMATCH");
             var status = PayOsCommerceProtocol.Text(data, "status");
-            if (status is not ("PENDING" or "PAID")) throw new CommerceException("LINK_EXPIRED");
+            if (status is not ("PENDING" or "PAID" or "CANCELLED" or "EXPIRED")) throw new CommerceException("LINK_EXPIRED");
             var url = lookup ? "https://pay.payos.vn/web/" + Uri.EscapeDataString(link) : PayOsCommerceProtocol.Text(data, "checkoutUrl");
             if (!ValidCheckout(url)) throw new CommerceException("INVALID_CHECKOUT_URL");
             await using (var tx = await db.Database.BeginTransactionAsync(ct))
@@ -47,7 +47,7 @@ public sealed partial class MuaEmailCommerce
                 attempt.PaymentLinkId = link; attempt.CheckoutUrl = url;
                 await db.SaveChangesAsync(ct); await tx.CommitAsync(ct);
             }
-            if (status == "PAID") await ReconcileOrder(order.Id, ct);
+            if (status == "PAID" || status is "CANCELLED" or "EXPIRED" || order.ExpiresAt <= Now) await ReconcileOrder(order.Id, ct);
         }
         // Checkout URL is read only through the authenticated website order endpoint.
     }

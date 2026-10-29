@@ -10,6 +10,7 @@ public sealed class CustomerAiPurchase
     public string Channel { get; set; } = "";
     public string? PaymentLinkId { get; set; }
     public string? CheckoutUrl { get; set; }
+    public DateTime? LinkCreationStartedAt { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime ExpiresAt { get; set; }
     public DateTime? PaidAt { get; set; }

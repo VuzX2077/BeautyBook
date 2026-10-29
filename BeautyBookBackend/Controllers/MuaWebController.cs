@@ -31,7 +31,7 @@ public sealed class MuaWebController(ApplicationDbContext db, IAuthService auth,
     public async Task<IActionResult> Login(LoginRequest request, CancellationToken ct)
     {
         if (!OriginOk) return StatusCode(403);
-        if (request.Email.Length > 320 || request.Password.Length > 1024) return Unauthorized();
+        if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrEmpty(request.Password) || request.Email.Length > 320 || request.Password.Length > 1024) return Unauthorized();
         var token = await auth.LoginAsync(new() { Email = request.Email.Trim(), Password = request.Password });
         return token == null || token.IsDemoAccount ? Unauthorized(new { message = "Thông tin đăng nhập không hợp lệ." }) : await Session(token.UserId, ct);
     }
@@ -63,13 +63,13 @@ public sealed class MuaWebController(ApplicationDbContext db, IAuthService auth,
         var user = await db.Users.AsNoTracking().SingleAsync(x => x.UserId == Owner, ct);
         if (user.Role == BeautyBookBackend.Models.Enums.UserRole.Customer)
             return Ok(new { name = user.FullName, email = user.Email, role = "Customer", csrf = session.CsrfToken,
-                ai = await customerAi.Status(Owner, ct), checkoutEnabled = customerAi.CheckoutEnabled,
+                ai = await customerAi.Status(Owner, ct), checkoutEnabled = customerAi.CheckoutReady,
                 termsVersion = MuaCommerceCatalog.TermsVersion, products = new[] { MuaCommerceCatalog.Get(MuaCommerceCatalog.CustomerAi) },
                 orders = await customerAi.History(Owner, ct), facebook = Array.Empty<object>() });
         var profile = await db.MakeupArtistProfiles.AsNoTracking().SingleAsync(x => x.MUAId == Owner, ct);
         var state = await reader.GetAsync(Owner, ct);
-        return Ok(new { name = user.FullName, email = user.Email, reviewStatus = profile.VerificationStatus.ToString(), csrf = session.CsrfToken,
-            monetization = state, checkoutEnabled = flags.Value.WebCheckoutEnabled && flags.Value.PaymentLinksEnabled && flags.Value.WorkersEnabled,
+        return Ok(new { name = user.FullName, email = user.Email, role = "MUA", reviewStatus = profile.VerificationStatus.ToString(), csrf = session.CsrfToken,
+            monetization = state, checkoutEnabled = commerce.CheckoutReady,
             termsVersion = MuaCommerceCatalog.TermsVersion,
             products = new[] { MuaCommerceCatalog.Get(MuaCommerceCatalog.Visibility) },
             orders = await commerce.WebHistory(Owner, ct), facebook = await db.MuaFacebookTasks.AsNoTracking().Where(x => x.MuaId == Owner)
@@ -89,7 +89,8 @@ public sealed class MuaWebController(ApplicationDbContext db, IAuthService auth,
     public async Task<IActionResult> Order(Guid id, CancellationToken ct)
     {
         if (!OriginOk) return StatusCode(403);
-        var order = await customerAi.Order(Owner, id, ct) ?? await commerce.WebOrder(Owner, id, ct); return order == null ? NotFound() : Ok(order);
+        try { var order = await customerAi.Order(Owner, id, ct) ?? await commerce.WebOrder(Owner, id, ct); return order == null ? NotFound() : Ok(order); }
+        catch (CommerceException ex) { return Conflict(new { code = ex.Code }); }
     }
     public sealed record RevisionRequest(string Reason);
     [Authorize(AuthenticationSchemes = MuaWebAuthentication.SchemeName), HttpPost("facebook/{id:guid}/revision")]

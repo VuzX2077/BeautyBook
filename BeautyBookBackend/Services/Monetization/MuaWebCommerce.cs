@@ -5,22 +5,32 @@ namespace BeautyBookBackend.Services.Monetization;
 
 public sealed partial class MuaEmailCommerce
 {
+    public bool CheckoutReady => options.Value.Enabled && options.Value.WebPortalEnabled && options.Value.WebCheckoutEnabled && options.Value.PaymentLinksEnabled && options.Value.WorkersEnabled && (!payos.IsLive || CommerceCheckoutReadiness.Ready(config));
     public async Task<Guid> WebBuy(Guid owner, string sku, string key, string terms, bool consent, CancellationToken ct)
     {
         if (sku != MuaCommerceCatalog.Visibility) throw new CommerceException("PRODUCT_RETIRED_OR_INVALID");
-        if (!options.Value.Enabled || !options.Value.WebPortalEnabled || !options.Value.WebCheckoutEnabled || !options.Value.PaymentLinksEnabled || !options.Value.WorkersEnabled)
+        if (!CheckoutReady)
             throw new CommerceException("WEB_CHECKOUT_DISABLED");
+        if (string.IsNullOrWhiteSpace(key) || key.Length > 80 || key != key.Trim()) throw new CommerceException("INVALID_IDEMPOTENCY_KEY");
+        if (terms != MuaCommerceCatalog.TermsVersion) throw new CommerceException("TERMS_VERSION_MISMATCH");
         if (!consent) throw new CommerceException("PORTFOLIO_CONSENT_REQUIRED");
         await Recipient(owner, ct);
+        var readiness = await eligibility.EvaluateAsync(owner, false);
+        if (readiness?.CanReceiveBookings != true || readiness.MissingRequirements.Count != 0) throw new CommerceException("MUA_NOT_ELIGIBLE");
         // A live pending link must be resolved/cancelled before replacing it, even
         // across devices or a lost browser idempotency key.
         var pending = await db.MuaCommerceOrders.AsNoTracking().Where(x => x.MuaId == owner && x.ProductId == sku && x.State == MuaCommerceOrderState.PaymentPending).OrderBy(x => x.CreatedAt).FirstOrDefaultAsync(ct);
+        if (pending != null && pending.ExpiresAt <= Now) {
+            await CreateLink(pending.Id, ct);
+            if (await db.MuaCommerceOrders.AnyAsync(x => x.Id == pending.Id && x.State == MuaCommerceOrderState.PaymentPending, ct)) await ReconcileOrder(pending.Id, ct);
+            pending = await db.MuaCommerceOrders.AsNoTracking().SingleOrDefaultAsync(x => x.Id == pending.Id && x.State == MuaCommerceOrderState.PaymentPending, ct);
+        }
         if (pending != null)
         {
             if (pending.Origin != "IndependentWebsite" || !pending.PortfolioPromotionConsent || pending.TermsVersion != terms) throw new CommerceException("PENDING_ORDER_NEEDS_REVIEW");
             return pending.Id;
         }
-        var order = await new MuaCommerceFoundation(db, clock).CreateOrderAsync(owner, sku, key, terms, ct, "IndependentWebsite", payos.Channel);
+        var order = await new MuaCommerceFoundation(db, clock).CreateOrderAsync(owner, sku, key, terms, ct, "IndependentWebsite", payos.Channel, portfolioConsent: true);
         await using var tx = await db.Database.BeginTransactionAsync(ct); await MuaAccessPolicy.Lock(db, owner, ct);
         order.PortfolioPromotionConsent = true;
         await Enqueue("Link", order.Id, "link:" + order.Id.ToString("N"), ct);
@@ -30,7 +40,7 @@ public sealed partial class MuaEmailCommerce
     {
         var order = await db.MuaCommerceOrders.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id && x.MuaId == owner, ct);
         if (order == null) return null;
-        var available = order.ProductId == MuaCommerceCatalog.Visibility && options.Value.WebCheckoutEnabled && options.Value.PaymentLinksEnabled && order.State == MuaCommerceOrderState.PaymentPending && order.ExpiresAt > Now;
+        var available = order.ProductId == MuaCommerceCatalog.Visibility && CheckoutReady && order.State == MuaCommerceOrderState.PaymentPending && order.ExpiresAt > Now;
         if (available) { try { await Recipient(owner, ct); } catch (CommerceException) { available = false; } }
         var url = available ? await db.MuaCommerceAttempts.Where(x => x.OrderId == id).Select(x => x.CheckoutUrl).SingleAsync(ct) : null;
         return new { order.Id, order.ProductId, order.AmountVnd, order.Currency, state = order.State.ToString(), order.CreatedAt, order.ExpiresAt, order.VerifiedPaidAt,
@@ -67,7 +77,7 @@ public sealed partial class MuaEmailCommerce
     private async Task SendApproval(MuaCommerceJob job, CancellationToken ct)
     {
         if (!options.Value.EmailDeliveryEnabled) throw new CommerceException("EMAIL_DELIVERY_DISABLED");
-        var user = await Recipient(job.TargetId, ct);
+        var user = await Recipient(job.TargetId, ct, requireVerifiedEmail: true);
         // A message links to the account center, never to a provider checkout.
         var origin = config["MuaWeb:Origin"];
         if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri) || !(uri.Scheme == "https" || uri.IsLoopback) || uri.UserInfo.Length != 0) throw new CommerceException("WEB_ORIGIN_MISSING");

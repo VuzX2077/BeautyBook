@@ -13,7 +13,7 @@ namespace BeautyBookBackend.Services.Monetization;
 // It cannot publish, change booking rights, send email or grant entitlements.
 public sealed class MuaCommerceFoundation(ApplicationDbContext db, TimeProvider clock)
 {
-    public async Task<MuaCommerceOrder> CreateOrderAsync(Guid owner, string productId, string idempotencyKey, string termsVersion, CancellationToken ct = default, string origin = "IndependentWebsite", string channel = "LocalSimulation")
+    public async Task<MuaCommerceOrder> CreateOrderAsync(Guid owner, string productId, string idempotencyKey, string termsVersion, CancellationToken ct = default, string origin = "IndependentWebsite", string channel = "LocalSimulation", bool portfolioConsent = false)
     {
         if (productId != MuaCommerceCatalog.Visibility) throw new CommerceException("PRODUCT_RETIRED_OR_INVALID");
         var product = MuaCommerceCatalog.Get(productId);
@@ -29,11 +29,18 @@ public sealed class MuaCommerceFoundation(ApplicationDbContext db, TimeProvider 
             if (existing.ProductId != productId || existing.TermsVersion != termsVersion) throw new CommerceException("IDEMPOTENCY_CONFLICT");
             await tx.CommitAsync(ct); return existing;
         }
+        if (portfolioConsent) {
+            var pending = await db.MuaCommerceOrders.SingleOrDefaultAsync(x => x.MuaId == owner && x.ProductId == productId && x.State == MuaCommerceOrderState.PaymentPending, ct);
+            if (pending != null) {
+                if (pending.TermsVersion != termsVersion || pending.Origin != origin) throw new CommerceException("PENDING_ORDER_NEEDS_REVIEW");
+                await tx.CommitAsync(ct); return pending;
+            }
+        }
         if (profile.VerificationStatus != MuaVerificationStatus.Approved || profile.Status == MuaStatus.Suspended)
             throw new CommerceException("MUA_NOT_APPROVED_OR_SUSPENDED");
         var now = clock.GetUtcNow().UtcDateTime;
         var order = new MuaCommerceOrder { Id = Guid.NewGuid(), MuaId = owner, ProductId = productId, AmountVnd = product.AmountVnd,
-            IdempotencyKey = idempotencyKey, TermsVersion = termsVersion, Origin = origin, CreatedAt = now, ExpiresAt = origin == "IndependentWebsite" ? now.AddMinutes(30) : now.AddHours(24), State = MuaCommerceOrderState.PaymentPending };
+            PortfolioPromotionConsent = portfolioConsent, IdempotencyKey = idempotencyKey, TermsVersion = termsVersion, Origin = origin, CreatedAt = now, ExpiresAt = origin == "IndependentWebsite" ? now.AddMinutes(30) : now.AddHours(24), State = MuaCommerceOrderState.PaymentPending };
         db.MuaCommerceOrders.Add(order);
         // Reserve code before any future provider call. The DB unique key is the
         // authority; a caller must retry the whole transaction on a code collision.

@@ -773,6 +773,9 @@ namespace BeautyBookBackend.Migrations
                         .HasMaxLength(80)
                         .HasColumnType("character varying(80)");
 
+                    b.Property<DateTime?>("LinkCreationStartedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<long>("OrderCode")
                         .HasColumnType("bigint");
 

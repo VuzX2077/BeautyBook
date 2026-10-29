@@ -135,14 +135,14 @@ public sealed partial class MuaEmailCommerce(ApplicationDbContext db, ICommerceP
         }
     }
 
-    private async Task<User> Recipient(Guid owner, CancellationToken ct)
+    private async Task<User> Recipient(Guid owner, CancellationToken ct, bool requireVerifiedEmail = false)
     {
         var profile = await db.MakeupArtistProfiles.AsNoTracking().Include(x => x.User).SingleOrDefaultAsync(x => x.MUAId == owner, ct);
         var user = profile?.User;
         if (user == null || !user.IsActive || user.DeletedAt != null || user.IsDemoAccount || user.Role != UserRole.MUA
             || profile!.Status == MuaStatus.Suspended || profile.VerificationStatus != MuaVerificationStatus.Approved)
             throw new CommerceException("MUA_NOT_ELIGIBLE");
-        if (!System.Net.Mail.MailAddress.TryCreate(user.Email, out _) || !string.Equals(user.Email?.Trim(), user.VerifiedCommerceEmail?.Trim(), StringComparison.OrdinalIgnoreCase))
+        if (requireVerifiedEmail && (!System.Net.Mail.MailAddress.TryCreate(user.Email, out _) || !string.Equals(user.Email?.Trim(), user.VerifiedCommerceEmail?.Trim(), StringComparison.OrdinalIgnoreCase)))
             throw new CommerceException("EMAIL_NOT_VERIFIED");
         return user;
     }

@@ -205,6 +205,10 @@ builder.Services.AddScoped<IMuaService, MuaService>();
 builder.Services.AddScoped<AdminMakeupStyleService>();
 builder.Services.AddScoped<IMuaEligibilityService, MuaEligibilityService>();
 builder.Services.Configure<MuaMonetizationOptions>(builder.Configuration.GetSection("MuaMonetization"));
+builder.Services.AddRateLimiter(options => options.AddPolicy("app-commerce-write", context =>
+    System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+        context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions { PermitLimit = 12, Window = TimeSpan.FromMinutes(1), QueueLimit = 0, AutoReplenishment = true })));
 builder.Services.AddRateLimiter(options => options.AddPolicy("mua-web-auth", context =>
     System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
     _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions { PermitLimit = 20, Window = TimeSpan.FromMinutes(5), QueueLimit = 0 })));

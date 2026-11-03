@@ -30,6 +30,7 @@ public sealed class MuaCommerceAttempt
     public string? PaymentLinkId { get; set; }
     public DateTime CreatedAt { get; set; }
     public string? CheckoutUrl { get; set; }
+    public string? PaymentDetailsJson { get; set; }
     public DateTime? CreationStartedAt { get; set; }
 }
 

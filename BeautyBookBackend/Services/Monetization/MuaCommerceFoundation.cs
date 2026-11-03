@@ -16,6 +16,7 @@ public sealed class MuaCommerceFoundation(ApplicationDbContext db, TimeProvider 
     public async Task<MuaCommerceOrder> CreateOrderAsync(Guid owner, string productId, string idempotencyKey, string termsVersion, CancellationToken ct = default, string origin = "IndependentWebsite", string channel = "LocalSimulation", bool portfolioConsent = false)
     {
         if (productId != MuaCommerceCatalog.Visibility) throw new CommerceException("PRODUCT_RETIRED_OR_INVALID");
+        if (origin is not ("IndependentWebsite" or "NativeApp" or "AdminApproval" or "ExternalRequest")) throw new CommerceException("INVALID_ORDER_ORIGIN");
         var product = MuaCommerceCatalog.Get(productId);
         if (string.IsNullOrWhiteSpace(idempotencyKey) || idempotencyKey.Length > 80 || idempotencyKey != idempotencyKey.Trim())
             throw new CommerceException("INVALID_IDEMPOTENCY_KEY");
@@ -23,6 +24,8 @@ public sealed class MuaCommerceFoundation(ApplicationDbContext db, TimeProvider 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         await LockOwnerAsync(owner, ct);
         var profile = await ActiveProfileAsync(owner, ct);
+        if (origin == "NativeApp" && await db.MuaCommerceOrders.AnyAsync(x => x.MuaId == owner && x.State == MuaCommerceOrderState.ManualReview, ct))
+            throw new CommerceException("PENDING_ORDER_NEEDS_REVIEW");
         var existing = await db.MuaCommerceOrders.SingleOrDefaultAsync(x => x.MuaId == owner && x.IdempotencyKey == idempotencyKey, ct);
         if (existing != null)
         {
@@ -32,7 +35,7 @@ public sealed class MuaCommerceFoundation(ApplicationDbContext db, TimeProvider 
         if (portfolioConsent) {
             var pending = await db.MuaCommerceOrders.SingleOrDefaultAsync(x => x.MuaId == owner && x.ProductId == productId && x.State == MuaCommerceOrderState.PaymentPending, ct);
             if (pending != null) {
-                if (pending.TermsVersion != termsVersion || pending.Origin != origin) throw new CommerceException("PENDING_ORDER_NEEDS_REVIEW");
+                if (pending.TermsVersion != termsVersion || !pending.PortfolioPromotionConsent || pending.Origin is not ("IndependentWebsite" or "NativeApp")) throw new CommerceException("PENDING_ORDER_NEEDS_REVIEW");
                 await tx.CommitAsync(ct); return pending;
             }
         }
@@ -40,7 +43,7 @@ public sealed class MuaCommerceFoundation(ApplicationDbContext db, TimeProvider 
             throw new CommerceException("MUA_NOT_APPROVED_OR_SUSPENDED");
         var now = clock.GetUtcNow().UtcDateTime;
         var order = new MuaCommerceOrder { Id = Guid.NewGuid(), MuaId = owner, ProductId = productId, AmountVnd = product.AmountVnd,
-            PortfolioPromotionConsent = portfolioConsent, IdempotencyKey = idempotencyKey, TermsVersion = termsVersion, Origin = origin, CreatedAt = now, ExpiresAt = origin == "IndependentWebsite" ? now.AddMinutes(30) : now.AddHours(24), State = MuaCommerceOrderState.PaymentPending };
+            PortfolioPromotionConsent = portfolioConsent, IdempotencyKey = idempotencyKey, TermsVersion = termsVersion, Origin = origin, CreatedAt = now, ExpiresAt = origin is "IndependentWebsite" or "NativeApp" ? now.AddMinutes(30) : now.AddHours(24), State = MuaCommerceOrderState.PaymentPending };
         db.MuaCommerceOrders.Add(order);
         // Reserve code before any future provider call. The DB unique key is the
         // authority; a caller must retry the whole transaction on a code collision.

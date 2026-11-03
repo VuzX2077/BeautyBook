@@ -12,9 +12,12 @@ public sealed partial class CustomerAiCommerce(ApplicationDbContext db, ICommerc
     private DateTime Now => clock.GetUtcNow().UtcDateTime;
     public bool CheckoutEnabled => config.GetValue<bool>("CustomerAi:WebCheckoutEnabled");
     public bool CheckoutReady => CheckoutEnabled && (!payos.IsLive || CommerceCheckoutReadiness.Ready(config));
+    public bool AppCheckoutEnabled => config.GetValue<bool>("CustomerAi:AppCheckoutEnabled");
+    public bool AppCheckoutReady => config.GetValue<bool>("AppCommerce:Enabled") && AppCheckoutEnabled && ReconciliationEnabled
+        && (!payos.IsLive || CommerceCheckoutReadiness.Ready(config));
     public bool EnforcementEnabled => config.GetValue<bool>("CustomerAi:EnforcementEnabled");
     public bool ReconciliationEnabled => config.GetValue<bool>("CustomerAi:ReconciliationEnabled");
-    private bool ReadsEnabled => CheckoutEnabled || EnforcementEnabled || ReconciliationEnabled;
+    private bool ReadsEnabled => CheckoutEnabled || AppCheckoutEnabled || EnforcementEnabled || ReconciliationEnabled;
     private async Task<User> Customer(Guid owner, CancellationToken ct) =>
         await db.Users.AsNoTracking().SingleOrDefaultAsync(x => x.UserId == owner && x.Role == UserRole.Customer && x.IsActive && x.DeletedAt == null && !x.IsDemoAccount, ct)
         ?? throw new CommerceException("CUSTOMER_REQUIRED");
@@ -38,9 +41,11 @@ public sealed partial class CustomerAiCommerce(ApplicationDbContext db, ICommerc
         await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({"customer-ai:" + owner}, 772028))", ct);
         await db.Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM \"Users\" WHERE \"UserId\"={owner} FOR UPDATE", ct);
     }
-    public async Task<Guid> Buy(Guid owner, string key, string terms, CancellationToken ct)
+    public Task<Guid> Buy(Guid owner, string key, string terms, CancellationToken ct) => BuyCore(owner, key, terms, false, ct);
+    public Task<Guid> AppBuy(Guid owner, string key, string terms, CancellationToken ct) => BuyCore(owner, key, terms, true, ct);
+    private async Task<Guid> BuyCore(Guid owner, string key, string terms, bool native, CancellationToken ct)
     {
-        if (!CheckoutReady) throw new CommerceException("CUSTOMER_AI_CHECKOUT_DISABLED");
+        if (!(native ? AppCheckoutReady : CheckoutReady)) throw new CommerceException("CUSTOMER_AI_CHECKOUT_DISABLED");
         if (string.IsNullOrWhiteSpace(key) || key.Length > 80 || key != key.Trim()) throw new CommerceException("INVALID_IDEMPOTENCY_KEY");
         if (terms != MuaCommerceCatalog.TermsVersion) throw new CommerceException("TERMS_VERSION_MISMATCH");
         await Customer(owner, ct);
@@ -54,7 +59,8 @@ public sealed partial class CustomerAiCommerce(ApplicationDbContext db, ICommerc
             row = await db.CustomerAiPurchases.SingleOrDefaultAsync(x => x.UserId == owner && x.IdempotencyKey == key, ct)
                 ?? await db.CustomerAiPurchases.Where(x => x.UserId == owner && x.State == "PaymentPending").OrderBy(x => x.CreatedAt).FirstOrDefaultAsync(ct)
                 ?? new() { Id = Guid.NewGuid(), UserId = owner, IdempotencyKey = key, Channel = payos.Channel,
-                    OrderCode = 4000000000000L + RandomNumberGenerator.GetInt32(1, int.MaxValue), CreatedAt = Now, ExpiresAt = Now.AddMinutes(30) };
+                    OrderCode = 4000000000000L + RandomNumberGenerator.GetInt32(1, int.MaxValue), CreatedAt = Now, ExpiresAt = Now.AddMinutes(30),
+                    Origin = native ? "NativeApp" : "IndependentWebsite", TermsVersion = terms };
             if (db.Entry(row).State == EntityState.Detached) db.CustomerAiPurchases.Add(row);
             await db.SaveChangesAsync(ct); await tx.CommitAsync(ct);
         }
@@ -87,6 +93,7 @@ public sealed partial class CustomerAiCommerce(ApplicationDbContext db, ICommerc
         await using var tx = await db.Database.BeginTransactionAsync(ct); await Lock(row.UserId, ct); await db.Entry(row).ReloadAsync(ct);
         if (row.PaymentLinkId != null && row.PaymentLinkId != link) throw new CommerceException("PAYMENT_MISMATCH");
         row.PaymentLinkId = link; row.CheckoutUrl = url;
+        row.PaymentDetailsJson ??= NativeCommercePayment.Capture(data);
         await db.SaveChangesAsync(ct); await tx.CommitAsync(ct);
     }
     private async Task Refresh(Guid id, CancellationToken ct)
@@ -128,6 +135,20 @@ public sealed partial class CustomerAiCommerce(ApplicationDbContext db, ICommerc
     public async Task<object> History(Guid owner, CancellationToken ct) => !ReadsEnabled ? Array.Empty<object>() :
         await db.CustomerAiPurchases.AsNoTracking().Where(x => x.UserId == owner).OrderByDescending(x => x.CreatedAt).Take(100)
             .Select(x => new { x.Id, productId = MuaCommerceCatalog.CustomerAi, amountVnd = 20000, x.State, x.CreatedAt, verifiedPaidAt = x.PaidAt }).ToListAsync(ct);
+    public async Task<NativeCommerceOrder?> AppOrder(Guid owner, Guid id, bool sync, CancellationToken ct)
+    {
+        var row = await db.CustomerAiPurchases.SingleOrDefaultAsync(x => x.Id == id && x.UserId == owner, ct);
+        if (row == null) return null;
+        await Customer(owner, ct);
+        if (sync)
+        {
+            await ProcessInbox(ct, owner);
+            if (!payos.IsLive || CommerceCheckoutReadiness.Ready(config)) await Refresh(id, ct);
+        }
+        var pending = row.State == "PaymentPending" && row.ExpiresAt > Now;
+        return new(row.Id, MuaCommerceCatalog.CustomerAi, 20000, "VND", row.State, row.CreatedAt, row.ExpiresAt, row.PaidAt,
+            pending && AppCheckoutReady ? NativeCommercePayment.Read(row.PaymentDetailsJson) : null);
+    }
     public async Task<bool> Receive(JsonElement envelope, CancellationToken ct)
     {
         if (!ReadsEnabled) return false;

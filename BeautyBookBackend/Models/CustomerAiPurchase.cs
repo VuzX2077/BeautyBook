@@ -10,6 +10,9 @@ public sealed class CustomerAiPurchase
     public string Channel { get; set; } = "";
     public string? PaymentLinkId { get; set; }
     public string? CheckoutUrl { get; set; }
+    public string? PaymentDetailsJson { get; set; }
+    public string Origin { get; set; } = "IndependentWebsite";
+    public string TermsVersion { get; set; } = "";
     public DateTime? LinkCreationStartedAt { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime ExpiresAt { get; set; }

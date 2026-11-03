@@ -13,7 +13,7 @@ internal static class MuaCommerceModel
             {
                 t.HasCheckConstraint("CK_MuaCommerceOrders_Catalog", "(\"ProductId\" = 'bbook_mua_activation_v1' AND \"AmountVnd\" = 100000) OR (\"ProductId\" = 'bbook_visibility_30d_v1' AND \"AmountVnd\" = 75000)");
                 t.HasCheckConstraint("CK_MuaCommerceOrders_Currency", "\"Currency\" = 'VND'");
-                t.HasCheckConstraint("CK_MuaCommerceOrders_Origin", "\"Origin\" IN ('IndependentWebsite','AdminApproval','ExternalRequest')");
+                t.HasCheckConstraint("CK_MuaCommerceOrders_Origin", "\"Origin\" IN ('IndependentWebsite','NativeApp','AdminApproval','ExternalRequest')");
                 t.HasCheckConstraint("CK_MuaCommerceOrders_State", "\"State\" IN ('PaymentPending','PaidAwaitingFulfillment','ManualReview','Fulfilled','Cancelled','Refunded')");
                 t.HasCheckConstraint("CK_MuaCommerceOrders_Expiry", "\"ExpiresAt\" > \"CreatedAt\"");
                 t.HasCheckConstraint("CK_MuaCommerceOrders_Identity", "length(trim(\"IdempotencyKey\")) > 0 AND length(trim(\"TermsVersion\")) > 0");

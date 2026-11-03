@@ -779,8 +779,15 @@ namespace BeautyBookBackend.Migrations
                     b.Property<long>("OrderCode")
                         .HasColumnType("bigint");
 
+                    b.Property<string>("Origin")
+                        .IsRequired()
+                        .HasColumnType("text");
+
                     b.Property<DateTime?>("PaidAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("PaymentDetailsJson")
+                        .HasColumnType("text");
 
                     b.Property<string>("PaymentLinkId")
                         .HasMaxLength(100)
@@ -797,6 +804,10 @@ namespace BeautyBookBackend.Migrations
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
+
+                    b.Property<string>("TermsVersion")
+                        .IsRequired()
+                        .HasColumnType("text");
 
                     b.Property<Guid>("UserId")
                         .HasColumnType("uuid");
@@ -1444,6 +1455,9 @@ namespace BeautyBookBackend.Migrations
                     b.Property<Guid>("OrderId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("PaymentDetailsJson")
+                        .HasColumnType("text");
+
                     b.Property<string>("PaymentLinkId")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
@@ -1790,7 +1804,7 @@ namespace BeautyBookBackend.Migrations
 
                             t.HasCheckConstraint("CK_MuaCommerceOrders_Identity", "length(trim(\"IdempotencyKey\")) > 0 AND length(trim(\"TermsVersion\")) > 0");
 
-                            t.HasCheckConstraint("CK_MuaCommerceOrders_Origin", "\"Origin\" IN ('IndependentWebsite','AdminApproval','ExternalRequest')");
+                            t.HasCheckConstraint("CK_MuaCommerceOrders_Origin", "\"Origin\" IN ('IndependentWebsite','NativeApp','AdminApproval','ExternalRequest')");
 
                             t.HasCheckConstraint("CK_MuaCommerceOrders_State", "\"State\" IN ('PaymentPending','PaidAwaitingFulfillment','ManualReview','Fulfilled','Cancelled','Refunded')");
                         });

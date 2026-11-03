@@ -15,7 +15,7 @@ public class ReceivingMigrationTests {
  }
  private sealed class LegacyDomainContext(DbContextOptions<BeautyBookBackend.Data.ApplicationDbContext> options) : BeautyBookBackend.Data.ApplicationDbContext(options) {
   protected override void OnModelCreating(ModelBuilder builder) {
-   base.OnModelCreating(builder); builder.Entity<User>().Ignore(x=>x.IsDemoAccount); builder.Entity<Booking>().Ignore(x=>x.IsDemo);
+   base.OnModelCreating(builder); builder.Entity<User>().Ignore(x=>x.IsDemoAccount).Ignore(x=>x.VerifiedCommerceEmail); builder.Entity<Booking>().Ignore(x=>x.IsDemo);
    // These columns were introduced after the historical schema used by this fixture.
    builder.Entity<MakeupArtistProfile>().Ignore(x=>x.AllowCustomerVisit).Ignore(x=>x.WorkLocationName).Ignore(x=>x.WorkLocationAddress);
    builder.Entity<Booking>().Ignore(x=>x.ServiceLocationType).Ignore(x=>x.ServiceLocationName);

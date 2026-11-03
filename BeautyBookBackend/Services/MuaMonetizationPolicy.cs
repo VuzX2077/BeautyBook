@@ -9,6 +9,7 @@ public sealed class MuaMonetizationOptions
     // do not enable a checkout, writer, email trigger or enforcement in this release.
     public bool Enabled { get; set; }
     public bool WebCheckoutEnabled { get; set; }
+    public bool AppCheckoutEnabled { get; set; }
     public bool PaidEnforcementEnabled { get; set; }
     public bool SponsoredDeliveryEnabled { get; set; }
     public bool ApprovalEmailEnabled { get; set; }

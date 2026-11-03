@@ -13,7 +13,7 @@ public sealed partial class MuaEmailCommerce
         var order = await db.MuaCommerceOrders.SingleAsync(x => x.Id == id, ct);
         if (order.State != MuaCommerceOrderState.PaymentPending) return;
         if (order.ProductId == MuaCommerceCatalog.Activation) throw new CommerceException("ACTIVATION_RETIRED");
-        if (order.Origin != "IndependentWebsite" || !order.PortfolioPromotionConsent) throw new CommerceException("EMAIL_CHECKOUT_RETIRED");
+        if (order.Origin is not ("IndependentWebsite" or "NativeApp") || !order.PortfolioPromotionConsent) throw new CommerceException("EMAIL_CHECKOUT_RETIRED");
         await Recipient(order.MuaId, ct); await CheckOffer(order, ct);
         var attempt = await db.MuaCommerceAttempts.SingleAsync(x => x.OrderId == id, ct);
         if (attempt.Channel != payos.Channel) throw new CommerceException("PAYOS_CHANNEL_MISMATCH");
@@ -45,6 +45,7 @@ public sealed partial class MuaEmailCommerce
                 await db.Entry(attempt).ReloadAsync(ct);
                 if (attempt.PaymentLinkId != null && attempt.PaymentLinkId != link) throw new CommerceException("PAYOS_LINK_MISMATCH");
                 attempt.PaymentLinkId = link; attempt.CheckoutUrl = url;
+                attempt.PaymentDetailsJson ??= NativeCommercePayment.Capture(data);
                 await db.SaveChangesAsync(ct); await tx.CommitAsync(ct);
             }
             if (status == "PAID" || status is "CANCELLED" or "EXPIRED" || order.ExpiresAt <= Now) await ReconcileOrder(order.Id, ct);

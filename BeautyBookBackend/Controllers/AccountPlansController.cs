@@ -28,7 +28,7 @@ public sealed class AccountPlansController(ApplicationDbContext db, CustomerAiCo
         if (flags.Value.Enabled)
             orders.AddRange(await db.MuaCommerceOrders.AsNoTracking().Where(x => x.MuaId == owner).OrderByDescending(x => x.CreatedAt)
                 .Select(x => new PlanReceipt(x.Id, x.ProductId, x.AmountVnd, x.State.ToString(), x.CreatedAt, x.VerifiedPaidAt)).Take(100).ToListAsync(ct));
-        if (ai.CheckoutEnabled || ai.EnforcementEnabled || ai.ReconciliationEnabled)
+        if (ai.CheckoutEnabled || ai.AppCheckoutEnabled || ai.EnforcementEnabled || ai.ReconciliationEnabled)
             orders.AddRange(await db.CustomerAiPurchases.AsNoTracking().Where(x => x.UserId == owner).OrderByDescending(x => x.CreatedAt)
                 .Select(x => new PlanReceipt(x.Id, MuaCommerceCatalog.CustomerAi, 20000, x.State, x.CreatedAt, x.PaidAt)).Take(100).ToListAsync(ct));
         var state = user.Role == UserRole.MUA ? await mua.GetAsync(owner, ct) : null;

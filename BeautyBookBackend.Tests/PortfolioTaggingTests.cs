@@ -265,6 +265,15 @@ public sealed class PortfolioTaggingTests
         var catalog = await client.GetFromJsonAsync<MakeupCatalogDto>("/api/makeup-catalog"); Assert.Equal(1, catalog!.Capabilities.PortfolioTaggingVersion);
     }
 
+    private sealed class LegacyCatalogContext(DbContextOptions<ApplicationDbContext> options) : ApplicationDbContext(options)
+    {
+        protected override void OnModelCreating(ModelBuilder builder)
+        {
+            base.OnModelCreating(builder);
+            builder.Entity<User>().Ignore(x => x.VerifiedCommerceEmail);
+        }
+    }
+
     [PostgreSqlFact]
     public async Task PostgreSqlMigrationPreservesLegacyAndEnforcesAllRelationalConstraints()
     {
@@ -273,7 +282,9 @@ public sealed class PortfolioTaggingTests
         await using (var legacy = database.CreateContext())
         {
             await legacy.Database.GetService<IMigrator>().MigrateAsync("20261018003245_MakeupCatalogCore");
-            await Seed(legacy, owner, other);
+            // The historical schema predates the commerce email column.
+            await using (var seed = new LegacyCatalogContext(new DbContextOptionsBuilder<ApplicationDbContext>().UseNpgsql(database.ConnectionString).Options))
+                await Seed(seed, owner, other);
             await legacy.Database.ExecuteSqlInterpolatedAsync($"INSERT INTO \"Portfolios\" (\"PortfolioId\",\"MUAId\",\"Title\",\"Description\",\"CreatedAt\",\"Tags\",\"ImageUrls\",\"IsHidden\",\"IsPinned\") VALUES ({id},{owner},'Legacy title','Legacy description',NOW(),ARRAY['legacy'],ARRAY['https://media.test/old.jpg'],false,true)");
             await legacy.Database.MigrateAsync();
             var old = await legacy.Portfolios.WithTagging().SingleAsync();

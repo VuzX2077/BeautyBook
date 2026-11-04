@@ -22,10 +22,15 @@ public sealed class AdminDashboardController(ApplicationDbContext db) : Controll
             return BadRequest(new { Message = "Chọn khoảng ngày hợp lệ, tối đa 366 ngày." });
         var users = db.Users.AsNoTracking().Where(x => !x.IsDemoAccount && x.DeletedAt == null && (x.Role == UserRole.Customer || x.Role == UserRole.MUA));
         var completed = db.Bookings.AsNoTracking().Where(x => !x.IsDemo && x.CompletedAt != null && (x.Status == BookingStatus.Completed || x.Status == BookingStatus.AutoCompleted));
+        var reporting = new AdminFinancialReporting(db);
         async Task<object> Period(DateTime a, DateTime b)
         {
             var bookings = completed.Where(x => x.CompletedAt >= a && x.CompletedAt < b);
-            var revenue = await bookings.SumAsync(x => (decimal?)x.PlatformFeeAmount, ct) ?? 0;
+            var bookingRevenue = await bookings.SumAsync(x => (decimal?)x.PlatformFeeAmount, ct) ?? 0;
+            var aiRevenue = await reporting.AiRevenue.Where(x => x.PaidAt >= a && x.PaidAt < b).SumAsync(x => (decimal?)x.AmountVnd, ct) ?? 0;
+            var visibilityRevenue = await reporting.MuaRevenue.Where(x => x.VerifiedPaidAt >= a && x.VerifiedPaidAt < b).SumAsync(x => (decimal?)x.AmountVnd, ct) ?? 0;
+            var planRevenue = aiRevenue + visibilityRevenue;
+            var revenue = bookingRevenue + planRevenue;
             var bookingValue = await bookings.SumAsync(x => (decimal?)x.TotalAmount, ct) ?? 0;
             var completedBookings = await bookings.CountAsync(ct);
             var newUsers = await users.CountAsync(x => x.CreatedAt >= a && x.CreatedAt < b, ct);
@@ -34,8 +39,8 @@ public sealed class AdminDashboardController(ApplicationDbContext db) : Controll
             // PaidAt remains the evidence of collection after a payment transitions to refunded/forfeited.
             var depositsCollected = await db.BookingPayments.AsNoTracking().Where(x => x.Booking != null && !x.Booking.IsDemo && x.Provider == PaymentProvider.PayOS && x.PaidAt >= a && x.PaidAt < b).SumAsync(x => (decimal?)x.Amount, ct) ?? 0;
             var refundsCompleted = await db.Refunds.AsNoTracking().Where(x => x.Booking != null && !x.Booking.IsDemo && x.Status == RefundStatus.Completed && x.CompletedAt >= a && x.CompletedAt < b).SumAsync(x => (decimal?)x.Amount, ct) ?? 0;
-            var successfulTransactions = await db.BookingPayments.AsNoTracking().CountAsync(x => x.Booking != null && !x.Booking.IsDemo && x.Provider == PaymentProvider.PayOS && x.PaidAt >= a && x.PaidAt < b, ct);
-            return new { revenue, bookingValue, completedBookings, newUsers, newMuas, totalBookings, depositsCollected, refundsCompleted, successfulTransactions };
+            var successfulTransactions = await reporting.Receipts().CountAsync(x => x.PaidAt >= a && x.PaidAt < b, ct);
+            return new { revenue, bookingRevenue, planRevenue, aiRevenue, visibilityRevenue, bookingValue, completedBookings, newUsers, newMuas, totalBookings, depositsCollected, refundsCompleted, successfulTransactions };
         }
         var current = await Period(start, end);
         var previous = await Period(previousStart, start);
@@ -43,15 +48,24 @@ public sealed class AdminDashboardController(ApplicationDbContext db) : Controll
         var muas = await users.CountAsync(x => x.Role == UserRole.MUA, ct);
         var locked = await users.CountAsync(x => !x.IsActive, ct);
         var allReviews = VisibleReviews();
+        var lifetimeBookingRevenue = await completed.SumAsync(x => (decimal?)x.PlatformFeeAmount, ct) ?? 0;
+        var lifetimeAiRevenue = await reporting.AiRevenue.SumAsync(x => (decimal?)x.AmountVnd, ct) ?? 0;
+        var lifetimeVisibilityRevenue = await reporting.MuaRevenue.SumAsync(x => (decimal?)x.AmountVnd, ct) ?? 0;
         var lifetime = new {
-            revenue = await completed.SumAsync(x => (decimal?)x.PlatformFeeAmount, ct) ?? 0,
+            revenue = lifetimeBookingRevenue + lifetimeAiRevenue + lifetimeVisibilityRevenue,
+            bookingRevenue = lifetimeBookingRevenue, planRevenue = lifetimeAiRevenue + lifetimeVisibilityRevenue,
+            aiRevenue = lifetimeAiRevenue, visibilityRevenue = lifetimeVisibilityRevenue,
             reviewCount = await allReviews.CountAsync(ct),
             averageRating = await allReviews.AverageAsync(x => (double?)x.Rating, ct),
-            successfulTransactions = await CollectedPayments().CountAsync(ct)
+            successfulTransactions = await reporting.Receipts().CountAsync(ct)
         };
         var revenueDays = await completed.Where(x => x.CompletedAt >= start && x.CompletedAt < end)
             .GroupBy(x => x.CompletedAt!.Value.AddHours(7).Date)
             .Select(g => new { Day = g.Key, Value = g.Sum(x => x.PlatformFeeAmount) }).ToListAsync(ct);
+        var aiDays = await reporting.AiRevenue.Where(x => x.PaidAt >= start && x.PaidAt < end)
+            .GroupBy(x => x.PaidAt!.Value.AddHours(7).Date).Select(g => new { Day = g.Key, Value = g.Sum(x => (decimal)x.AmountVnd) }).ToListAsync(ct);
+        var muaDays = await reporting.MuaRevenue.Where(x => x.VerifiedPaidAt >= start && x.VerifiedPaidAt < end)
+            .GroupBy(x => x.VerifiedPaidAt!.Value.AddHours(7).Date).Select(g => new { Day = g.Key, Value = g.Sum(x => (decimal)x.AmountVnd) }).ToListAsync(ct);
         var userDays = await users.Where(x => !x.IsDemoAccount && x.CreatedAt >= start && x.CreatedAt < end)
             .GroupBy(x => x.CreatedAt.AddHours(7).Date)
             .Select(g => new { Day = g.Key, Value = g.Count(), Muas = g.Count(x => x.Role == UserRole.MUA) }).ToListAsync(ct);
@@ -75,10 +89,12 @@ public sealed class AdminDashboardController(ApplicationDbContext db) : Controll
                 muaName = db.Users.Where(u => u.UserId == x.MUAId).Select(u => u.DeletedAt == null ? u.FullName : "Người dùng đã xóa").FirstOrDefault() }).ToListAsync(ct);
         var daily = Enumerable.Range(0, to.DayNumber - from.DayNumber + 1).Select(i => {
             var day = from.AddDays(i).ToDateTime(TimeOnly.MinValue);
-            return new { date = from.AddDays(i).ToString("yyyy-MM-dd"), revenue = revenueDays.FirstOrDefault(x => x.Day == day)?.Value ?? 0, newUsers = userDays.FirstOrDefault(x => x.Day == day)?.Value ?? 0,
+            var bookingRevenue = revenueDays.FirstOrDefault(x => x.Day == day)?.Value ?? 0;
+            var planRevenue = (aiDays.FirstOrDefault(x => x.Day == day)?.Value ?? 0) + (muaDays.FirstOrDefault(x => x.Day == day)?.Value ?? 0);
+            return new { date = from.AddDays(i).ToString("yyyy-MM-dd"), revenue = bookingRevenue + planRevenue, bookingRevenue, planRevenue, newUsers = userDays.FirstOrDefault(x => x.Day == day)?.Value ?? 0,
                 newMuas = userDays.FirstOrDefault(x => x.Day == day)?.Muas ?? 0, bookings = bookingDays.FirstOrDefault(x => x.Day == day)?.Value ?? 0 };
         });
-        return Ok(new { from, to, timezone = "Asia/Ho_Chi_Minh", current, previous, lifetime,
+        return Ok(new { from, to, timezone = "Asia/Ho_Chi_Minh", revenueScope = "BookingAndPlans", current, previous, lifetime,
             users = new { total = customers + muas, customers, muas, locked }, daily,
             bookingStatuses = statuses.OrderBy(x => x.Status).Select(x => new { status = x.Status.ToString(), count = x.Count }),
             serviceReviews = new {
@@ -111,21 +127,30 @@ public sealed class AdminDashboardController(ApplicationDbContext db) : Controll
             if (!DashboardDateRange.TryCreate(from.Value, to!.Value, out start, out end, out _))
                 return BadRequest(new { Message = "Chọn khoảng ngày hợp lệ, tối đa 366 ngày." });
         }
-        var query = CollectedPayments();
+        var reporting = new AdminFinancialReporting(db);
+        var query = reporting.Receipts();
         if (from.HasValue) query = query.Where(x => x.PaidAt >= start && x.PaidAt < end);
         var total = await query.CountAsync(ct);
-        var items = await query.OrderByDescending(x => x.PaidAt).ThenByDescending(x => x.PaymentId)
+        var pageRows = await query.OrderByDescending(x => x.PaidAt).ThenByDescending(x => x.PaymentId).ThenBy(x => x.Kind)
             .Skip((page - 1) * pageSize).Take(pageSize)
-            .Select(x => new { x.PaymentId, x.BookingId, x.Amount, x.PaidAt, status = x.Status.ToString(), x.ProviderOrderCode,
-                customerName = db.Users.Where(u => u.UserId == x.CustomerId).Select(u => u.DeletedAt == null ? u.FullName : "Người dùng đã xóa").FirstOrDefault() }).ToListAsync(ct);
+            .ToListAsync(ct);
+        var items = await reporting.Describe(pageRows, ct);
         return Ok(new { items, total, page, pageSize });
     }
 
     [HttpGet("transactions/{id:guid}")]
-    public async Task<IActionResult> TransactionDetail(Guid id, CancellationToken ct)
+    public async Task<IActionResult> TransactionDetail(Guid id, CancellationToken ct, [FromQuery] string? type = null)
     {
+        if (type != null && type is not ("Booking" or "CustomerAi" or "MuaPlan")) return BadRequest(new { Message = "Loại giao dịch không hợp lệ." });
+        var reporting = new AdminFinancialReporting(db);
+        var candidates = reporting.Receipts().Where(x => x.PaymentId == id);
+        if (type != null) { var kind = type == "Booking" ? 0 : type == "CustomerAi" ? 1 : 2; candidates = candidates.Where(x => x.Kind == kind); }
+        var receipts = await candidates.Take(2).ToListAsync(ct);
+        if (receipts.Count == 0) return NotFound(new { Message = "Không tìm thấy giao dịch." });
+        if (receipts.Count > 1) return BadRequest(new { Message = "Cần chọn loại giao dịch để xem chi tiết." });
+        if (receipts[0].Kind != 0) return await PlanTransactionDetail(reporting, receipts[0], ct);
         var item = await CollectedPayments().Where(x => x.PaymentId == id).Select(x => new {
-            x.PaymentId, x.BookingId, x.CustomerId, x.Amount, x.PaidAt, x.CreatedAt, x.UpdatedAt, x.RefundRequestedAt, x.RefundedAt,
+            x.PaymentId, x.BookingId, transactionType = "Booking", x.CustomerId, x.Amount, x.PaidAt, x.CreatedAt, x.UpdatedAt, x.RefundRequestedAt, x.RefundedAt,
             status = x.Status.ToString(), provider = x.Provider.ToString(), x.ProviderOrderCode, x.ProviderReference,
             customerName = db.Users.Where(u => u.UserId == x.CustomerId).Select(u => u.DeletedAt == null ? u.FullName : "Người dùng đã xóa").FirstOrDefault(),
             muaName = db.Users.Where(u => u.UserId == x.Booking!.MUAId).Select(u => u.DeletedAt == null ? u.FullName : "Người dùng đã xóa").FirstOrDefault(),
@@ -135,6 +160,20 @@ public sealed class AdminDashboardController(ApplicationDbContext db) : Controll
                 .Select(r => new { r.RefundId, r.Amount, status = r.Status.ToString(), r.CreatedAt, r.CompletedAt }).ToList()
         }).FirstOrDefaultAsync(ct);
         return item == null ? NotFound(new { Message = "Không tìm thấy giao dịch." }) : Ok(item);
+    }
+
+    private async Task<IActionResult> PlanTransactionDetail(AdminFinancialReporting reporting, FinancialReceipt receipt, CancellationToken ct)
+    {
+        var item = (await reporting.Describe([receipt], ct)).Single();
+        var ai = receipt.Kind == 1 ? await db.CustomerAiPurchases.AsNoTracking().SingleAsync(x => x.Id == receipt.PaymentId, ct) : null;
+        var mua = receipt.Kind == 2 ? await db.MuaCommerceOrders.AsNoTracking().SingleAsync(x => x.Id == receipt.PaymentId, ct) : null;
+        return Ok(new { item.PaymentId, item.BookingId, item.TransactionType, item.Amount, item.PaidAt, item.Status, item.ProviderOrderCode, item.CustomerName,
+            customerId = receipt.OwnerId, item.ProductId, item.ProductName, planVersion = ai?.PlanVersion ?? mua!.PlanVersion,
+            durationDays = mua?.DurationDays, lifetime = ai != null, createdAt = ai?.CreatedAt ?? mua!.CreatedAt,
+            updatedAt = item.PaidAt, refundRequestedAt = (DateTime?)null, refundedAt = (DateTime?)null, revokedAt = ai?.RevokedAt,
+            revocationReason = ai?.RevocationReason, origin = ai?.Origin ?? mua!.Origin, provider = "PayOS", providerReference = (string?)null,
+            muaName = receipt.Kind == 2 ? item.CustomerName : null, booking = (object?)null, refunds = Array.Empty<object>(),
+            includedInRevenue = receipt.Kind == 1 ? ai!.State != "Refunded" : mua!.State != MuaCommerceOrderState.Refunded });
     }
 
     [HttpGet("reviews")]

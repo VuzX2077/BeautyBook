@@ -54,7 +54,6 @@ public sealed class MuaPromotionController(ApplicationDbContext db, IOptions<Mua
     [Authorize(Roles = "Admin"), HttpGet("api/admin/mua-promotions")]
     public async Task<IActionResult> Tasks([FromQuery] string? state, CancellationToken ct)
     {
-        if (!options.Value.WebPortalEnabled) return Ok(Array.Empty<object>());
         var tasks = db.MuaFacebookTasks.AsNoTracking(); if (!string.IsNullOrWhiteSpace(state)) tasks = tasks.Where(x => x.State == state);
         return Ok(await tasks.OrderBy(x => x.DueAt).Select(x => new { x.Id, x.MuaId, name = db.Users.Where(u => u.UserId == x.MuaId).Select(u => u.FullName).FirstOrDefault(),
             x.State, x.CycleStartsAt, x.DueAt, x.Draft, x.PublishedUrl, x.PublishedAt, x.Revisions, x.RevisionRequest, x.RemedyNote }).Take(100).ToListAsync(ct));

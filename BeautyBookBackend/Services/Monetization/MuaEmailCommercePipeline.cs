@@ -97,6 +97,7 @@ public sealed partial class MuaEmailCommerce
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         await MuaAccessPolicy.Lock(db, order.MuaId, ct); await db.Entry(order).ReloadAsync(ct);
         if (order.State == MuaCommerceOrderState.Fulfilled) { await tx.CommitAsync(ct); return; }
+        if (order.State != MuaCommerceOrderState.PaidAwaitingFulfillment || order.VerifiedPaidAt == null) { await tx.CommitAsync(ct); return; }
         var profile = await db.MakeupArtistProfiles.Include(x => x.User).SingleAsync(x => x.MUAId == order.MuaId, ct);
         var account = await db.MuaMonetizationAccounts.SingleOrDefaultAsync(x => x.MuaId == order.MuaId, ct);
         var check = await eligibility.EvaluateAsync(order.MuaId, false);
@@ -172,11 +173,65 @@ public sealed partial class MuaEmailCommerce
 
     public async Task ReconcilePending(CancellationToken ct)
     {
-        if (!options.Value.WorkersEnabled || !options.Value.PaymentLinksEnabled) return;
+        if (!options.Value.WorkersEnabled) return;
+        await RepairAwaitingFulfillment(ct);
+        if (!options.Value.PaymentLinksEnabled) return;
         var ids = await db.MuaCommerceOrders.AsNoTracking().Where(x => x.State == MuaCommerceOrderState.PaymentPending
             && db.MuaCommerceAttempts.Any(a => a.OrderId == x.Id && a.PaymentLinkId != null && a.Channel == payos.Channel))
             .OrderBy(x => x.CreatedAt).Select(x => x.Id).Take(50).ToListAsync(ct);
         foreach (var id in ids) { try { await ReconcileOrder(id, ct); } catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; } catch { db.ChangeTracker.Clear(); } }
+    }
+
+    private async Task RepairAwaitingFulfillment(CancellationToken ct)
+    {
+        // Old verified receipts may have no fulfillment job, or an exhausted job
+        // while the order still says "awaiting". Repair only the delivery queue.
+        var ids = await db.MuaCommerceOrders.AsNoTracking().Where(x => x.State == MuaCommerceOrderState.PaidAwaitingFulfillment && x.VerifiedPaidAt != null
+            && !db.MuaCommerceJobs.Any(j => j.TargetId == x.Id && j.Kind == "Fulfill" && (j.State == "Pending" || j.State == "Processing")))
+            .OrderBy(x => x.VerifiedPaidAt).Select(x => x.Id).Take(25).ToListAsync(ct);
+        foreach (var id in ids)
+        {
+            await using var tx = await db.Database.BeginTransactionAsync(ct);
+            var order = await db.MuaCommerceOrders.SingleAsync(x => x.Id == id, ct);
+            await MuaAccessPolicy.Lock(db, order.MuaId, ct); await db.Entry(order).ReloadAsync(ct);
+            if (order.State != MuaCommerceOrderState.PaidAwaitingFulfillment || order.VerifiedPaidAt == null) { await tx.CommitAsync(ct); continue; }
+            var jobs = db.MuaCommerceJobs.Where(x => x.TargetId == id && x.Kind == "Fulfill");
+            if (await jobs.AnyAsync(x => x.State == "Pending" || x.State == "Processing", ct)) { await tx.CommitAsync(ct); continue; }
+            if (await jobs.AnyAsync(x => x.State == "ManualReview", ct))
+            {
+                order.State = MuaCommerceOrderState.ManualReview;
+                db.MuaCommerceAudit.Add(new() { Id = Guid.NewGuid(), MuaId = order.MuaId, OrderId = id, Action = "FulfillmentNeedsReview", CreatedAt = Now });
+            }
+            else await Enqueue("Fulfill", id, "fulfill-repair:" + id.ToString("N"), ct);
+            await db.SaveChangesAsync(ct); await tx.CommitAsync(ct);
+        }
+    }
+
+    public async Task RetryFulfillment(Guid orderId, Guid admin, string evidence, string reason, CancellationToken ct)
+    {
+        if (!options.Value.WorkersEnabled) throw new CommerceException("COMMERCE_WORKER_DISABLED");
+        if (string.IsNullOrWhiteSpace(evidence) || evidence.Length > 120 || string.IsNullOrWhiteSpace(reason) || reason.Length > 1000) throw new CommerceException("INVALID_SUPPORT_DECISION");
+        await new PlayReviewPolicy(db).EnsureNormalUserAsync(admin);
+        if (!await db.Users.AnyAsync(x => x.UserId == admin && x.Role == UserRole.Admin && x.IsActive && x.DeletedAt == null, ct)) throw new CommerceException("ADMIN_REQUIRED");
+        await using (var tx = await db.Database.BeginTransactionAsync(ct))
+        {
+            var order = await db.MuaCommerceOrders.SingleOrDefaultAsync(x => x.Id == orderId, ct) ?? throw new CommerceException("ORDER_NOT_FOUND");
+            await MuaAccessPolicy.Lock(db, order.MuaId, ct); await db.Entry(order).ReloadAsync(ct);
+            if (order.VerifiedPaidAt == null) throw new CommerceException("NO_VERIFIED_PAYMENT_TO_RECOVER");
+            // Repeating a completed request must not append another interval or charge.
+            if (order.State == MuaCommerceOrderState.Fulfilled) { await tx.CommitAsync(ct); return; }
+            if (order.State != MuaCommerceOrderState.PaidAwaitingFulfillment) throw new CommerceException("ORDER_NOT_AWAITING_FULFILLMENT");
+            await Recipient(order.MuaId, ct);
+            db.SubscriptionPlanChanges.Add(new() { Id = Guid.NewGuid(), PlanId = "order:" + orderId, ActorId = admin, Action = "MuaFulfillmentRetry", Reason = reason,
+                BeforeJson = JsonSerializer.Serialize(new { state = order.State.ToString(), evidence }), AfterJson = "RetryFulfillment", CreatedAt = Now });
+            await Enqueue("Fulfill", orderId, "support-retry:" + Guid.NewGuid().ToString("N"), ct);
+            db.MuaCommerceAudit.Add(new() { Id = Guid.NewGuid(), MuaId = order.MuaId, OrderId = orderId, Action = "AdminFulfillmentRetry",
+                EvidenceHash = PayOsCommerceProtocol.Hash(JsonSerializer.Serialize(new { admin, evidence, reason })), CreatedAt = Now });
+            await db.SaveChangesAsync(ct); await tx.CommitAsync(ct);
+        }
+        // Reuse the normal eligibility, per-MUA lock and idempotent grant writer.
+        // Email remains queued; publication is still a separate human task.
+        await Fulfill(orderId, ct);
     }
 
     public async Task Recover(Guid orderId, Guid admin, CancellationToken ct, string evidence = "Legacy support", string reason = "Legacy recovery")

@@ -11,15 +11,18 @@ internal static class MuaCommerceModel
         {
             b.ToTable("MuaCommerceOrders", t =>
             {
-                t.HasCheckConstraint("CK_MuaCommerceOrders_Catalog", "(\"ProductId\" = 'bbook_mua_activation_v1' AND \"AmountVnd\" = 100000) OR (\"ProductId\" = 'bbook_visibility_30d_v1' AND \"AmountVnd\" = 75000)");
+                t.HasCheckConstraint("CK_MuaCommerceOrders_Catalog", "\"AmountVnd\" >= 1000 AND \"DurationDays\" > 0");
                 t.HasCheckConstraint("CK_MuaCommerceOrders_Currency", "\"Currency\" = 'VND'");
-                t.HasCheckConstraint("CK_MuaCommerceOrders_Origin", "\"Origin\" IN ('IndependentWebsite','AdminApproval','ExternalRequest')");
+                t.HasCheckConstraint("CK_MuaCommerceOrders_Origin", "\"Origin\" IN ('IndependentWebsite','NativeApp','AdminApproval','ExternalRequest')");
                 t.HasCheckConstraint("CK_MuaCommerceOrders_State", "\"State\" IN ('PaymentPending','PaidAwaitingFulfillment','ManualReview','Fulfilled','Cancelled','Refunded')");
                 t.HasCheckConstraint("CK_MuaCommerceOrders_Expiry", "\"ExpiresAt\" > \"CreatedAt\"");
                 t.HasCheckConstraint("CK_MuaCommerceOrders_Identity", "length(trim(\"IdempotencyKey\")) > 0 AND length(trim(\"TermsVersion\")) > 0");
             });
             b.HasKey(x => x.Id);
             b.Property(x => x.ProductId).HasMaxLength(80);
+            b.Property(x => x.DurationDays).HasDefaultValue(30);
+            b.Property(x => x.PlanVersion).HasDefaultValue(1);
+            b.Property(x => x.ProductName).HasDefaultValue("BBook Visibility 30 ngày");
             b.Property(x => x.Currency).HasMaxLength(3);
             b.Property(x => x.Origin).HasMaxLength(40);
             b.Property(x => x.IdempotencyKey).HasMaxLength(80);
@@ -82,7 +85,7 @@ internal static class MuaCommerceModel
         model.Entity<MuaFacebookTask>(b =>
         {
             b.ToTable("MuaFacebookTasks", t => { t.HasCheckConstraint("CK_MuaFacebookTask_Revisions", "\"Revisions\" BETWEEN 0 AND 1"); t.HasCheckConstraint("CK_MuaFacebookTask_State", "\"State\" IN ('Preparing','Scheduled','Published','NeedsContent','RevisionRequested')"); });
-            b.HasKey(x => x.Id); b.HasIndex(x => x.GrantId).IsUnique(); b.HasIndex(x => new { x.State, x.DueAt });
+            b.HasKey(x => x.Id); b.HasIndex(x => new { x.GrantId, x.CycleStartsAt }).IsUnique(); b.HasIndex(x => new { x.State, x.DueAt });
             b.Property(x => x.State).HasMaxLength(30); b.Property(x => x.Draft).HasMaxLength(6000); b.Property(x => x.PublishedUrl).HasMaxLength(500);
             b.Property(x => x.RevisionRequest).HasMaxLength(1000); b.Property(x => x.RemedyNote).HasMaxLength(1000);
             b.HasOne<MuaVisibilityGrant>().WithMany().HasForeignKey(x => x.GrantId).OnDelete(DeleteBehavior.Restrict);

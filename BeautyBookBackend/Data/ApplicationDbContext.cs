@@ -6,6 +6,8 @@ namespace BeautyBookBackend.Data
 {
     public class ApplicationDbContext : DbContext
     {
+        public DbSet<SubscriptionPlan> SubscriptionPlans { get; set; } = null!;
+        public DbSet<SubscriptionPlanChange> SubscriptionPlanChanges { get; set; } = null!;
         public bool PaidMuaEnforcement { get; }
         public bool ApprovalPaymentEmails { get; }
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options, Microsoft.Extensions.Options.IOptions<BeautyBookBackend.Services.MuaMonetizationOptions>? monetization = null) : base(options)
@@ -119,8 +121,19 @@ namespace BeautyBookBackend.Data
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
+            modelBuilder.Entity<SubscriptionPlan>(b => {
+                b.HasKey(x => x.Id); b.Property(x => x.Id).HasMaxLength(80);
+                b.Property(x => x.Version).IsConcurrencyToken();
+                b.HasData(new SubscriptionPlan { Id = "bbook_customer_ai_lifetime_v1", Name = "AI quét mặt trọn đời", Role = "Customer", AmountVnd = 20000, State = "Published" },
+                    new SubscriptionPlan { Id = "bbook_visibility_30d_v1", Name = "BBook Visibility 30 ngày", Role = "MUA", AmountVnd = 75000, Days = 30, State = "Published" });
+            });
+            modelBuilder.Entity<SubscriptionPlanChange>(b => { b.HasKey(x => x.Id); b.HasIndex(x => new { x.PlanId, x.CreatedAt }); });
             modelBuilder.Entity<CustomerAiPurchase>(b => {
                 b.HasKey(x => x.Id);
+                b.Property(x => x.AmountVnd).HasDefaultValue(20000);
+                b.Property(x => x.ProductId).HasDefaultValue("bbook_customer_ai_lifetime_v1");
+                b.Property(x => x.ProductName).HasDefaultValue("AI quét mặt trọn đời");
+                b.Property(x => x.PlanVersion).HasDefaultValue(1);
                 b.HasIndex(x => x.OrderCode).IsUnique();
                 b.HasIndex(x => new { x.UserId, x.IdempotencyKey }).IsUnique();
                 b.Property(x => x.IdempotencyKey).HasMaxLength(80);

@@ -6,13 +6,18 @@ namespace BeautyBookBackend.Services.Monetization;
 public sealed partial class MuaEmailCommerce
 {
     public bool CheckoutReady => options.Value.Enabled && options.Value.WebPortalEnabled && options.Value.WebCheckoutEnabled && options.Value.PaymentLinksEnabled && options.Value.WorkersEnabled && (!payos.IsLive || CommerceCheckoutReadiness.Ready(config));
-    public async Task<Guid> WebBuy(Guid owner, string sku, string key, string terms, bool consent, CancellationToken ct)
+    public bool AppCheckoutReady => config.GetValue<bool>("AppCommerce:Enabled") && options.Value.Enabled && options.Value.AppCheckoutEnabled
+        && options.Value.PaymentLinksEnabled && options.Value.WorkersEnabled && options.Value.SponsoredDeliveryEnabled
+        && (!payos.IsLive || CommerceCheckoutReadiness.Ready(config));
+    public Task<Guid> WebBuy(Guid owner, string sku, string key, string terms, bool consent, CancellationToken ct) => BuyCore(owner, sku, key, terms, consent, false, ct);
+    public Task<Guid> AppBuy(Guid owner, string sku, string key, string terms, bool consent, CancellationToken ct) => BuyCore(owner, sku, key, terms, consent, true, ct);
+    private async Task<Guid> BuyCore(Guid owner, string sku, string key, string terms, bool consent, bool native, CancellationToken ct)
     {
-        if (sku != MuaCommerceCatalog.Visibility) throw new CommerceException("PRODUCT_RETIRED_OR_INVALID");
-        if (!CheckoutReady)
+
+        if (!(native ? AppCheckoutReady : CheckoutReady))
             throw new CommerceException("WEB_CHECKOUT_DISABLED");
         if (string.IsNullOrWhiteSpace(key) || key.Length > 80 || key != key.Trim()) throw new CommerceException("INVALID_IDEMPOTENCY_KEY");
-        if (terms != MuaCommerceCatalog.TermsVersion) throw new CommerceException("TERMS_VERSION_MISMATCH");
+        await SubscriptionCatalog.Buyable(db, sku, "MUA", terms, ct);
         if (!consent) throw new CommerceException("PORTFOLIO_CONSENT_REQUIRED");
         await Recipient(owner, ct);
         var readiness = await eligibility.EvaluateAsync(owner, false);
@@ -27,10 +32,14 @@ public sealed partial class MuaEmailCommerce
         }
         if (pending != null)
         {
-            if (pending.Origin != "IndependentWebsite" || !pending.PortfolioPromotionConsent || pending.TermsVersion != terms) throw new CommerceException("PENDING_ORDER_NEEDS_REVIEW");
+            if (pending.Origin is not ("IndependentWebsite" or "NativeApp") || !pending.PortfolioPromotionConsent || pending.TermsVersion != terms) throw new CommerceException("PENDING_ORDER_NEEDS_REVIEW");
+            // Recover a process crash between reserving the order and queueing its link.
+            await using var recovery = await db.Database.BeginTransactionAsync(ct); await MuaAccessPolicy.Lock(db, owner, ct);
+            await Enqueue("Link", pending.Id, "link:" + pending.Id.ToString("N"), ct);
+            await db.SaveChangesAsync(ct); await recovery.CommitAsync(ct);
             return pending.Id;
         }
-        var order = await new MuaCommerceFoundation(db, clock).CreateOrderAsync(owner, sku, key, terms, ct, "IndependentWebsite", payos.Channel, portfolioConsent: true);
+        var order = await new MuaCommerceFoundation(db, clock).CreateOrderAsync(owner, sku, key, terms, ct, native ? "NativeApp" : "IndependentWebsite", payos.Channel, portfolioConsent: true);
         await using var tx = await db.Database.BeginTransactionAsync(ct); await MuaAccessPolicy.Lock(db, owner, ct);
         order.PortfolioPromotionConsent = true;
         await Enqueue("Link", order.Id, "link:" + order.Id.ToString("N"), ct);
@@ -40,14 +49,29 @@ public sealed partial class MuaEmailCommerce
     {
         var order = await db.MuaCommerceOrders.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id && x.MuaId == owner, ct);
         if (order == null) return null;
-        var available = order.ProductId == MuaCommerceCatalog.Visibility && CheckoutReady && order.State == MuaCommerceOrderState.PaymentPending && order.ExpiresAt > Now;
+        var available = order.ProductId != MuaCommerceCatalog.Activation && CheckoutReady && order.State == MuaCommerceOrderState.PaymentPending && order.ExpiresAt > Now;
         if (available) { try { await Recipient(owner, ct); } catch (CommerceException) { available = false; } }
         var url = available ? await db.MuaCommerceAttempts.Where(x => x.OrderId == id).Select(x => x.CheckoutUrl).SingleAsync(ct) : null;
         return new { order.Id, order.ProductId, order.AmountVnd, order.Currency, state = order.State.ToString(), order.CreatedAt, order.ExpiresAt, order.VerifiedPaidAt,
             checkoutAvailable = available && url != null, checkoutUrl = url };
     }
     public async Task<object> WebHistory(Guid owner, CancellationToken ct) => await db.MuaCommerceOrders.AsNoTracking().Where(x => x.MuaId == owner)
-        .OrderByDescending(x => x.CreatedAt).Select(x => new { x.Id, x.ProductId, x.AmountVnd, state = x.State.ToString(), x.CreatedAt, x.VerifiedPaidAt }).Take(100).ToListAsync(ct);
+        .OrderByDescending(x => x.CreatedAt).Select(x => new { x.Id, x.ProductId, x.ProductName, x.AmountVnd, state = x.State.ToString(), x.CreatedAt, x.VerifiedPaidAt }).Take(100).ToListAsync(ct);
+    public async Task<NativeCommerceOrder?> AppOrder(Guid owner, Guid id, bool sync, CancellationToken ct)
+    {
+        var order = await db.MuaCommerceOrders.SingleOrDefaultAsync(x => x.Id == id && x.MuaId == owner, ct);
+        if (order == null) return null;
+        if (sync && options.Value.WorkersEnabled && options.Value.PaymentLinksEnabled && (!payos.IsLive || CommerceCheckoutReadiness.Ready(config))
+            && order.State == MuaCommerceOrderState.PaymentPending)
+        {
+            var linked = await db.MuaCommerceAttempts.AnyAsync(x => x.OrderId == id && x.PaymentLinkId != null, ct);
+            if (linked) await ReconcileOrder(id, ct);
+        }
+        var attempt = await db.MuaCommerceAttempts.AsNoTracking().SingleAsync(x => x.OrderId == id, ct);
+        var pending = order.State == MuaCommerceOrderState.PaymentPending && order.ExpiresAt > Now;
+        return new(order.Id, order.ProductId, order.AmountVnd, order.Currency, order.State.ToString(), order.CreatedAt, order.ExpiresAt,
+            order.VerifiedPaidAt, pending && AppCheckoutReady ? NativeCommercePayment.Read(attempt.PaymentDetailsJson) : null);
+    }
     public async Task Revision(Guid owner, Guid id, string reason, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(reason) || reason.Length > 1000) throw new CommerceException("INVALID_REVISION");
@@ -63,9 +87,13 @@ public sealed partial class MuaEmailCommerce
         var grant = order.ProductId == MuaCommerceCatalog.Activation
             ? await db.MuaVisibilityGrants.SingleAsync(x => x.MuaId == order.MuaId && x.Kind == VisibilityGrantKind.FirstActivationGift, ct)
             : await db.MuaVisibilityGrants.SingleAsync(x => x.SourceReference == "payos:" + order.Id.ToString("N"), ct);
-        if (await db.MuaFacebookTasks.AnyAsync(x => x.GrantId == grant.Id, ct)) return;
-        db.MuaFacebookTasks.Add(new() { Id = Guid.NewGuid(), MuaId = order.MuaId, GrantId = grant.Id, OrderId = order.Id,
-            CycleStartsAt = grant.StartsAt, DueAt = WorkingDeadline(grant.StartsAt), State = grant.StartsAt > Now ? "Scheduled" : "Preparing", CreatedAt = Now });
+        var existing = await db.MuaFacebookTasks.Where(x => x.GrantId == grant.Id).Select(x => x.CycleStartsAt).ToListAsync(ct);
+        for (var cycle = grant.StartsAt; cycle < grant.EndsAt; cycle = cycle.AddDays(30))
+        {
+            if (existing.Contains(cycle)) continue;
+            db.MuaFacebookTasks.Add(new() { Id = Guid.NewGuid(), MuaId = order.MuaId, GrantId = grant.Id, OrderId = order.Id,
+                CycleStartsAt = cycle, DueAt = WorkingDeadline(cycle), State = cycle > Now ? "Scheduled" : "Preparing", CreatedAt = Now });
+        }
     }
     public static DateTime WorkingDeadline(DateTime start)
     {

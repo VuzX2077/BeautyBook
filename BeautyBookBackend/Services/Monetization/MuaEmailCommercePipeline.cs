@@ -13,7 +13,7 @@ public sealed partial class MuaEmailCommerce
         var order = await db.MuaCommerceOrders.SingleAsync(x => x.Id == id, ct);
         if (order.State != MuaCommerceOrderState.PaymentPending) return;
         if (order.ProductId == MuaCommerceCatalog.Activation) throw new CommerceException("ACTIVATION_RETIRED");
-        if (order.Origin != "IndependentWebsite" || !order.PortfolioPromotionConsent) throw new CommerceException("EMAIL_CHECKOUT_RETIRED");
+        if (order.Origin is not ("IndependentWebsite" or "NativeApp") || !order.PortfolioPromotionConsent) throw new CommerceException("EMAIL_CHECKOUT_RETIRED");
         await Recipient(order.MuaId, ct); await CheckOffer(order, ct);
         var attempt = await db.MuaCommerceAttempts.SingleAsync(x => x.OrderId == id, ct);
         if (attempt.Channel != payos.Channel) throw new CommerceException("PAYOS_CHANNEL_MISMATCH");
@@ -45,6 +45,7 @@ public sealed partial class MuaEmailCommerce
                 await db.Entry(attempt).ReloadAsync(ct);
                 if (attempt.PaymentLinkId != null && attempt.PaymentLinkId != link) throw new CommerceException("PAYOS_LINK_MISMATCH");
                 attempt.PaymentLinkId = link; attempt.CheckoutUrl = url;
+                attempt.PaymentDetailsJson ??= NativeCommercePayment.Capture(data);
                 await db.SaveChangesAsync(ct); await tx.CommitAsync(ct);
             }
             if (status == "PAID" || status is "CANCELLED" or "EXPIRED" || order.ExpiresAt <= Now) await ReconcileOrder(order.Id, ct);
@@ -104,7 +105,7 @@ public sealed partial class MuaEmailCommerce
             || profile.Status == MuaStatus.Suspended || profile.VerificationStatus != MuaVerificationStatus.Approved || check == null || check.MissingRequirements.Count != 0
             || order.ProductId == MuaCommerceCatalog.Activation && (account!.Cohort != MuaActivationCohort.PaidActivation || account.ActivationRevokedAt != null
                 || account.ActivationPurchaseReference != null && account.ActivationPurchaseReference != source)
-            || order.ProductId == MuaCommerceCatalog.Visibility && !MuaMonetizationPolicy.HasPermanentActivation(account))
+            || order.ProductId != MuaCommerceCatalog.Activation && !MuaMonetizationPolicy.HasPermanentActivation(account))
         { order.State = MuaCommerceOrderState.ManualReview; await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return; }
         var now = Now;
         var grants = await db.MuaVisibilityGrants.Where(x => x.MuaId == order.MuaId).ToListAsync(ct);
@@ -122,7 +123,7 @@ public sealed partial class MuaEmailCommerce
         {
             var interval = MuaMonetizationPolicy.NextVisibilityInterval(now, grants);
             db.MuaVisibilityGrants.Add(new() { Id = Guid.NewGuid(), MuaId = order.MuaId, Kind = VisibilityGrantKind.Paid,
-                SourceReference = source, StartsAt = interval.StartsAt, EndsAt = interval.EndsAt, CreatedAt = now });
+                SourceReference = source, StartsAt = interval.StartsAt, EndsAt = interval.StartsAt.AddDays(order.DurationDays), CreatedAt = now });
         }
         await db.SaveChangesAsync(ct);
         var published = await eligibility.EvaluateAsync(order.MuaId);
@@ -178,16 +179,19 @@ public sealed partial class MuaEmailCommerce
         foreach (var id in ids) { try { await ReconcileOrder(id, ct); } catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; } catch { db.ChangeTracker.Clear(); } }
     }
 
-    public async Task Recover(Guid orderId, Guid admin, CancellationToken ct)
+    public async Task Recover(Guid orderId, Guid admin, CancellationToken ct, string evidence = "Legacy support", string reason = "Legacy recovery")
     {
+        if (string.IsNullOrWhiteSpace(evidence) || evidence.Length > 120 || string.IsNullOrWhiteSpace(reason) || reason.Length > 1000) throw new CommerceException("INVALID_SUPPORT_DECISION");
         await new PlayReviewPolicy(db).EnsureNormalUserAsync(admin);
         if (!await db.Users.AnyAsync(x => x.UserId == admin && x.Role == UserRole.Admin && x.IsActive && x.DeletedAt == null, ct)) throw new CommerceException("ADMIN_REQUIRED");
         await using var tx = await db.Database.BeginTransactionAsync(ct);
-        var order = await db.MuaCommerceOrders.SingleAsync(x => x.Id == orderId, ct); await MuaAccessPolicy.Lock(db, order.MuaId, ct);
+        var order = await db.MuaCommerceOrders.SingleOrDefaultAsync(x => x.Id == orderId, ct) ?? throw new CommerceException("ORDER_NOT_FOUND"); await MuaAccessPolicy.Lock(db, order.MuaId, ct); await db.Entry(order).ReloadAsync(ct);
         if (order.State != MuaCommerceOrderState.ManualReview || order.VerifiedPaidAt == null) throw new CommerceException("NO_VERIFIED_PAYMENT_TO_RECOVER");
         await Recipient(order.MuaId, ct); order.State = MuaCommerceOrderState.PaidAwaitingFulfillment;
+        db.SubscriptionPlanChanges.Add(new() { Id = Guid.NewGuid(), PlanId = "order:" + orderId, ActorId = admin, Action = "MuaRecovery", Reason = reason,
+            BeforeJson = System.Text.Json.JsonSerializer.Serialize(new { state = "ManualReview", evidence }), AfterJson = "PaidAwaitingFulfillment", CreatedAt = Now });
         await Enqueue("Fulfill", orderId, "recovery:" + Guid.NewGuid().ToString("N"), ct);
-        db.MuaCommerceAudit.Add(new() { Id = Guid.NewGuid(), MuaId = order.MuaId, OrderId = orderId, Action = "AdminRecovery", EvidenceHash = PayOsCommerceProtocol.Hash(admin.ToString()), CreatedAt = Now });
+        db.MuaCommerceAudit.Add(new() { Id = Guid.NewGuid(), MuaId = order.MuaId, OrderId = orderId, Action = "AdminRecovery", EvidenceHash = PayOsCommerceProtocol.Hash(System.Text.Json.JsonSerializer.Serialize(new { admin, evidence, reason })), CreatedAt = Now });
         await db.SaveChangesAsync(ct); await tx.CommitAsync(ct);
     }
 }

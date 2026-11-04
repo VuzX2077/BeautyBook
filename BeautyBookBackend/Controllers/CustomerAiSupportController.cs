@@ -14,7 +14,7 @@ public sealed class CustomerAiSupportController(ApplicationDbContext db, Custome
     public async Task<IActionResult> Get(CancellationToken ct)
     {
         Response.Headers.CacheControl = "no-store";
-        if (!commerce.CheckoutEnabled && !commerce.EnforcementEnabled && !commerce.ReconciliationEnabled) return Ok(new { orders = Array.Empty<object>(), notifications = Array.Empty<object>() });
+
         var orders = await db.CustomerAiPurchases.AsNoTracking().Where(x => x.State == "ManualReview" || x.State == "Revoked")
             .OrderByDescending(x => x.CreatedAt).Select(x => new { x.Id, x.UserId, x.State, x.CreatedAt, x.PaidAt, x.RevokedAt, x.RevocationReason }).Take(100).ToListAsync(ct);
         var notifications = await db.MuaCommerceIngress.AsNoTracking().Where(x => x.Source == "CustomerAiWebhook" && x.State == "ManualReview")

@@ -62,6 +62,7 @@ public class PostSharingTests
         db.Reviews.Add(new() { ReviewId = Guid.NewGuid(), BookingId = booking.BookingId, MUAId = owner.UserId, CustomerId = customer.UserId, Rating = 5 }); await db.SaveChangesAsync();
         var result = (await new ProfileSharingService(db, new ConfigurationBuilder().Build()).Get(owner.UserId))!;
         Assert.Equal(5m, result.AverageRating); Assert.Equal(1, result.ReviewCount); Assert.Equal(1, result.CompletedCustomers); Assert.Equal(3, result.ExperienceYears); Assert.Equal(2, result.Specializations.Count);
-        var html = SharedPageRenderer.Profile(result); Assert.Contains("5.0", html); Assert.DoesNotContain("999", html);
+        // A random profile GUID can contain "999" in a URL. Check the rendered statistic, not every byte of HTML.
+        var html = SharedPageRenderer.Profile(result); Assert.Contains("5.0", html); Assert.DoesNotMatch(@"<strong>\s*999(?:\s|<)", html);
     }
 }

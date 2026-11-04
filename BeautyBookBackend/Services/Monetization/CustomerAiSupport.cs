@@ -28,7 +28,7 @@ public sealed partial class CustomerAiCommerce
             row.State = "Fulfilled";
         }
         else { row.RevokedAt ??= Now; row.RevocationReason = reason; row.State = "Revoked"; }
-        db.MuaCommerceIngress.Add(new() { Id = Guid.NewGuid(), EventKey = key, EvidenceHash = proof, OrderCode = row.OrderCode, AmountVnd = 20000,
+        db.MuaCommerceIngress.Add(new() { Id = Guid.NewGuid(), EventKey = key, EvidenceHash = proof, OrderCode = row.OrderCode, AmountVnd = row.AmountVnd,
             PaymentLinkId = row.PaymentLinkId ?? "", Reference = $"admin:{admin:N}:{evidence}", Source = "CustomerAiSupport", State = "Recorded", ReceivedAt = Now });
         await db.SaveChangesAsync(ct); await tx.CommitAsync(ct);
     }

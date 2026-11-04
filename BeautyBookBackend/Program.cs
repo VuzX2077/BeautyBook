@@ -67,7 +67,9 @@ builder.Services.AddControllers(options => {
     options.Filters.Add<StyleWriteExceptionFilter>();
 });
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddAuthentication().AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, BeautyBookBackend.Services.Monetization.MuaWebAuthentication>(BeautyBookBackend.Services.Monetization.MuaWebAuthentication.SchemeName, _ => { });
+builder.Services.AddScoped<BeautyBookBackend.Services.Monetization.MuaWebAuthentication>();
+builder.Services.AddAuthentication().AddJwtBearer(BeautyBookBackend.Services.Monetization.MuaWebAuthentication.SchemeName,
+    options => BeautyBookBackend.Services.Monetization.MuaWebAuthentication.Configure(options, builder.Configuration));
 builder.Services.AddWebsiteApkCounter(builder.Configuration);
 builder.Services.AddScoped<PlayReviewPolicy>();
 builder.Services.Configure<PlayReviewOptions>(builder.Configuration.GetSection("PlayReview"));
@@ -100,14 +102,10 @@ builder.Services.Configure<ApiBehaviorOptions>(options =>
 // Configure CORS to allow frontend connections
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("MuaWeb", policy => policy.WithOrigins(builder.Configuration["MuaWeb:Origin"] ?? "https://bbookmakeup.com").AllowAnyHeader().AllowAnyMethod().AllowCredentials());
-    options.AddPolicy("AllowAll", policy =>
-    {
-        policy.SetIsOriginAllowed(_ => true)
-              .AllowAnyMethod()
-              .AllowAnyHeader()
-              .AllowCredentials();
-    });
+    options.AddPolicy("MuaWeb", policy => policy.WithOrigins(BeautyBookBackend.Services.Monetization.MuaWebAuthentication.AllowedOrigin)
+        .WithMethods("GET", "POST").WithHeaders("Authorization", "Content-Type", "Idempotency-Key"));
+    options.AddPolicy("BBookWeb", policy => policy.WithOrigins(BeautyBookBackend.Services.Monetization.MuaWebAuthentication.AllowedOrigin)
+        .AllowAnyMethod().AllowAnyHeader());
 });
 
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
@@ -360,7 +358,8 @@ app.UseSwaggerUI();
 
 // app.UseHttpsRedirection();
 
-app.UseCors("AllowAll"); // Enable CORS policy
+app.UseRouting();
+app.UseCors("BBookWeb"); // Native Android JWT requests do not depend on browser CORS.
 app.UseStaticFiles();
 
 // Local development continues to use wwwroot/uploads. In production, point

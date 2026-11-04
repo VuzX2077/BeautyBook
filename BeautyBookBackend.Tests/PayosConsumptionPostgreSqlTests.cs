@@ -1,6 +1,5 @@
 using System.Net;
 using System.Net.Http.Json;
-using System.Security.Cryptography;
 using System.Text.Json;
 using BeautyBookBackend.Models;
 using BeautyBookBackend.Models.Enums;
@@ -17,19 +16,18 @@ namespace BeautyBookBackend.Tests;
 
 public sealed class PayosConsumptionPostgreSqlTests
 {
-    private static async Task<string> Session(BeautyBookBackend.Data.ApplicationDbContext db, Guid owner)
+    private static async Task<string> Session(IServiceProvider services, Guid owner)
     {
-        var raw = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
-        db.MuaWebSessions.Add(new() { Id = Guid.NewGuid(), UserId = owner, TokenHash = PayOsCommerceProtocol.Hash(raw), CsrfToken = "test-csrf", ExpiresAt = DateTime.UtcNow.AddHours(1) });
-        await db.SaveChangesAsync(); return raw;
+        using var scope = services.CreateScope();
+        return (await scope.ServiceProvider.GetRequiredService<MuaWebAuthentication>().Issue(owner, default)).AccessToken;
     }
     [PostgreSqlFact]
-    public async Task Website_checkout_requires_cookie_and_csrf_and_mobile_only_consumes_verified_owner_access()
+    public async Task Website_checkout_requires_scoped_bearer_and_mobile_only_consumes_verified_owner_access()
     {
         await using var database = await PostgreSqlDatabase.CreateMigratedAsync(); var owner = Guid.NewGuid(); var other = Guid.NewGuid(); string session;
         await using (var db = database.CreateContext()) {
             foreach (var personId in new[] { owner, other }) db.Users.Add(new() { UserId = personId, Role = UserRole.Customer, IsActive = true, CreatedAt = DateTime.UtcNow });
-            await db.SaveChangesAsync(); session = await Session(db, owner);
+            await db.SaveChangesAsync();
         }
         var payos = new CustomerAiLifetimeTests.FakePayOs();
         await using var basis = new PrivateMediaHttpTests.LocalFactory(database.ConnectionString);
@@ -37,23 +35,34 @@ public sealed class PayosConsumptionPostgreSqlTests
             builder.ConfigureAppConfiguration((_, c) => c.AddInMemoryCollection(new Dictionary<string, string?> { ["MuaWeb:Origin"] = "https://bbookmakeup.com", ["CustomerAi:WebCheckoutEnabled"] = "true", ["CustomerAi:EnforcementEnabled"] = "true" }));
             builder.ConfigureServices(services => { services.PostConfigure<MuaMonetizationOptions>(o => o.WebPortalEnabled = true); services.AddSingleton<ICommercePayOs>(payos); });
         });
+        session = await Session(factory.Services, owner);
         using var client = factory.CreateClient(); client.DefaultRequestHeaders.Add("Origin", "https://bbookmakeup.com");
         var request = new { productId = MuaCommerceCatalog.CustomerAi, termsVersion = MuaCommerceCatalog.TermsVersion, portfolioConsent = true };
         client.DefaultRequestHeaders.Authorization = new("Bearer", PrivateMediaHttpTests.Token(owner, UserRole.Customer));
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.PostAsJsonAsync("/api/web/mua/orders", request)).StatusCode);
-        client.DefaultRequestHeaders.Authorization = null; client.DefaultRequestHeaders.Add("Cookie", $"{MuaWebAuthentication.CookieName}={session}");
-        Assert.Equal(HttpStatusCode.Forbidden, (await client.PostAsJsonAsync("/api/web/mua/orders", request)).StatusCode);
-        client.DefaultRequestHeaders.Add("X-BBook-CSRF", "test-csrf"); client.DefaultRequestHeaders.Add("Idempotency-Key", "http-checkout");
+        client.DefaultRequestHeaders.Authorization = null; client.DefaultRequestHeaders.Add("Cookie", "__Host-bbook-mua=legacy-cookie");
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.PostAsJsonAsync("/api/web/mua/orders", request)).StatusCode);
+        client.DefaultRequestHeaders.Remove("Cookie"); client.DefaultRequestHeaders.Authorization = new("Bearer", session);
+        client.DefaultRequestHeaders.Add("Idempotency-Key", "http-checkout");
         using var bought = await client.PostAsJsonAsync("/api/web/mua/orders", request); Assert.Equal(HttpStatusCode.OK, bought.StatusCode);
         var id = (await bought.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
         Assert.Equal(HttpStatusCode.OK, (await client.GetAsync($"/api/web/mua/orders/{id}")).StatusCode);
+        Assert.False((await client.GetFromJsonAsync<JsonElement>($"/api/web/mua/me?status=PAID")).GetProperty("ai").GetProperty("purchased").GetBoolean());
+        Assert.Equal(id, (await (await client.PostAsJsonAsync("/api/web/mua/orders", request)).Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid());
+        client.DefaultRequestHeaders.Authorization = new("Bearer", await Session(factory.Services, other));
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"/api/web/mua/orders/{id}")).StatusCode);
+        client.DefaultRequestHeaders.Authorization = null; client.DefaultRequestHeaders.Remove("Origin");
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/api/mua/commerce/payos/webhook", new { code = "00", data = new { orderCode = payos.Code, amount = 20000 }, signature = "bad" })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/api/mua/commerce/payos/webhook", payos.Webhook(10000))).StatusCode);
         using var webhook = await client.PostAsJsonAsync("/api/mua/commerce/payos/webhook", payos.Webhook()); Assert.Equal(HttpStatusCode.OK, webhook.StatusCode);
-        client.DefaultRequestHeaders.Remove("Cookie"); client.DefaultRequestHeaders.Authorization = new("Bearer", PrivateMediaHttpTests.Token(owner, UserRole.Customer));
+        Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync("/api/mua/commerce/payos/webhook", payos.Webhook())).StatusCode);
+        client.DefaultRequestHeaders.Authorization = new("Bearer", PrivateMediaHttpTests.Token(owner, UserRole.Customer));
         using var status = await client.GetAsync("/api/me/plans"); Assert.Equal(HttpStatusCode.OK, status.StatusCode);
         var body = await status.Content.ReadAsStringAsync(); using var json = JsonDocument.Parse(body);
         Assert.True(json.RootElement.GetProperty("ai").GetProperty("purchased").GetBoolean());
         Assert.Single(json.RootElement.GetProperty("orders").EnumerateArray());
         Assert.DoesNotContain("checkoutUrl", body); Assert.DoesNotContain("pay.payos.vn", body);
+        using var synced = await client.PostAsync("/api/me/plans/sync", null); Assert.Equal(HttpStatusCode.OK, synced.StatusCode);
         client.DefaultRequestHeaders.Authorization = new("Bearer", PrivateMediaHttpTests.Token(other, UserRole.Customer));
         using var others = await client.GetAsync("/api/me/plans"); var otherBody = await others.Content.ReadFromJsonAsync<JsonElement>();
         Assert.False(otherBody.GetProperty("ai").GetProperty("purchased").GetBoolean()); Assert.Empty(otherBody.GetProperty("orders").EnumerateArray());
@@ -63,7 +72,7 @@ public sealed class PayosConsumptionPostgreSqlTests
     {
         await using var database = await PostgreSqlDatabase.CreateMigratedAsync(); Guid owner, id; string session;
         await using (var db = database.CreateContext()) {
-            owner = await MuaCommerceTests.Seed(db); session = await Session(db, owner);
+            owner = await MuaCommerceTests.Seed(db);
             id = (await new MuaCommerceFoundation(db, TimeProvider.System).CreateOrderAsync(owner, MuaCommerceCatalog.Visibility, "mua-detail", MuaCommerceCatalog.TermsVersion)).Id;
         }
         await using var basis = new PrivateMediaHttpTests.LocalFactory(database.ConnectionString);
@@ -71,7 +80,8 @@ public sealed class PayosConsumptionPostgreSqlTests
             builder.ConfigureAppConfiguration((_, c) => c.AddInMemoryCollection(new Dictionary<string, string?> { ["MuaWeb:Origin"] = "https://bbookmakeup.com", ["CustomerAi:WebCheckoutEnabled"] = "true" }));
             builder.ConfigureServices(services => { services.PostConfigure<MuaMonetizationOptions>(o => o.WebPortalEnabled = true); services.AddSingleton<ICommercePayOs>(new CustomerAiLifetimeTests.FakePayOs()); });
         });
-        using var client = factory.CreateClient(); client.DefaultRequestHeaders.Add("Origin", "https://bbookmakeup.com"); client.DefaultRequestHeaders.Add("Cookie", $"{MuaWebAuthentication.CookieName}={session}");
+        session = await Session(factory.Services, owner);
+        using var client = factory.CreateClient(); client.DefaultRequestHeaders.Add("Origin", "https://bbookmakeup.com"); client.DefaultRequestHeaders.Authorization = new("Bearer", session);
         using var result = await client.GetAsync($"/api/web/mua/orders/{id}"); Assert.Equal(HttpStatusCode.OK, result.StatusCode);
         Assert.Equal(MuaCommerceCatalog.Visibility, (await result.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("productId").GetString());
     }

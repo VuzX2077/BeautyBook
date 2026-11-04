@@ -12,7 +12,7 @@ public static class PayOsCommerceProtocol
     public static JsonElement CreateLinkRequest(MuaCommerceOrder order, long code, string returnUrl, string cancelUrl, string checksumKey, string trustedReturnHost = "bbookmakeup.com")
     {
         RequireKey(checksumKey);
-        if (code <= 0 || order.Currency != "VND" || order.AmountVnd != MuaCommerceCatalog.Get(order.ProductId).AmountVnd)
+        if (code <= 0 || order.Currency != "VND" || order.AmountVnd <= 0)
             throw new CommerceException("INVALID_ORDER");
         foreach (var url in new[] { returnUrl, cancelUrl })
             if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.UserInfo.Length > 0

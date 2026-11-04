@@ -32,7 +32,8 @@ public sealed partial class CustomerAiCommerce(ApplicationDbContext db, ICommerc
     public async Task<object> Status(Guid owner, CancellationToken ct)
     {
         var active = ReadsEnabled && await db.CustomerAiPurchases.AnyAsync(x => x.UserId == owner && x.PaidAt != null && x.RevokedAt == null && x.State == "Fulfilled", ct);
-        return new { productId = MuaCommerceCatalog.CustomerAi, amountVnd = 20000, lifetime = true, hasAccess = await Allowed(owner, ct), purchased = active, checkoutEnabled = CheckoutReady, enforcementEnabled = EnforcementEnabled };
+        var amount = await db.SubscriptionPlans.AsNoTracking().Where(x => x.Role == "Customer" && x.State == "Published").OrderBy(x => x.AmountVnd).Select(x => (int?)x.AmountVnd).FirstOrDefaultAsync(ct);
+        return new { productId = MuaCommerceCatalog.CustomerAi, amountVnd = amount ?? 0, lifetime = true, hasAccess = await Allowed(owner, ct), purchased = active, checkoutEnabled = CheckoutReady && amount.HasValue, enforcementEnabled = EnforcementEnabled };
     }
     private async Task Lock(Guid owner, CancellationToken ct)
     {
@@ -41,13 +42,14 @@ public sealed partial class CustomerAiCommerce(ApplicationDbContext db, ICommerc
         await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({"customer-ai:" + owner}, 772028))", ct);
         await db.Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM \"Users\" WHERE \"UserId\"={owner} FOR UPDATE", ct);
     }
+    public Task<Guid> AppBuyForWeb(Guid owner, string productId, string key, string terms, CancellationToken ct) => BuyCore(owner, key, terms, false, ct, productId);
     public Task<Guid> Buy(Guid owner, string key, string terms, CancellationToken ct) => BuyCore(owner, key, terms, false, ct);
-    public Task<Guid> AppBuy(Guid owner, string key, string terms, CancellationToken ct) => BuyCore(owner, key, terms, true, ct);
-    private async Task<Guid> BuyCore(Guid owner, string key, string terms, bool native, CancellationToken ct)
+    public Task<Guid> AppBuy(Guid owner, string key, string terms, CancellationToken ct, string productId = MuaCommerceCatalog.CustomerAi) => BuyCore(owner, key, terms, true, ct, productId);
+    private async Task<Guid> BuyCore(Guid owner, string key, string terms, bool native, CancellationToken ct, string productId = MuaCommerceCatalog.CustomerAi)
     {
         if (!(native ? AppCheckoutReady : CheckoutReady)) throw new CommerceException("CUSTOMER_AI_CHECKOUT_DISABLED");
         if (string.IsNullOrWhiteSpace(key) || key.Length > 80 || key != key.Trim()) throw new CommerceException("INVALID_IDEMPOTENCY_KEY");
-        if (terms != MuaCommerceCatalog.TermsVersion) throw new CommerceException("TERMS_VERSION_MISMATCH");
+        var product = await SubscriptionCatalog.Buyable(db, productId, "Customer", terms, ct);
         await Customer(owner, ct);
         var previous = await db.CustomerAiPurchases.AsNoTracking().Where(x => x.UserId == owner && x.State == "PaymentPending").OrderBy(x => x.CreatedAt).FirstOrDefaultAsync(ct);
         if (previous != null) await Refresh(previous.Id, ct);
@@ -60,7 +62,8 @@ public sealed partial class CustomerAiCommerce(ApplicationDbContext db, ICommerc
                 ?? await db.CustomerAiPurchases.Where(x => x.UserId == owner && x.State == "PaymentPending").OrderBy(x => x.CreatedAt).FirstOrDefaultAsync(ct)
                 ?? new() { Id = Guid.NewGuid(), UserId = owner, IdempotencyKey = key, Channel = payos.Channel,
                     OrderCode = 4000000000000L + RandomNumberGenerator.GetInt32(1, int.MaxValue), CreatedAt = Now, ExpiresAt = Now.AddMinutes(30),
-                    Origin = native ? "NativeApp" : "IndependentWebsite", TermsVersion = terms };
+                    Origin = native ? "NativeApp" : "IndependentWebsite", TermsVersion = terms, ProductId = product.Id, ProductName = product.Name, AmountVnd = product.AmountVnd, PlanVersion = product.Version };
+            if (row.ProductId != productId || row.TermsVersion != terms) throw new CommerceException("IDEMPOTENCY_CONFLICT");
             if (db.Entry(row).State == EntityState.Detached) db.CustomerAiPurchases.Add(row);
             await db.SaveChangesAsync(ct); await tx.CommitAsync(ct);
         }
@@ -71,7 +74,7 @@ public sealed partial class CustomerAiCommerce(ApplicationDbContext db, ICommerc
     private static void Match(JsonElement data, CustomerAiPurchase row, string linkField)
     {
         var link = PayOsCommerceProtocol.Text(data, linkField);
-        if (PayOsCommerceProtocol.Number(data, "orderCode") != row.OrderCode || PayOsCommerceProtocol.Number(data, "amount") != 20000
+        if (PayOsCommerceProtocol.Number(data, "orderCode") != row.OrderCode || PayOsCommerceProtocol.Number(data, "amount") != row.AmountVnd
             || link.Length > 100 || row.PaymentLinkId != null && row.PaymentLinkId != link
             || data.TryGetProperty("currency", out var currency) && currency.GetString() != "VND") throw new CommerceException("PAYMENT_MISMATCH");
     }
@@ -82,7 +85,7 @@ public sealed partial class CustomerAiCommerce(ApplicationDbContext db, ICommerc
         var found = row.LinkCreationStartedAt.HasValue ? await payos.Get(row.OrderCode, ct) : null;
         if (found == null && row.ExpiresAt <= Now) { row.State = "Cancelled"; await db.SaveChangesAsync(ct); return; }
         if (found == null) { row.LinkCreationStartedAt ??= Now; await db.SaveChangesAsync(ct); }
-        var response = found ?? await payos.Create(new MuaCommerceOrder { Id = row.Id, MuaId = row.UserId, ProductId = MuaCommerceCatalog.CustomerAi, AmountVnd = 20000, ExpiresAt = row.ExpiresAt }, row.OrderCode, ct);
+        var response = found ?? await payos.Create(new MuaCommerceOrder { Id = row.Id, MuaId = row.UserId, ProductId = row.ProductId, AmountVnd = row.AmountVnd, ExpiresAt = row.ExpiresAt }, row.OrderCode, ct);
         var data = payos.Verify(response); var lookup = found.HasValue;
         Match(data, row, lookup ? "id" : "paymentLinkId");
         var link = PayOsCommerceProtocol.Text(data, lookup ? "id" : "paymentLinkId");
@@ -108,7 +111,7 @@ public sealed partial class CustomerAiCommerce(ApplicationDbContext db, ICommerc
         var status = PayOsCommerceProtocol.Text(data, "status");
         if (status == "PAID")
         {
-            if (PayOsCommerceProtocol.Number(data, "amountPaid") != 20000 || PayOsCommerceProtocol.Number(data, "amountRemaining") != 0) throw new CommerceException("PAYMENT_MISMATCH");
+            if (PayOsCommerceProtocol.Number(data, "amountPaid") != row.AmountVnd || PayOsCommerceProtocol.Number(data, "amountRemaining") != 0) throw new CommerceException("PAYMENT_MISMATCH");
             await Apply(data, false, ct);
         }
         else if (row.ExpiresAt <= Now || status is "CANCELLED" or "EXPIRED")
@@ -128,13 +131,13 @@ public sealed partial class CustomerAiCommerce(ApplicationDbContext db, ICommerc
         var row = await db.CustomerAiPurchases.SingleOrDefaultAsync(x => x.Id == id && x.UserId == owner, ct);
         if (row == null) return null;
         await Customer(owner, ct); if (!payos.IsLive || CommerceCheckoutReadiness.Ready(config)) await Refresh(id, ct);
-        return new { row.Id, productId = MuaCommerceCatalog.CustomerAi, amountVnd = 20000, currency = "VND", row.State, row.CreatedAt, row.ExpiresAt, verifiedPaidAt = row.PaidAt,
+        return new { row.Id, productId = row.ProductId, amountVnd = row.AmountVnd, currency = "VND", row.State, row.CreatedAt, row.ExpiresAt, verifiedPaidAt = row.PaidAt,
             checkoutAvailable = CheckoutReady && row.State == "PaymentPending" && row.ExpiresAt > Now && row.CheckoutUrl != null,
             checkoutUrl = CheckoutReady && row.State == "PaymentPending" && row.ExpiresAt > Now ? row.CheckoutUrl : null };
     }
     public async Task<object> History(Guid owner, CancellationToken ct) => !ReadsEnabled ? Array.Empty<object>() :
         await db.CustomerAiPurchases.AsNoTracking().Where(x => x.UserId == owner).OrderByDescending(x => x.CreatedAt).Take(100)
-            .Select(x => new { x.Id, productId = MuaCommerceCatalog.CustomerAi, amountVnd = 20000, x.State, x.CreatedAt, verifiedPaidAt = x.PaidAt }).ToListAsync(ct);
+            .Select(x => new { x.Id, productId = x.ProductId, x.ProductName, amountVnd = x.AmountVnd, x.State, x.CreatedAt, verifiedPaidAt = x.PaidAt }).ToListAsync(ct);
     public async Task<NativeCommerceOrder?> AppOrder(Guid owner, Guid id, bool sync, CancellationToken ct)
     {
         var row = await db.CustomerAiPurchases.SingleOrDefaultAsync(x => x.Id == id && x.UserId == owner, ct);
@@ -146,15 +149,16 @@ public sealed partial class CustomerAiCommerce(ApplicationDbContext db, ICommerc
             if (!payos.IsLive || CommerceCheckoutReadiness.Ready(config)) await Refresh(id, ct);
         }
         var pending = row.State == "PaymentPending" && row.ExpiresAt > Now;
-        return new(row.Id, MuaCommerceCatalog.CustomerAi, 20000, "VND", row.State, row.CreatedAt, row.ExpiresAt, row.PaidAt,
+        return new(row.Id, row.ProductId, row.AmountVnd, "VND", row.State, row.CreatedAt, row.ExpiresAt, row.PaidAt,
             pending && AppCheckoutReady ? NativeCommercePayment.Read(row.PaymentDetailsJson) : null);
     }
     public async Task<bool> Receive(JsonElement envelope, CancellationToken ct)
     {
         if (!ReadsEnabled) return false;
         var data = payos.Verify(envelope); var code = PayOsCommerceProtocol.Number(data, "orderCode");
-        if (!await db.CustomerAiPurchases.AnyAsync(x => x.OrderCode == code, ct)) return false;
-        if (PayOsCommerceProtocol.Text(data, "code") != "00" || PayOsCommerceProtocol.Text(data, "currency") != "VND" || PayOsCommerceProtocol.Number(data, "amount") != 20000) throw new CommerceException("INVALID_PAYMENT");
+        var row = await db.CustomerAiPurchases.AsNoTracking().SingleOrDefaultAsync(x => x.OrderCode == code, ct);
+        if (row == null) return false;
+        if (PayOsCommerceProtocol.Text(data, "code") != "00" || PayOsCommerceProtocol.Text(data, "currency") != "VND" || PayOsCommerceProtocol.Number(data, "amount") != row.AmountVnd) throw new CommerceException("INVALID_PAYMENT");
         var link = PayOsCommerceProtocol.Text(data, "paymentLinkId");
         var reference = data.TryGetProperty("reference", out var referenceValue) ? referenceValue.GetString() ?? "" : "";
         if (link.Length > 100 || reference.Length > 200) throw new CommerceException("INVALID_PAYMENT_REFERENCE");
@@ -165,7 +169,7 @@ public sealed partial class CustomerAiCommerce(ApplicationDbContext db, ICommerc
             if (db.Database.IsNpgsql()) await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({key}, 772029))", ct);
             var prior = await db.MuaCommerceIngress.SingleOrDefaultAsync(x => x.EventKey == key, ct);
             if (prior != null && prior.EvidenceHash != proof) throw new CommerceException("EVENT_REPLAY_MISMATCH");
-            if (prior == null) db.MuaCommerceIngress.Add(new() { Id = Guid.NewGuid(), EventKey = key, EvidenceHash = proof, OrderCode = code, AmountVnd = 20000,
+            if (prior == null) db.MuaCommerceIngress.Add(new() { Id = Guid.NewGuid(), EventKey = key, EvidenceHash = proof, OrderCode = code, AmountVnd = row.AmountVnd,
                 PaymentLinkId = link, Reference = reference, Source = "CustomerAiWebhook", ReceivedAt = Now });
             await db.SaveChangesAsync(ct); await tx.CommitAsync(ct);
         }
@@ -198,7 +202,7 @@ public sealed partial class CustomerAiCommerce(ApplicationDbContext db, ICommerc
             if (row == null || !await db.Users.AnyAsync(u => u.UserId == row.UserId && u.IsActive && u.DeletedAt == null && !u.IsDemoAccount && u.Role == UserRole.Customer, ct))
                 ingress.State = "ManualReview";
             else if (row.PaymentLinkId == null) continue;
-            else if (row.PaymentLinkId != ingress.PaymentLinkId || row.Channel != payos.Channel || ingress.AmountVnd != 20000) ingress.State = "ManualReview";
+            else if (row.PaymentLinkId != ingress.PaymentLinkId || row.Channel != payos.Channel || ingress.AmountVnd != row.AmountVnd) ingress.State = "ManualReview";
             else
             {
                 var data = JsonSerializer.SerializeToElement(new { orderCode = ingress.OrderCode, amount = ingress.AmountVnd, paymentLinkId = ingress.PaymentLinkId, currency = "VND" });

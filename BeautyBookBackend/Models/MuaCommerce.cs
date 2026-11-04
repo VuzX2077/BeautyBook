@@ -5,6 +5,9 @@ public enum MuaCommerceOrderState { PaymentPending, PaidAwaitingFulfillment, Man
 
 public sealed class MuaCommerceOrder
 {
+    public string ProductName { get; set; } = "BBook Visibility 30 ngày";
+    public int DurationDays { get; set; } = 30;
+    public int PlanVersion { get; set; } = 1;
     public Guid Id { get; set; }
     public Guid MuaId { get; set; }
     public string ProductId { get; set; } = "";

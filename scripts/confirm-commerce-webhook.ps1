@@ -1,13 +1,15 @@
 # Run from a trusted shell with the same commerce environment variables as the backend.
+param([switch]$ValidateOnly)
 $ErrorActionPreference = 'Stop'
 $taskClientId = [Environment]::GetEnvironmentVariable('CommercePayOS__ClientId')
 $taskApiKey = [Environment]::GetEnvironmentVariable('CommercePayOS__ApiKey')
 $taskOrigin = [Environment]::GetEnvironmentVariable('MuaWeb__ApiOrigin')
-if ([string]::IsNullOrWhiteSpace($taskOrigin)) { $taskOrigin = 'https://api.bbookmakeup.com' }
+if ([string]::IsNullOrWhiteSpace($taskOrigin)) { $taskOrigin = 'https://beautybook-v3bi.onrender.com' }
 $taskUri = [Uri]$taskOrigin
 if ($taskUri.Scheme -ne 'https' -or -not $taskUri.IsDefaultPort -or $taskUri.UserInfo -or $taskUri.AbsolutePath -ne '/' -or $taskUri.Query -or $taskUri.Fragment) { throw 'Use the public HTTPS API origin without a path.' }
-if ([string]::IsNullOrWhiteSpace($taskClientId) -or [string]::IsNullOrWhiteSpace($taskApiKey)) { throw 'Set CommercePayOS__ClientId and CommercePayOS__ApiKey in this trusted environment; do not paste them into chat.' }
 $taskWebhook = $taskUri.GetLeftPart([UriPartial]::Authority) + '/api/mua/commerce/payos/webhook'
+if ($ValidateOnly) { Write-Output ('Validated commerce webhook URL: ' + $taskWebhook); return }
+if ([string]::IsNullOrWhiteSpace($taskClientId) -or [string]::IsNullOrWhiteSpace($taskApiKey)) { throw 'Set CommercePayOS__ClientId and CommercePayOS__ApiKey in this trusted environment; do not paste them into chat.' }
 $taskBody = @{ webhookUrl = $taskWebhook } | ConvertTo-Json -Compress
 try {
     $taskResult = Invoke-RestMethod -Method Post -Uri 'https://api-merchant.payos.vn/confirm-webhook' -Headers @{ 'x-client-id' = $taskClientId; 'x-api-key' = $taskApiKey } -ContentType 'application/json' -Body $taskBody -TimeoutSec 30

@@ -38,7 +38,7 @@ public sealed class AppCommerceController(ApplicationDbContext db, CustomerAiCom
         var reason = owned ? "ALREADY_PURCHASED" : review ? "MANUAL_REVIEW" : !eligible ? "MUA_NOT_ELIGIBLE" : !ready ? "CHECKOUT_DISABLED" : null;
         return Ok(new { role = account.Role.ToString(), termsVersion = MuaCommerceCatalog.TermsVersion,
             enabled = config.GetValue<bool>("AppCommerce:Enabled"), checkoutEnabled = reason == null, unavailableReason = reason,
-            products = new[] { MuaCommerceCatalog.Get(customer ? MuaCommerceCatalog.CustomerAi : MuaCommerceCatalog.Visibility) } });
+            products = await SubscriptionCatalog.Products(db, customer ? "Customer" : "MUA", ct) });
     }
 
     public sealed record BuyRequest(string ProductId, string TermsVersion, bool AcceptedTerms, bool PortfolioConsent);
@@ -48,13 +48,13 @@ public sealed class AppCommerceController(ApplicationDbContext db, CustomerAiCom
     {
         var account = await Account(ct); if (account == null) return Forbid();
         if (!request.AcceptedTerms) return Conflict(new { code = "TERMS_CONSENT_REQUIRED" });
-        var expected = account.Role == UserRole.Customer ? MuaCommerceCatalog.CustomerAi : MuaCommerceCatalog.Visibility;
-        if (request.ProductId != expected) return Conflict(new { code = "PRODUCT_ROLE_MISMATCH" });
+        var role = account.Role == UserRole.Customer ? "Customer" : "MUA";
+        if (!await db.SubscriptionPlans.AnyAsync(p => p.Id == request.ProductId && p.Role == role, ct)) return Conflict(new { code = "PRODUCT_ROLE_MISMATCH" });
         try
         {
             var key = Request.Headers["Idempotency-Key"].ToString();
             var id = account.Role == UserRole.Customer
-                ? await ai.AppBuy(account.UserId, key, request.TermsVersion, ct)
+                ? await ai.AppBuy(account.UserId, key, request.TermsVersion, ct, request.ProductId)
                 : await mua.AppBuy(account.UserId, request.ProductId, key, request.TermsVersion, request.PortfolioConsent, ct);
             return Ok(new { id });
         }

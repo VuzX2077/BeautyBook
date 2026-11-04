@@ -13,11 +13,11 @@ public sealed partial class MuaEmailCommerce
     public Task<Guid> AppBuy(Guid owner, string sku, string key, string terms, bool consent, CancellationToken ct) => BuyCore(owner, sku, key, terms, consent, true, ct);
     private async Task<Guid> BuyCore(Guid owner, string sku, string key, string terms, bool consent, bool native, CancellationToken ct)
     {
-        if (sku != MuaCommerceCatalog.Visibility) throw new CommerceException("PRODUCT_RETIRED_OR_INVALID");
+
         if (!(native ? AppCheckoutReady : CheckoutReady))
             throw new CommerceException("WEB_CHECKOUT_DISABLED");
         if (string.IsNullOrWhiteSpace(key) || key.Length > 80 || key != key.Trim()) throw new CommerceException("INVALID_IDEMPOTENCY_KEY");
-        if (terms != MuaCommerceCatalog.TermsVersion) throw new CommerceException("TERMS_VERSION_MISMATCH");
+        await SubscriptionCatalog.Buyable(db, sku, "MUA", terms, ct);
         if (!consent) throw new CommerceException("PORTFOLIO_CONSENT_REQUIRED");
         await Recipient(owner, ct);
         var readiness = await eligibility.EvaluateAsync(owner, false);
@@ -49,14 +49,14 @@ public sealed partial class MuaEmailCommerce
     {
         var order = await db.MuaCommerceOrders.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id && x.MuaId == owner, ct);
         if (order == null) return null;
-        var available = order.ProductId == MuaCommerceCatalog.Visibility && CheckoutReady && order.State == MuaCommerceOrderState.PaymentPending && order.ExpiresAt > Now;
+        var available = order.ProductId != MuaCommerceCatalog.Activation && CheckoutReady && order.State == MuaCommerceOrderState.PaymentPending && order.ExpiresAt > Now;
         if (available) { try { await Recipient(owner, ct); } catch (CommerceException) { available = false; } }
         var url = available ? await db.MuaCommerceAttempts.Where(x => x.OrderId == id).Select(x => x.CheckoutUrl).SingleAsync(ct) : null;
         return new { order.Id, order.ProductId, order.AmountVnd, order.Currency, state = order.State.ToString(), order.CreatedAt, order.ExpiresAt, order.VerifiedPaidAt,
             checkoutAvailable = available && url != null, checkoutUrl = url };
     }
     public async Task<object> WebHistory(Guid owner, CancellationToken ct) => await db.MuaCommerceOrders.AsNoTracking().Where(x => x.MuaId == owner)
-        .OrderByDescending(x => x.CreatedAt).Select(x => new { x.Id, x.ProductId, x.AmountVnd, state = x.State.ToString(), x.CreatedAt, x.VerifiedPaidAt }).Take(100).ToListAsync(ct);
+        .OrderByDescending(x => x.CreatedAt).Select(x => new { x.Id, x.ProductId, x.ProductName, x.AmountVnd, state = x.State.ToString(), x.CreatedAt, x.VerifiedPaidAt }).Take(100).ToListAsync(ct);
     public async Task<NativeCommerceOrder?> AppOrder(Guid owner, Guid id, bool sync, CancellationToken ct)
     {
         var order = await db.MuaCommerceOrders.SingleOrDefaultAsync(x => x.Id == id && x.MuaId == owner, ct);
@@ -87,9 +87,13 @@ public sealed partial class MuaEmailCommerce
         var grant = order.ProductId == MuaCommerceCatalog.Activation
             ? await db.MuaVisibilityGrants.SingleAsync(x => x.MuaId == order.MuaId && x.Kind == VisibilityGrantKind.FirstActivationGift, ct)
             : await db.MuaVisibilityGrants.SingleAsync(x => x.SourceReference == "payos:" + order.Id.ToString("N"), ct);
-        if (await db.MuaFacebookTasks.AnyAsync(x => x.GrantId == grant.Id, ct)) return;
-        db.MuaFacebookTasks.Add(new() { Id = Guid.NewGuid(), MuaId = order.MuaId, GrantId = grant.Id, OrderId = order.Id,
-            CycleStartsAt = grant.StartsAt, DueAt = WorkingDeadline(grant.StartsAt), State = grant.StartsAt > Now ? "Scheduled" : "Preparing", CreatedAt = Now });
+        var existing = await db.MuaFacebookTasks.Where(x => x.GrantId == grant.Id).Select(x => x.CycleStartsAt).ToListAsync(ct);
+        for (var cycle = grant.StartsAt; cycle < grant.EndsAt; cycle = cycle.AddDays(30))
+        {
+            if (existing.Contains(cycle)) continue;
+            db.MuaFacebookTasks.Add(new() { Id = Guid.NewGuid(), MuaId = order.MuaId, GrantId = grant.Id, OrderId = order.Id,
+                CycleStartsAt = cycle, DueAt = WorkingDeadline(cycle), State = cycle > Now ? "Scheduled" : "Preparing", CreatedAt = Now });
+        }
     }
     public static DateTime WorkingDeadline(DateTime start)
     {

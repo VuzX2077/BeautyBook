@@ -27,10 +27,10 @@ public sealed class AccountPlansController(ApplicationDbContext db, CustomerAiCo
         var orders = new List<PlanReceipt>();
         if (flags.Value.Enabled)
             orders.AddRange(await db.MuaCommerceOrders.AsNoTracking().Where(x => x.MuaId == owner).OrderByDescending(x => x.CreatedAt)
-                .Select(x => new PlanReceipt(x.Id, x.ProductId, x.AmountVnd, x.State.ToString(), x.CreatedAt, x.VerifiedPaidAt)).Take(100).ToListAsync(ct));
+                .Select(x => new PlanReceipt(x.Id, x.ProductId, x.AmountVnd, x.State.ToString(), x.CreatedAt, x.VerifiedPaidAt, x.ProductName)).Take(100).ToListAsync(ct));
         if (ai.CheckoutEnabled || ai.AppCheckoutEnabled || ai.EnforcementEnabled || ai.ReconciliationEnabled)
             orders.AddRange(await db.CustomerAiPurchases.AsNoTracking().Where(x => x.UserId == owner).OrderByDescending(x => x.CreatedAt)
-                .Select(x => new PlanReceipt(x.Id, MuaCommerceCatalog.CustomerAi, 20000, x.State, x.CreatedAt, x.PaidAt)).Take(100).ToListAsync(ct));
+                .Select(x => new PlanReceipt(x.Id, x.ProductId, x.AmountVnd, x.State, x.CreatedAt, x.PaidAt, x.ProductName)).Take(100).ToListAsync(ct));
         var state = user.Role == UserRole.MUA ? await mua.GetAsync(owner, ct) : null;
         return Ok(new { role = user.Role.ToString(), ai = await ai.Status(owner, ct), mua = state,
             orders = orders.OrderByDescending(x => x.CreatedAt).Take(100), evaluatedAt = DateTime.UtcNow });
@@ -51,5 +51,5 @@ public sealed class AccountPlansController(ApplicationDbContext db, CustomerAiCo
         }
         return await Get(ct);
     }
-    public sealed record PlanReceipt(Guid Id, string ProductId, int AmountVnd, string State, DateTime CreatedAt, DateTime? VerifiedPaidAt);
+    public sealed record PlanReceipt(Guid Id, string ProductId, int AmountVnd, string State, DateTime CreatedAt, DateTime? VerifiedPaidAt, string ProductName);
 }

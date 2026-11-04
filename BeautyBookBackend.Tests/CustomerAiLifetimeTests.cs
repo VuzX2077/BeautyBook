@@ -17,6 +17,7 @@ public sealed class CustomerAiLifetimeTests
         public string Channel => "synthetic-ai";
         public int Amount = 20000;
         public long Code;
+        private string Link => "ai-link-" + Code;
         public bool Paid;
         public bool Cancelled;
         public int CreateCalls;
@@ -24,14 +25,14 @@ public sealed class CustomerAiLifetimeTests
         public bool FailUnknownLookup;
         public JsonElement Verify(JsonElement body) => PayOsCommerceProtocol.VerifiedData(body, MuaCommerceTests.Key);
         public Task<JsonElement> Create(MuaCommerceOrder order, long code, CancellationToken ct)
-        { Code = code; Amount = order.AmountVnd; Cancelled = false; CreateCalls++; if (FailFirstCreate) { FailFirstCreate = false; throw new HttpRequestException("synthetic lost provider reply"); } return Task.FromResult(MuaCommerceTests.Signed(new { orderCode = code, amount = Amount, currency = "VND", status = "PENDING", paymentLinkId = "ai-link", checkoutUrl = "https://synthetic.invalid/checkout" })); }
+        { Code = code; Amount = order.AmountVnd; Cancelled = false; CreateCalls++; if (FailFirstCreate) { FailFirstCreate = false; throw new HttpRequestException("synthetic lost provider reply"); } return Task.FromResult(MuaCommerceTests.Signed(new { orderCode = code, amount = Amount, currency = "VND", status = "PENDING", paymentLinkId = Link, checkoutUrl = "https://synthetic.invalid/checkout" })); }
         public Task<JsonElement?> Get(long code, CancellationToken ct)
         {
             if (FailUnknownLookup && Code != code) throw new HttpRequestException("synthetic lookup failure");
-            return Task.FromResult<JsonElement?>(Code == code ? MuaCommerceTests.Signed(new { orderCode = code, id = "ai-link", amount = Amount, amountPaid = Paid ? Amount : 0, amountRemaining = Paid ? 0 : Amount, status = Paid ? "PAID" : Cancelled ? "CANCELLED" : "PENDING" }) : null);
+            return Task.FromResult<JsonElement?>(Code == code ? MuaCommerceTests.Signed(new { orderCode = code, id = Link, amount = Amount, amountPaid = Paid ? Amount : 0, amountRemaining = Paid ? 0 : Amount, status = Paid ? "PAID" : Cancelled ? "CANCELLED" : "PENDING" }) : null);
         }
-        public Task<JsonElement> Cancel(long code, CancellationToken ct) { Cancelled = true; return Task.FromResult(MuaCommerceTests.Signed(new { orderCode = code, id = "ai-link", amount = Amount, amountPaid = 0, status = "CANCELLED" })); }
-        public JsonElement Webhook(int amount = 20000) => MuaCommerceTests.Signed(new { orderCode = Code, amount, currency = "VND", code = "00", reference = "synthetic-bank-reference", paymentLinkId = "ai-link" });
+        public Task<JsonElement> Cancel(long code, CancellationToken ct) { Cancelled = true; return Task.FromResult(MuaCommerceTests.Signed(new { orderCode = code, id = Link, amount = Amount, amountPaid = 0, status = "CANCELLED" })); }
+        public JsonElement Webhook(int amount = 20000, string reference = "synthetic-bank-reference") => MuaCommerceTests.Signed(new { orderCode = Code, amount, currency = "VND", code = "00", reference, paymentLinkId = Link });
     }
     private static IConfiguration Config() => new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> {
         ["CustomerAi:WebCheckoutEnabled"] = "true", ["CustomerAi:EnforcementEnabled"] = "true" }).Build();

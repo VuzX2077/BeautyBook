@@ -42,4 +42,39 @@ public sealed class PayosMuaFlowTests
         await Assert.ThrowsAsync<CommerceException>(() => commerce.WebBuy(owner, MuaCommerceCatalog.Visibility, "no-consent", MuaCommerceCatalog.TermsVersion, false, default));
         Assert.Empty(await store.Db.MuaCommerceOrders.ToListAsync());
     }
+    [Fact] public async Task Dynamic_sixty_day_plan_snapshots_duration_and_delivers_two_cycles_once()
+    {
+        await using var store = await PlayReviewTestStore.CreateAsync(); var owner = await MuaCommerceTests.Seed(store.Db);
+        var plan = new SubscriptionPlan { Id = "visibility_sixty", Role = "MUA", Name = "Visibility 60 ngày", AmountVnd = 120000, Days = 60, State = "Published" };
+        store.Db.SubscriptionPlans.Add(plan); await store.Db.SaveChangesAsync();
+        var payos = new CustomerAiLifetimeTests.FakePayOs(); var commerce = Commerce(store.Db, payos);
+        await commerce.WebBuy(owner, plan.Id, "sixty", SubscriptionCatalog.Terms(plan), true, default);
+        await commerce.RunOnce(default);
+        plan.Days = 90; plan.AmountVnd = 190000; plan.Version++; await store.Db.SaveChangesAsync();
+        await commerce.Receive(payos.Webhook(120000), default); await commerce.RunOnce(default);
+        await commerce.Receive(payos.Webhook(120000), default); await commerce.RunOnce(default);
+        var grant = await store.Db.MuaVisibilityGrants.SingleAsync(); Assert.Equal(TimeSpan.FromDays(60), grant.EndsAt - grant.StartsAt);
+        Assert.Equal(2, await store.Db.MuaFacebookTasks.CountAsync());
+        var tasks = await store.Db.MuaFacebookTasks.OrderBy(t => t.CycleStartsAt).ToListAsync();
+        Assert.Equal(grant.StartsAt.AddDays(30), tasks[1].CycleStartsAt);
+        Assert.Equal(120000, (await store.Db.MuaCommerceOrders.SingleAsync()).AmountVnd);
+    }
+    [PostgreSqlFact] public async Task A_second_75k_purchase_extends_the_existing_period_by_30_days_without_auto_renewal()
+    {
+        // timestamptz must round-trip UTC; SQLite intentionally cannot model this provider contract.
+        await using var database = await PostgreSqlDatabase.CreateMigratedAsync(); await using var db = database.CreateContext();
+        var owner = await MuaCommerceTests.Seed(db);
+        var payos = new CustomerAiLifetimeTests.FakePayOs(); var commerce = Commerce(db, payos);
+        await commerce.WebBuy(owner, MuaCommerceCatalog.Visibility, "cycle-one", MuaCommerceCatalog.TermsVersion, true, default);
+        await commerce.RunOnce(default); await commerce.Receive(payos.Webhook(75000, "bank-cycle-one"), default); await commerce.RunOnce(default);
+        var first = await db.MuaVisibilityGrants.SingleAsync(); var end = first.EndsAt;
+        await commerce.WebBuy(owner, MuaCommerceCatalog.Visibility, "cycle-two", MuaCommerceCatalog.TermsVersion, true, default);
+        await commerce.RunOnce(default); await commerce.Receive(payos.Webhook(75000, "bank-cycle-two"), default); await commerce.RunOnce(default);
+        var grants = await db.MuaVisibilityGrants.OrderBy(x => x.StartsAt).ToListAsync();
+        Assert.Equal(2, grants.Count); Assert.Equal(end, grants[1].StartsAt); Assert.Equal(end.AddDays(30), grants[1].EndsAt);
+        Assert.Equal(2, await db.MuaFacebookTasks.CountAsync());
+        Assert.Equal(2, await db.MuaCommerceOrders.CountAsync(x => x.AmountVnd == 75000 && x.State == MuaCommerceOrderState.Fulfilled));
+        await commerce.RunOnce(default); Assert.Equal(2, await db.MuaCommerceOrders.CountAsync());
+        Assert.Empty(await db.BookingPayments.ToListAsync());
+    }
 }
